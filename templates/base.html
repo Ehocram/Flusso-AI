@@ -1,0 +1,62 @@
+{% load static %}<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titolo %}ISEO AI · Gestione Flusso{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="{% static 'img/favicon.svg' %}">
+  <link rel="stylesheet" href="{% static 'css/tabler-icons.css' %}">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <script src="{% static 'js/htmx.min.js' %}" defer></script>
+</head>
+<body>
+{% if user.is_authenticated %}
+<header class="topbar">
+  <div class="topbar-inner">
+    <a href="{% url 'flusso:dashboard' %}" class="brand">
+      <img src="{% static 'img/iseo-logo-mark.png' %}" class="brand-logo" alt="ISEO">
+      <span class="brand-sep"></span>
+      <span class="brand-txt">Gestione Flusso<small>Comitato AI · Op 4</small></span>
+    </a>
+    <nav class="nav">
+      {% url 'flusso:dashboard' as u_dash %}
+      {% url 'flusso:lista' as u_lista %}
+      {% url 'flusso:kanban' as u_kanban %}
+      <a href="{{ u_dash }}" class="{% if request.path == u_dash %}attivo{% endif %}"><i class="ti ti-layout-dashboard"></i> Dashboard</a>
+      <a href="{{ u_lista }}" class="{% if request.path == u_lista %}attivo{% endif %}">
+        <i class="ti ti-list-details"></i> Richieste
+        {% if nav_richieste_aperte %}<span class="badge-n">{{ nav_richieste_aperte }}</span>{% endif %}
+      </a>
+      <a href="{{ u_kanban }}" class="{% if request.path == u_kanban %}attivo{% endif %}"><i class="ti ti-layout-kanban"></i> Board</a>
+      {% url 'flusso:kpi' as u_kpi %}
+      {% if user.is_gestore %}<a href="{{ u_kpi }}" class="{% if request.path == u_kpi %}attivo{% endif %}"><i class="ti ti-chart-arcs-3"></i> KPI</a>{% endif %}
+      {% if user.is_staff %}<a href="/admin/"><i class="ti ti-shield-lock"></i> Admin</a>{% endif %}
+    </nav>
+    <div class="topbar-right">
+      {% if user.is_owner or user.is_superuser %}
+      <a href="{% url 'flusso:nuova' %}" class="btn btn-primario btn-sm"><i class="ti ti-plus"></i> Nuova richiesta</a>
+      {% endif %}
+      <div class="utente">
+        <b>{{ user.get_full_name|default:user.username }}</b>
+        <span>{{ user.get_ruolo_display }}</span>
+      </div>
+      <a href="{% url 'cambia_password' %}" class="logout" title="Cambia password"><i class="ti ti-lock-cog"></i></a>
+      <form method="post" action="{% url 'logout' %}" class="logout-form">{% csrf_token %}<button type="submit" class="logout" title="Esci"><i class="ti ti-logout"></i></button></form>
+    </div>
+  </div>
+</header>
+{% endif %}
+
+<main class="wrap">
+  {% if messages %}
+    {% for m in messages %}
+      <div class="msg msg-{{ m.tags }}">
+        <i class="ti {% if m.tags == 'success' %}ti-circle-check{% elif m.tags == 'error' %}ti-alert-triangle{% else %}ti-info-circle{% endif %}"></i>
+        {{ m }}
+      </div>
+    {% endfor %}
+  {% endif %}
+  {% block contenuto %}{% endblock %}
+</main>
+</body>
+</html>

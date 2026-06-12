@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block titolo %}Richieste · ISEO AI{% endblock %}
+{% block contenuto %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Raccolta esigenze/opportunità</div>
+    <h1>Richieste</h1>
+    <p>Le schede progetto e il loro stato nel flusso.</p>
+  </div>
+  {% if user.is_owner or user.is_superuser %}
+  <a href="{% url 'flusso:nuova' %}" class="btn btn-primario"><i class="ti ti-plus"></i> Nuova richiesta</a>
+  {% endif %}
+</div>
+
+<form class="filtri" method="get">
+  <input type="text" name="q" value="{{ q }}" placeholder="Cerca titolo o descrizione…">
+  <select name="stato" onchange="this.form.submit()">
+    <option value="">Tutti gli stati</option>
+    {% for val, label in stati %}<option value="{{ val }}" {% if val == f_stato %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <select name="funzione" onchange="this.form.submit()">
+    <option value="">Tutte le funzioni</option>
+    {% for val, label in funzioni %}<option value="{{ val }}" {% if val == f_funzione %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="btn"><i class="ti ti-search"></i> Filtra</button>
+</form>
+
+{% if richieste %}
+<div class="grid-schede">
+  {% for item in richieste %}
+    {% include "flusso/_scheda.html" with r=item.obj azioni=item.azioni mostra_foot=True %}
+  {% endfor %}
+</div>
+{% else %}
+<div class="card"><div class="vuoto">Nessuna richiesta corrisponde ai filtri.</div></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,44 @@
+{% load static %}<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Accesso · ISEO AI</title>
+  <link rel="icon" type="image/svg+xml" href="{% static 'img/favicon.svg' %}">
+  <link rel="stylesheet" href="{% static 'css/tabler-icons.css' %}">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body class="auth">
+  <div class="auth-bg"></div>
+  <canvas id="neural" aria-hidden="true"></canvas>
+
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div class="auth-accent"></div>
+      <div class="auth-body">
+        <img class="auth-logo" src="{% static 'img/iseo-logo.png' %}" alt="ISEO — Ultimate Access Technologies">
+        <h1 class="auth-title">Gestione Flusso</h1>
+        <div class="auth-sub"><i class="ti ti-brain"></i> Processo esigenze/opportunità AI · Op 4</div>
+
+        {% if form.errors %}<div class="msg msg-error"><i class="ti ti-alert-triangle"></i> Credenziali non valide.</div>{% endif %}
+
+        <form method="post">
+          {% csrf_token %}
+          <div class="f-row">
+            <label for="{{ form.username.id_for_label }}">Utente</label>
+            <input type="text" name="username" id="{{ form.username.id_for_label }}" class="campo" autofocus required autocomplete="username">
+          </div>
+          <div class="f-row">
+            <label for="{{ form.password.id_for_label }}">Password</label>
+            <input type="password" name="password" id="{{ form.password.id_for_label }}" class="campo" required autocomplete="current-password">
+          </div>
+          <input type="hidden" name="next" value="{{ next }}">
+          <button type="submit" class="btn btn-primario"><i class="ti ti-login"></i> Accedi</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="auth-foot">Ultimate Access Technologies</div>
+  <script src="{% static 'js/neural-bg.js' %}" defer></script>
+</body>
+</html>

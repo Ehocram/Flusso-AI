@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% load flusso_extras %}
+{% block titolo %}{{ richiesta.codice }} · {{ richiesta.titolo }}{% endblock %}
+{% block contenuto %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow"><a href="{% url 'flusso:lista' %}" style="color:inherit">Richieste</a> · {{ richiesta.codice }}</div>
+    <h1>{{ richiesta.titolo }}</h1>
+    <p>{{ richiesta.get_funzione_display }} · proposta da {{ richiesta.proponente.get_full_name|default:richiesta.proponente.username }} il {{ richiesta.creata_il|date:"d/m/Y" }}</p>
+  </div>
+  <div style="display:flex;gap:9px;">
+    {% if puo_modificare %}<a href="{% url 'flusso:modifica' richiesta.pk %}" class="btn"><i class="ti ti-edit"></i> Modifica</a>{% endif %}
+    <a href="{% url 'flusso:lista' %}" class="btn"><i class="ti ti-arrow-left"></i> Indietro</a>
+  </div>
+</div>
+
+{% stepper richiesta.stato as passi %}
+<div class="stepper">
+  {% for p in passi %}
+  <div class="step {{ p.css }}">
+    <span class="dot">{% if p.css == 'done' %}<i class="ti ti-check"></i>{% elif p.css == 'ko' %}<i class="ti ti-x"></i>{% else %}{{ p.n }}{% endif %}</span>
+    {{ p.label }}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="det-grid">
+  <div>
+    {% include "flusso/_scheda.html" with r=richiesta mostra_foot=False %}
+
+    <div class="card" style="margin-top:18px;">
+      <h2><i class="ti ti-clipboard-data" style="vertical-align:-2px;color:var(--rosso)"></i> Analisi Funzione AI</h2>
+      {% if analisi_form %}
+      {# Modificabile dall'AI Officer #}
+      <form method="post" action="{% url 'flusso:aggiorna_analisi' richiesta.pk %}" class="analisi-form">
+        {% csrf_token %}
+        <div class="f-row">
+          <label for="{{ analisi_form.analisi_fattibilita.id_for_label }}">Analisi di fattibilità</label>
+          {{ analisi_form.analisi_fattibilita }}
+        </div>
+        <div class="form-grid">
+          <div class="f-row">
+            <label for="{{ analisi_form.effort_ore.id_for_label }}">Effort (ore)</label>
+            {{ analisi_form.effort_ore }}
+          </div>
+          <div class="f-row">
+            <label for="{{ analisi_form.data_inizio.id_for_label }}">Inizio lavori</label>
+            {{ analisi_form.data_inizio }}
+          </div>
+          <div class="f-row">
+            <label for="{{ analisi_form.data_consegna_prevista.id_for_label }}">Consegna prevista</label>
+            {{ analisi_form.data_consegna_prevista }}
+          </div>
+          <div class="f-row">
+            <label for="{{ analisi_form.costo_token_ai.id_for_label }}">Costi token AI (€)</label>
+            {{ analisi_form.costo_token_ai }}
+          </div>
+          <div class="f-row">
+            <label for="{{ analisi_form.altri_costi.id_for_label }}">Altri costi (€)</label>
+            {{ analisi_form.altri_costi }}
+          </div>
+          <div class="f-row">
+            <label for="{{ analisi_form.altri_costi_note.id_for_label }}">Dettaglio altri costi</label>
+            {{ analisi_form.altri_costi_note }}
+          </div>
+        </div>
+        <div style="margin-top:14px;">
+          <button type="submit" class="btn btn-primario btn-sm"><i class="ti ti-device-floppy"></i> Salva analisi</button>
+          {% if richiesta.costo_totale_stimato is not None %}
+          <span style="margin-left:12px;font-size:13px;color:var(--testo-2);">Totale stimato: <b>€ {{ richiesta.costo_totale_stimato|floatformat:2 }}</b></span>
+          {% endif %}
+        </div>
+      </form>
+      {% elif richiesta.ha_analisi %}
+      {# Sola lettura per gli altri ruoli #}
+      {% if richiesta.analisi_fattibilita %}<p class="analisi-fatt">{{ richiesta.analisi_fattibilita }}</p>{% endif %}
+      <div class="analisi-grid">
+        <div class="dato"><span class="lab">Effort</span><span class="val">{% if richiesta.effort_ore %}{{ richiesta.effort_ore }} h{% else %}—{% endif %}</span></div>
+        <div class="dato"><span class="lab">Inizio lavori</span><span class="val">{{ richiesta.data_inizio|date:"d/m/Y"|default:"—" }}</span></div>
+        <div class="dato"><span class="lab">Consegna prevista</span><span class="val">{{ richiesta.data_consegna_prevista|date:"d/m/Y"|default:"—" }}</span></div>
+        <div class="dato"><span class="lab">Costi token AI</span><span class="val">{% if richiesta.costo_token_ai is not None %}€ {{ richiesta.costo_token_ai|floatformat:2 }}{% else %}—{% endif %}</span></div>
+        <div class="dato"><span class="lab">Altri costi</span><span class="val">{% if richiesta.altri_costi is not None %}€ {{ richiesta.altri_costi|floatformat:2 }}{% else %}—{% endif %}</span></div>
+        <div class="dato tot"><span class="lab">Totale stimato</span><span class="val">{% if richiesta.costo_totale_stimato is not None %}€ {{ richiesta.costo_totale_stimato|floatformat:2 }}{% else %}—{% endif %}</span></div>
+      </div>
+      {% if richiesta.altri_costi_note %}<div class="t-mut" style="margin-top:8px;">Dettaglio altri costi: {{ richiesta.altri_costi_note }}</div>{% endif %}
+      {% else %}
+      <div class="vuoto" style="padding:10px 4px;">Analisi non ancora compilata dalla Funzione AI.</div>
+      {% endif %}
+    </div>
+
+    <div class="card" style="margin-top:18px;">
+      <h2><i class="ti ti-history" style="vertical-align:-2px;color:var(--rosso)"></i> Audit trail</h2>
+      <ul class="timeline">
+        {% for ev in timeline %}
+        <li class="{% if ev.is_sal %}ev-sal{% elif ev.stato_a == 'RESPINTA' %}ev-ko{% elif ev.stato_a == 'APPROVATA' or ev.stato_a == 'ATTIVO' %}ev-ok{% endif %}">
+          <div class="t-az">{{ ev.etichetta }}
+            {% if not ev.is_sal %}<span class="t-mut">· {{ ev.stato_da_label }} → {{ ev.stato_a_label }}</span>{% endif %}
+          </div>
+          <div class="t-mut">{{ ev.creata_il|date:"d/m/Y H:i" }} · {{ ev.attore.get_full_name|default:ev.attore.username|default:"sistema" }}</div>
+          {% if ev.nota %}<div class="t-nota">{{ ev.nota }}</div>{% endif %}
+        </li>
+        {% empty %}
+        <li><div class="t-mut">Nessun evento registrato.</div></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <aside>
+    <div class="card">
+      <h2><i class="ti ti-arrow-guide" style="vertical-align:-2px;color:var(--rosso)"></i> Azioni</h2>
+      {% if azioni %}
+      <form method="post" action="{% url 'flusso:esegui_azione' richiesta.pk %}">
+        {% csrf_token %}
+        <div class="note-azione">
+          <textarea name="nota" rows="2" placeholder="Nota (obbligatoria per integrazioni e rifiuti)…"></textarea>
+        </div>
+        <div class="azioni-box">
+          {% for a in azioni %}
+          <button type="submit" name="azione" value="{{ a.azione }}" class="btn btn-{{ a.stile }} btn-sm" title="{{ a.descrizione }}">
+            {{ a.label }}
+          </button>
+          {% endfor %}
+        </div>
+      </form>
+      {% else %}
+      <div class="vuoto" style="padding:10px 4px;">
+        {% if richiesta.is_terminale %}Pratica chiusa.{% else %}Nessuna azione disponibile per il tuo ruolo in questo stato.{% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    {% if sal_form %}
+    <div class="card" style="margin-top:16px;">
+      <h2><i class="ti ti-gauge" style="vertical-align:-2px;color:var(--rosso)"></i> Aggiorna SAL</h2>
+      <form method="post" action="{% url 'flusso:aggiorna_sal' richiesta.pk %}">
+        {% csrf_token %}
+        <div class="f-row" style="margin-bottom:10px;">
+          <label>Avanzamento (%)</label>
+          <input type="number" name="sal" min="0" max="100" value="{{ richiesta.sal }}" class="campo">
+        </div>
+        <div class="f-row" style="margin-bottom:12px;">
+          <label>Nota SAL (opzionale)</label>
+          <input type="text" name="nota" class="campo" placeholder="Es. completato connettore D365">
+        </div>
+        <button type="submit" class="btn btn-primario btn-sm" style="width:100%;justify-content:center;"><i class="ti ti-device-floppy"></i> Salva SAL</button>
+      </form>
+    </div>
+    {% endif %}
+
+    <div class="card" style="margin-top:16px;">
+      <h2 style="margin-bottom:10px;"><i class="ti ti-info-circle" style="vertical-align:-2px;color:var(--testo-3)"></i> Riferimenti</h2>
+      <div style="font-size:13px;color:var(--testo-2);line-height:1.8;">
+        <div><b>Referente di area:</b> {{ richiesta.referente_area|default:"—" }}</div>
+        <div><b>Ultimo aggiornamento:</b> {{ richiesta.aggiornata_il|date:"d/m/Y H:i" }}</div>
+      </div>
+    </div>
+  </aside>
+</div>
+{% endblock %}

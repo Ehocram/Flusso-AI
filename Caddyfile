@@ -1,0 +1,9 @@
+# Reverse proxy interno con TLS dalla CA interna di Caddy.
+# Sostituire l'hostname con il record DNS interno dell'applicazione.
+# Per usare un certificato della PKI aziendale, rimpiazzare 'tls internal'
+# con:  tls /etc/caddy/cert.pem /etc/caddy/key.pem
+flussoai.iseo.local {
+    encode zstd gzip
+    tls internal
+    reverse_proxy web:8000
+}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% load flusso_extras %}
+{% block titolo %}Dashboard · ISEO AI{% endblock %}
+{% block contenuto %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Risk Management · Op 4 — Intelligenza Artificiale</div>
+    <h1>Dashboard</h1>
+    <p>Stato delle esigenze/opportunità AI di Gruppo e azioni in carico al tuo ruolo.</p>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="n">{{ totale }}</div><div class="l">Richieste totali</div></div>
+  <div class="kpi"><div class="n rosso">{{ aperte }}</div><div class="l">In lavorazione</div></div>
+  <div class="kpi"><div class="n">{{ attivi }}</div><div class="l">Progetti attivi / SAL</div></div>
+  <div class="kpi"><div class="n">{{ da_fare_totale }}</div><div class="l">In attesa di una tua azione</div></div>
+</div>
+
+<div class="cols-2">
+  <div class="card">
+    <h2><i class="ti ti-checklist" style="vertical-align:-2px;color:var(--rosso)"></i> Da gestire <span class="sub">— richiedono un'azione del tuo ruolo</span></h2>
+    {% if da_fare %}
+    <div class="todo-list">
+      {% for r in da_fare %}
+      <a href="{{ r.get_absolute_url }}" class="todo-item">
+        <span class="scheda-icona {{ r.funzione|classe_funzione }}" style="width:32px;height:32px;font-size:16px;"><i class="ti {{ r.funzione|icona_funzione }}"></i></span>
+        <span class="ti-corpo">
+          <span class="t-tit">{{ r.codice }} · {{ r.titolo }}</span>
+          <span class="t-sub">{{ r.get_funzione_display }}</span>
+        </span>
+        <span class="stato {{ r.stato|classe_stato }}">{{ r.stato_label }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="vuoto"><i class="ti ti-circle-check" style="font-size:22px;display:block;margin-bottom:6px;color:var(--ok)"></i>Nessuna azione in sospeso per il tuo ruolo.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2><i class="ti ti-chart-bar" style="vertical-align:-2px;color:var(--rosso)"></i> Distribuzione per funzione</h2>
+    {% if distribuzione %}
+    <div class="barre">
+      {% for d in distribuzione %}
+      <div class="riga">
+        <span class="nome">{{ d.label }}</span>
+        <span class="b-track"><span class="b-fill" style="width: {% widthratio d.n max_funzione 100 %}%;"></span></span>
+        <span class="b-n">{{ d.n }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="vuoto">Ancora nessuna richiesta registrata.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

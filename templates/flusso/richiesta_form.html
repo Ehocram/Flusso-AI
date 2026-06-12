@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block titolo %}{% if nuova %}Nuova richiesta{% else %}Modifica richiesta{% endif %} · ISEO AI{% endblock %}
+{% block contenuto %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Raccolta esigenze/opportunità</div>
+    <h1>{% if nuova %}Nuova richiesta AI{% else %}Modifica {{ richiesta.codice }}{% endif %}</h1>
+    <p>Compila la scheda dell'esigenza/opportunità. Resta in bozza finché non la invii alla Funzione AI.</p>
+  </div>
+</div>
+
+<div class="card form-card">
+  <form method="post">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="msg msg-error">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="form-grid">
+      <div class="f-row">
+        <label for="{{ form.funzione.id_for_label }}">Funzione</label>
+        {{ form.funzione }}
+        {% if form.funzione.errors %}<div class="err">{{ form.funzione.errors|striptags }}</div>{% endif %}
+      </div>
+      <div class="f-row">
+        <label for="{{ form.referente_area.id_for_label }}">Referente di area</label>
+        {{ form.referente_area }}
+      </div>
+      <div class="f-row full">
+        <label for="{{ form.titolo.id_for_label }}">Titolo (case study)</label>
+        {{ form.titolo }}
+        {% if form.titolo.errors %}<div class="err">{{ form.titolo.errors|striptags }}</div>{% endif %}
+      </div>
+      <div class="f-row full">
+        <label for="{{ form.tipo_soluzione.id_for_label }}">Tipo soluzione</label>
+        {{ form.tipo_soluzione }}
+        <div class="help">{{ form.tipo_soluzione.help_text }}</div>
+      </div>
+      <div class="f-row full">
+        <label for="{{ form.descrizione.id_for_label }}">Descrizione</label>
+        {{ form.descrizione }}
+        {% if form.descrizione.errors %}<div class="err">{{ form.descrizione.errors|striptags }}</div>{% endif %}
+      </div>
+      <div class="f-row">
+        <label for="{{ form.costo.id_for_label }}">Costo OPEX/CAPEX</label>
+        {{ form.costo }}
+      </div>
+      <div class="f-row">
+        <label for="{{ form.saving_economico.id_for_label }}">Saving economico</label>
+        {{ form.saving_economico }}
+      </div>
+      <div class="f-row">
+        <label for="{{ form.saving_qualitativo.id_for_label }}">Saving qualitativo</label>
+        {{ form.saving_qualitativo }}
+      </div>
+      <div class="f-row">
+        <label for="{{ form.saving_efficienza.id_for_label }}">Saving efficienza</label>
+        {{ form.saving_efficienza }}
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primario"><i class="ti ti-device-floppy"></i> Salva in bozza</button>
+      <a href="{% if richiesta %}{{ richiesta.get_absolute_url }}{% else %}{% url 'flusso:lista' %}{% endif %}" class="btn">Annulla</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

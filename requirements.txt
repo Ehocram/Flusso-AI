@@ -1,0 +1,7 @@
+Django>=5.2.8,<5.3
+gunicorn>=21.2
+whitenoise>=6.6
+# PostgreSQL (produzione). In sviluppo su SQLite non e' necessario.
+psycopg[binary]>=3.1
+# Import dell'elenco progetti da Excel (comando seed_demo / importa_progetti)
+openpyxl>=3.1

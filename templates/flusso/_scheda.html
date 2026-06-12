@@ -1,0 +1,48 @@
+{% load flusso_extras %}
+{% comment %}Scheda progetto — replica il rettangolo delle slide 8-9.{% endcomment %}
+<article class="scheda">
+  <div class="scheda-top">
+    <span class="scheda-icona {{ r.funzione|classe_funzione }}"><i class="ti {{ r.funzione|icona_funzione }}"></i></span>
+    <span class="pill {{ r.funzione|classe_funzione }}">{{ r.get_funzione_display }}</span>
+    <span class="pill-id">{{ r.codice }}</span>
+    <span class="spazio"></span>
+    <span class="stato {{ r.stato|classe_stato }}">{{ r.stato_label }}</span>
+  </div>
+
+  <h3><a href="{{ r.get_absolute_url }}">{{ r.titolo }}</a></h3>
+
+  <div class="sal">
+    <span class="et">SAL</span>
+    <span class="track"><span class="fill" style="width: {{ r.sal }}%;"></span></span>
+    <span class="perc">{{ r.sal }}%</span>
+  </div>
+
+  <p class="descr">{{ r.descrizione }}{% if r.tipo_soluzione %} <em>— {{ r.tipo_soluzione }}</em>{% endif %}</p>
+
+  <div class="savings">
+    <div class="sav">
+      <span class="lab">Costo OPEX/CAPEX</span>
+      <span class="val {% if r.costo == 'TBD' %}tbd{% endif %}">{{ r.costo }}</span>
+    </div>
+    <div class="sav">
+      <span class="lab">Saving economico</span>
+      <span class="val {% if r.saving_economico == 'TBD' %}tbd{% endif %}">{{ r.saving_economico }}</span>
+    </div>
+    <div class="sav verde">
+      <span class="lab">Saving qualitativo</span>
+      <span class="val">{{ r.saving_qualitativo|default:"—" }}</span>
+    </div>
+    <div class="sav verde">
+      <span class="lab">Saving efficienza</span>
+      <span class="val">{{ r.saving_efficienza|default:"—" }}</span>
+    </div>
+  </div>
+
+  {% if mostra_foot %}
+  <div class="scheda-foot">
+    <span class="meta"><i class="ti ti-user" style="font-size:14px;vertical-align:-2px;"></i> {{ r.proponente.get_full_name|default:r.proponente.username }}</span>
+    {% if azioni %}<a href="{{ r.get_absolute_url }}" class="btn btn-sm"><i class="ti ti-player-play"></i> {{ azioni|length }} azione{{ azioni|length|pluralize }} disponibile{{ azioni|length|pluralize }}</a>
+    {% else %}<a href="{{ r.get_absolute_url }}" class="btn btn-sm">Apri <i class="ti ti-arrow-right"></i></a>{% endif %}
+  </div>
+  {% endif %}
+</article>

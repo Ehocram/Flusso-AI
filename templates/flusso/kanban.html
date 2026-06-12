@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load flusso_extras %}
+{% block titolo %}Board · ISEO AI{% endblock %}
+{% block contenuto %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Sintesi del processo</div>
+    <h1>Board del flusso</h1>
+    <p>Le richieste lungo le fasi: dalla raccolta al monitoraggio.</p>
+  </div>
+</div>
+
+<div class="board">
+  {% for col in colonne %}
+  <div class="board-col">
+    <h3>{{ col.titolo }} <span class="c">{{ col.items|length }}</span></h3>
+    {% for r in col.items %}
+    <a href="{{ r.get_absolute_url }}" class="mini">
+      <div class="m-top">
+        <span class="pill {{ r.funzione|classe_funzione }}" style="font-size:11px;padding:2px 8px;">{{ r.get_funzione_display }}</span>
+        <span class="pill-id">{{ r.codice }}</span>
+      </div>
+      <div class="m-tit">{{ r.titolo }}</div>
+      <div class="m-bar"><i style="width: {{ r.sal }}%;"></i></div>
+      <div class="m-foot">
+        <span class="stato {{ r.stato|classe_stato }}" style="font-size:10.5px;padding:2px 8px;">{{ r.stato_label }}</span>
+        <span>SAL {{ r.sal }}%</span>
+      </div>
+    </a>
+    {% empty %}
+    <div class="vuoto" style="padding:10px 4px;font-size:12.5px;">—</div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

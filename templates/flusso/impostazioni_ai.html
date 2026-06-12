@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block titolo %}Impostazioni AI · ISEO AI{% endblock %}
+
+{% block contenuto %}
+<div class="page-head">
+  <div class="eyebrow">Configurazione · AI</div>
+  <h1>Impostazioni AI</h1>
+  <p>Chiave API, modello e parametri della lettura esecutiva dei KPI.</p>
+</div>
+
+<div class="cfg">
+
+  <div class="cfg-stato">
+    <div class="cfg-stato-item">
+      <span class="cfg-k">Stato</span>
+      {% if config.abilitato %}<span class="badge-ok"><i class="ti ti-circle-check"></i> Abilitata</span>
+      {% else %}<span class="badge-off"><i class="ti ti-circle-minus"></i> Non attiva</span>{% endif %}
+    </div>
+    <div class="cfg-stato-item">
+      <span class="cfg-k">API key</span>
+      {% if config.configurata %}<span class="badge-ok"><i class="ti ti-key"></i> Configurata</span>
+      {% else %}<span class="badge-off"><i class="ti ti-key-off"></i> Da inserire</span>{% endif %}
+    </div>
+    <div class="cfg-stato-item">
+      <span class="cfg-k">Modello attuale</span>
+      <span class="cfg-v">{{ config.get_modello_display }}</span>
+    </div>
+  </div>
+
+  {% if env_override %}
+  <div class="msg msg-info"><i class="ti ti-info-circle"></i> È attiva la variabile d'ambiente <code>ANTHROPIC_API_KEY</code>: ha la precedenza a runtime e la chiave salvata qui sotto non viene usata.</div>
+  {% endif %}
+
+  <form method="post" action="{% url 'flusso:impostazioni_ai' %}" class="cfg-form">
+    {% csrf_token %}
+
+    <label class="cfg-toggle">
+      {{ form.abilitato }}
+      <span><b>Abilita l'analisi AI</b><small>Consente di generare la lettura esecutiva nella pagina KPI.</small></span>
+    </label>
+
+    <div class="cfg-field">
+      <label for="{{ form.api_key.id_for_label }}">{{ form.api_key.label }}</label>
+      {{ form.api_key }}
+      <small class="cfg-help">{{ form.api_key.help_text }}</small>
+      {{ form.api_key.errors }}
+    </div>
+
+    <div class="cfg-row">
+      <div class="cfg-field">
+        <label for="{{ form.modello.id_for_label }}">Modello</label>
+        {{ form.modello }}
+        {{ form.modello.errors }}
+      </div>
+      <div class="cfg-field">
+        <label for="{{ form.max_tokens.id_for_label }}">Lunghezza massima risposta (token)</label>
+        {{ form.max_tokens }}
+        {{ form.max_tokens.errors }}
+      </div>
+    </div>
+
+    <label class="cfg-toggle">
+      {{ form.includi_titoli }}
+      <span><b>Includi i titoli dei progetti attivi nel prompt</b><small>Se disattivo, all'AI vengono inviati solo numeri aggregati (nessun titolo).</small></span>
+    </label>
+
+    <div class="cfg-field">
+      <label for="{{ form.prompt_sistema.id_for_label }}">Istruzioni di sistema</label>
+      {{ form.prompt_sistema }}
+      <details class="cfg-details"><summary>Mostra le istruzioni predefinite</summary><p>{{ prompt_default }}</p></details>
+      {{ form.prompt_sistema.errors }}
+    </div>
+
+    <div class="cfg-actions">
+      <button type="submit" class="btn btn-primario"><i class="ti ti-device-floppy"></i> Salva impostazioni</button>
+      <button type="submit" class="btn" formaction="{% url 'flusso:prova_connessione_ai' %}"><i class="ti ti-plug-connected"></i> Prova connessione</button>
+      <a href="{% url 'flusso:kpi' %}" class="btn-link"><i class="ti ti-arrow-left"></i> Torna ai KPI</a>
+    </div>
+  </form>
+
+  <p class="cfg-nota"><i class="ti ti-shield-lock"></i> La chiave non viene mai mostrata in chiaro in questa pagina. Per non salvarla nel database, lasciala vuota qui e imposta la variabile d'ambiente <code>ANTHROPIC_API_KEY</code>. Il test contatta <code>api.anthropic.com</code> in uscita.</p>
+</div>
+{% endblock %}
