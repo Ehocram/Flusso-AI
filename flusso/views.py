@@ -125,8 +125,11 @@ def dettaglio(request, pk):
 
     azioni = azioni_disponibili(richiesta, request.user)
     timeline = richiesta.transizioni.select_related("attore").all()
-    puo_modificare = richiesta.is_bozza and (
-        request.user.is_superuser or richiesta.proponente_id == request.user.id
+    puo_modificare = richiesta.proponente_id == request.user.id and richiesta.stato in (
+        Stato.BOZZA, Stato.INVIATA
+    )
+    puo_eliminare = request.user.is_ai_officer or (
+        request.user.is_owner and richiesta.proponente_id == request.user.id and richiesta.is_bozza
     )
     sal_form = SalForm(initial={"sal": richiesta.sal}) if (
         richiesta.is_operativa and request.user.is_ai_officer
@@ -140,6 +143,7 @@ def dettaglio(request, pk):
         "azioni": azioni,
         "timeline": timeline,
         "puo_modificare": puo_modificare,
+        "puo_eliminare": puo_eliminare,
         "sal_form": sal_form,
         "analisi_form": analisi_form,
     })
@@ -147,7 +151,7 @@ def dettaglio(request, pk):
 
 @login_required
 def nuova(request):
-    if not (request.user.is_owner or request.user.is_superuser):
+    if not request.user.is_owner:
         return HttpResponseForbidden("Solo gli owner di funzione possono creare richieste.")
 
     if request.method == "POST":
@@ -169,17 +173,36 @@ def nuova(request):
 @login_required
 def modifica(request, pk):
     richiesta = get_object_or_404(Richiesta, pk=pk)
-    if not (request.user.is_superuser or richiesta.proponente_id == request.user.id):
+    if richiesta.proponente_id != request.user.id:
         return HttpResponseForbidden("Non puoi modificare questa richiesta.")
-    if not richiesta.is_bozza:
-        messages.error(request, "Solo le richieste in bozza sono modificabili.")
+    if richiesta.stato not in (Stato.BOZZA, Stato.INVIATA):
+        messages.error(request, "La richiesta non è più modificabile in questo stato.")
         return redirect(richiesta)
 
     if request.method == "POST":
         form = RichiestaForm(request.POST, instance=richiesta, funzione_owner=request.user.funzione or None)
         if form.is_valid():
+            era_inviata = richiesta.stato == Stato.INVIATA
             form.save()
-            messages.success(request, "Richiesta aggiornata.")
+            if era_inviata:
+                # La modifica invalida l'invio precedente: la richiesta torna in
+                # bozza e va reinviata, così la Funzione AI vede la versione aggiornata.
+                richiesta.stato = Stato.BOZZA
+                richiesta.save(update_fields=["stato", "aggiornata_il"])
+                richiesta.transizioni.create(
+                    azione="modifica",
+                    etichetta="Modificata dal proponente — da reinviare",
+                    stato_da=Stato.INVIATA,
+                    stato_a=Stato.BOZZA,
+                    attore=request.user,
+                    nota="Scheda aggiornata dal proponente; riportata in bozza per il reinvio alla Funzione AI.",
+                )
+                messages.success(
+                    request,
+                    "Richiesta aggiornata. Reinviala alla Funzione AI per applicare le modifiche.",
+                )
+            else:
+                messages.success(request, "Richiesta aggiornata.")
             return redirect(richiesta)
     else:
         form = RichiestaForm(instance=richiesta, funzione_owner=request.user.funzione or None)
@@ -311,3 +334,26 @@ def prova_connessione_ai(request):
     else:
         messages.error(request, f"Test fallito — {dettaglio}")
     return redirect("flusso:impostazioni_ai")
+
+
+@login_required
+@require_POST
+def elimina(request, pk):
+    """Elimina una richiesta.
+
+    La Funzione AI puo' eliminare qualsiasi richiesta (cleanup amministrativo);
+    un owner puo' eliminare solo le proprie richieste ancora in bozza.
+    """
+    richiesta = get_object_or_404(Richiesta, pk=pk)
+    puo = request.user.is_ai_officer or (
+        request.user.is_owner
+        and richiesta.proponente_id == request.user.id
+        and richiesta.is_bozza
+    )
+    if not puo:
+        return HttpResponseForbidden("Non hai i permessi per eliminare questa richiesta.")
+
+    codice = richiesta.codice
+    richiesta.delete()
+    messages.success(request, f"Richiesta {codice} eliminata definitivamente.")
+    return redirect("flusso:lista")

@@ -11,6 +11,12 @@
   <div style="display:flex;gap:9px;">
     {% if puo_modificare %}<a href="{% url 'flusso:modifica' richiesta.pk %}" class="btn"><i class="ti ti-edit"></i> Modifica</a>{% endif %}
     <a href="{% url 'flusso:lista' %}" class="btn"><i class="ti ti-arrow-left"></i> Indietro</a>
+    {% if puo_eliminare %}
+    <form method="post" action="{% url 'flusso:elimina' richiesta.pk %}" style="display:inline" onsubmit="return confirm('Eliminare definitivamente la richiesta {{ richiesta.codice }}? Operazione non reversibile.');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-pericolo"><i class="ti ti-trash"></i> Elimina</button>
+    </form>
+    {% endif %}
   </div>
 </div>
 

@@ -41,7 +41,7 @@
   {% if mostra_foot %}
   <div class="scheda-foot">
     <span class="meta"><i class="ti ti-user" style="font-size:14px;vertical-align:-2px;"></i> {{ r.proponente.get_full_name|default:r.proponente.username }}</span>
-    {% if azioni %}<a href="{{ r.get_absolute_url }}" class="btn btn-sm"><i class="ti ti-player-play"></i> {{ azioni|length }} azione{{ azioni|length|pluralize }} disponibile{{ azioni|length|pluralize }}</a>
+    {% if azioni %}<a href="{{ r.get_absolute_url }}" class="btn btn-sm"><i class="ti ti-player-play"></i> {{ azioni|length }} azion{{ azioni|length|pluralize:"e,i" }} disponibil{{ azioni|length|pluralize:"e,i" }}</a>
     {% else %}<a href="{{ r.get_absolute_url }}" class="btn btn-sm">Apri <i class="ti ti-arrow-right"></i></a>{% endif %}
   </div>
   {% endif %}
