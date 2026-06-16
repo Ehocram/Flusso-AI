@@ -154,9 +154,6 @@ def leggi_excel(path=DEFAULT_XLSX) -> list[dict]:
             "titolo": _tronca(c("titolo"), 138) or f"Progetto {idv}",
             "tipo_soluzione": _tronca(tipo, 138),
             "descrizione": descrizione or "—",
-            "costo": _tronca(c("investimento"), 78) or "TBD",
-            "saving_economico": _tronca(c("ritorno_eco"), 78) or "TBD",
-            "saving_qualitativo": _tronca(c("ritorno_qual"), 118),
             "referente_area": _tronca(c("referente"), 118),
             "stato": stato,
             "sal": perc,
@@ -182,9 +179,7 @@ def importa(attori_owner: dict, chiavi: dict, path=DEFAULT_XLSX, *, log=lambda m
         r = Richiesta(
             numero=p["numero"], funzione=p["funzione"], titolo=p["titolo"],
             tipo_soluzione=p["tipo_soluzione"], descrizione=p["descrizione"],
-            costo=p["costo"], saving_economico=p["saving_economico"],
-            saving_qualitativo=p["saving_qualitativo"], referente_area=p["referente_area"],
-            proponente=owner,
+            referente_area=p["referente_area"], proponente=owner,
         )
         r.save()
         _percorri(r, PERCORSI[p["stato"]], owner, chiavi)

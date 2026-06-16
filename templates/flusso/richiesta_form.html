@@ -39,20 +39,16 @@
         {% if form.descrizione.errors %}<div class="err">{{ form.descrizione.errors|striptags }}</div>{% endif %}
       </div>
       <div class="f-row">
-        <label for="{{ form.costo.id_for_label }}">Costo OPEX/CAPEX</label>
-        {{ form.costo }}
-      </div>
-      <div class="f-row">
-        <label for="{{ form.saving_economico.id_for_label }}">Saving economico</label>
+        <label for="{{ form.saving_economico.id_for_label }}">Saving economico (€)</label>
         {{ form.saving_economico }}
       </div>
       <div class="f-row">
-        <label for="{{ form.saving_qualitativo.id_for_label }}">Saving qualitativo</label>
-        {{ form.saving_qualitativo }}
+        <label for="{{ form.incremento_qualitativo.id_for_label }}">Incremento qualitativo (%)</label>
+        {{ form.incremento_qualitativo }}
       </div>
       <div class="f-row">
-        <label for="{{ form.saving_efficienza.id_for_label }}">Saving efficienza</label>
-        {{ form.saving_efficienza }}
+        <label for="{{ form.incremento_efficienza.id_for_label }}">Incremento efficienza (%)</label>
+        {{ form.incremento_efficienza }}
       </div>
     </div>
     <div class="form-actions">

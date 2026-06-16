@@ -16,8 +16,8 @@ class AnalisiAIForm(forms.ModelForm):
         ]
         widgets = {
             "analisi_fattibilita": forms.Textarea(attrs={"rows": 4, "placeholder": "Valutazione di fattibilità, approccio, rischi, dipendenze…"}),
-            "data_inizio": forms.DateInput(attrs={"type": "date"}),
-            "data_consegna_prevista": forms.DateInput(attrs={"type": "date"}),
+            "data_inizio": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "data_consegna_prevista": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "effort_ore": forms.NumberInput(attrs={"min": 0, "placeholder": "es. 120"}),
             "costo_token_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
             "altri_costi": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
@@ -42,17 +42,17 @@ class RichiestaForm(forms.ModelForm):
             "tipo_soluzione",
             "descrizione",
             "referente_area",
-            "costo",
             "saving_economico",
-            "saving_qualitativo",
-            "saving_efficienza",
+            "incremento_qualitativo",
+            "incremento_efficienza",
         ]
         widgets = {
             "descrizione": forms.Textarea(attrs={"rows": 3}),
             "titolo": forms.TextInput(attrs={"placeholder": "Es. Knowledge management"}),
             "tipo_soluzione": forms.TextInput(attrs={"placeholder": "Es. Assistente AI interno"}),
-            "saving_qualitativo": forms.TextInput(attrs={"placeholder": "Es. Risposte coerenti e tracciate"}),
-            "saving_efficienza": forms.TextInput(attrs={"placeholder": "Es. Meno tempo di ricerca"}),
+            "saving_economico": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
+            "incremento_qualitativo": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "%"}),
+            "incremento_efficienza": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "%"}),
         }
 
     def __init__(self, *args, funzione_owner=None, **kwargs):

@@ -11,30 +11,38 @@
 
   <h3><a href="{{ r.get_absolute_url }}">{{ r.titolo }}</a></h3>
 
-  <div class="sal">
-    <span class="et">SAL</span>
-    <span class="track"><span class="fill" style="width: {{ r.sal }}%;"></span></span>
-    <span class="perc">{{ r.sal }}%</span>
+  {% with av=r.avanzamento_temporale %}
+  {% if av %}
+  <div class="avz{% if av.in_ritardo %} rit{% endif %}">
+    <span class="et">Avanzamento</span>
+    <span class="track">
+      <span class="seg-ok" style="width: {{ av.perc_pianificato }}%;"></span>
+      {% if av.perc_ritardo %}<span class="seg-rit" style="width: {{ av.perc_ritardo }}%;"></span>{% endif %}
+    </span>
+    <span class="perc">{{ av.perc_display }}%</span>
   </div>
+  <div class="avz-meta">
+    <span><i class="ti ti-calendar-stats" style="vertical-align:-2px;"></i> {{ av.giorni_progetto }} gg di progetto{% if av.giorni_totali %} · {{ av.giorni_totali }} previsti{% endif %}</span>
+    {% if av.in_ritardo %}<span class="rit-badge"><i class="ti ti-alert-triangle-filled" style="vertical-align:-2px;"></i> +{{ av.ritardo_giorni }} gg di ritardo</span>{% endif %}
+    {% if av.completato %}<span class="ok-badge"><i class="ti ti-circle-check-filled" style="vertical-align:-2px;"></i> Completato</span>{% endif %}
+  </div>
+  {% endif %}
+  {% endwith %}
 
   <p class="descr">{{ r.descrizione }}{% if r.tipo_soluzione %} <em>— {{ r.tipo_soluzione }}</em>{% endif %}</p>
 
-  <div class="savings">
-    <div class="sav">
-      <span class="lab">Costo OPEX/CAPEX</span>
-      <span class="val {% if r.costo == 'TBD' %}tbd{% endif %}">{{ r.costo }}</span>
-    </div>
+  <div class="savings savings-3">
     <div class="sav">
       <span class="lab">Saving economico</span>
-      <span class="val {% if r.saving_economico == 'TBD' %}tbd{% endif %}">{{ r.saving_economico }}</span>
+      <span class="val {% if r.saving_economico_fmt is None %}tbd{% endif %}">{{ r.saving_economico_fmt|default:"—" }}</span>
     </div>
     <div class="sav verde">
-      <span class="lab">Saving qualitativo</span>
-      <span class="val">{{ r.saving_qualitativo|default:"—" }}</span>
+      <span class="lab">Incremento qualitativo</span>
+      <span class="val">{{ r.incremento_qualitativo_fmt|default:"—" }}</span>
     </div>
     <div class="sav verde">
-      <span class="lab">Saving efficienza</span>
-      <span class="val">{{ r.saving_efficienza|default:"—" }}</span>
+      <span class="lab">Incremento efficienza</span>
+      <span class="val">{{ r.incremento_efficienza_fmt|default:"—" }}</span>
     </div>
   </div>
 

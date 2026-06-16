@@ -17,11 +17,11 @@ Pensata per **deploy on-prem su rete interna**, non per esposizione su Internet.
 Requisiti: Python 3.12+.
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate     
+python3 -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 python manage.py migrate
-python manage.py seed_demo          
+python manage.py seed_demo          # crea gli utenti e importa i progetti reali dall'Excel
 python manage.py runserver
 ```
 > Su macOS il venv va creato con `python3`; una volta attivato (`source .venv/bin/activate`)

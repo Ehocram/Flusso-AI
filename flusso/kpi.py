@@ -74,6 +74,21 @@ def calcola_kpi() -> dict:
                        for r in qs.only("costo_token_ai", "altri_costi"))
     effort = qs.aggregate(s=Sum("effort_ore"))["s"] or 0
 
+    # Metriche di valore e di avanzamento temporale
+    saving_eco_tot = qs.aggregate(s=Sum("saving_economico"))["s"] or 0
+    _iq = qs.aggregate(a=Avg("incremento_qualitativo"))["a"]
+    _ie = qs.aggregate(a=Avg("incremento_efficienza"))["a"]
+    incr_qual_medio = round(_iq, 1) if _iq is not None else None
+    incr_eff_medio = round(_ie, 1) if _ie is not None else None
+
+    ritardo_tot, progetti_in_ritardo = 0, 0
+    for r in qs.filter(stato__in=[Stato.APPROVATA, Stato.ATTIVO,
+                                  Stato.MONITORAGGIO, Stato.COMPLETATO]):
+        av = r.avanzamento_temporale()
+        if av and av["in_ritardo"]:
+            ritardo_tot += av["ritardo_giorni"]
+            progetti_in_ritardo += 1
+
     # aree (funzioni)
     aree_count = {f.value: 0 for f in Funzione}
     for row in qs.values("funzione").annotate(n=Count("id")):
@@ -117,6 +132,9 @@ def calcola_kpi() -> dict:
         "approvati": approvati, "in_approvazione": in_approvazione, "in_pipeline": in_pipeline,
         "tasso_appr": tasso_appr, "sal_medio": sal_medio, "investimento": investimento,
         "effort": effort, "aree_coinvolte": aree_coinvolte, "lead": lead,
+        "saving_eco_tot": saving_eco_tot, "incr_qual_medio": incr_qual_medio,
+        "incr_eff_medio": incr_eff_medio, "ritardo_tot": ritardo_tot,
+        "progetti_in_ritardo": progetti_in_ritardo,
         "per_fase": per_fase, "aree": aree, "donut": donut, "donut_circ": circ,
         "funnel": funnel, "gauge": gauge, "attivi_sal": attivi_sal,
     }
@@ -139,6 +157,10 @@ def riassunto_per_ai(kpi: dict, includi_titoli: bool = False) -> str:
         f"Lead time medio invio→approvazione: {lead}",
         f"Effort stimato totale: {kpi['effort']} ore",
         f"Investimento stimato: € {kpi['investimento']}",
+        f"Saving economico atteso (totale): € {kpi['saving_eco_tot']}",
+        f"Incremento qualitativo medio: {kpi['incr_qual_medio'] if kpi['incr_qual_medio'] is not None else 'n/d'}%",
+        f"Incremento efficienza medio: {kpi['incr_eff_medio'] if kpi['incr_eff_medio'] is not None else 'n/d'}%",
+        f"Progetti in ritardo: {kpi['progetti_in_ritardo']} (totale {kpi['ritardo_tot']} giorni di ritardo)",
         f"Aree coinvolte: {kpi['aree_coinvolte']} su 7",
         "Distribuzione per fase: " + ", ".join(f"{f['label']} {f['n']}" for f in kpi["funnel"]),
         "Progetti per area: " + ", ".join(f"{a['label']} {a['n']}" for a in kpi["aree"] if a["n"]),

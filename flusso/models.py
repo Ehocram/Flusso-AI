@@ -8,6 +8,7 @@ Transizione  = registro immutabile dei passaggi di stato (audit trail). E'
 """
 
 import logging
+from datetime import date
 
 from accounts.models import Funzione
 from django.conf import settings
@@ -34,10 +35,15 @@ class Richiesta(models.Model):
     )
     descrizione = models.TextField("Descrizione")
 
-    costo = models.CharField("Costo OPEX/CAPEX", max_length=80, default="TBD")
-    saving_economico = models.CharField("Saving economico", max_length=80, default="TBD")
-    saving_qualitativo = models.CharField("Saving qualitativo", max_length=120, blank=True)
-    saving_efficienza = models.CharField("Saving efficienza", max_length=120, blank=True)
+    saving_economico = models.DecimalField(
+        "Saving economico (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+    )
+    incremento_qualitativo = models.DecimalField(
+        "Incremento qualitativo (%)", max_digits=6, decimal_places=2, null=True, blank=True,
+    )
+    incremento_efficienza = models.DecimalField(
+        "Incremento efficienza (%)", max_digits=6, decimal_places=2, null=True, blank=True,
+    )
 
     sal = models.PositiveSmallIntegerField("SAL %", default=0)
     referente_area = models.CharField("Referente di area", max_length=120, blank=True)
@@ -118,6 +124,84 @@ class Richiesta(models.Model):
             self.data_consegna_prevista, self.costo_token_ai is not None,
             self.altri_costi is not None, self.altri_costi_note,
         ])
+
+    # --- Formattazione per i template ---------------------------------------
+    @staticmethod
+    def _fmt_pct(v):
+        if v is None:
+            return None
+        f = float(v)
+        s = f"{f:.0f}" if f == int(f) else f"{f:g}"
+        return s.replace(".", ",") + "%"
+
+    @property
+    def saving_economico_fmt(self):
+        if self.saving_economico is None:
+            return None
+        return "€ " + f"{float(self.saving_economico):,.0f}".replace(",", ".")
+
+    @property
+    def incremento_qualitativo_fmt(self):
+        return self._fmt_pct(self.incremento_qualitativo)
+
+    @property
+    def incremento_efficienza_fmt(self):
+        return self._fmt_pct(self.incremento_efficienza)
+
+    @property
+    def data_completamento(self):
+        """Data del passaggio a COMPLETATO (dall'audit trail), se presente."""
+        if self.stato != Stato.COMPLETATO:
+            return None
+        dt = (self.transizioni.filter(azione="completa")
+              .order_by("-creata_il").values_list("creata_il", flat=True).first())
+        return dt.date() if dt else None
+
+    def avanzamento_temporale(self):
+        """Avanzamento temporale automatico del progetto rispetto alla consegna prevista.
+
+        Calcolato dalle date (inizio lavori → consegna prevista) una volta approvato
+        il progetto. Restituisce None se non applicabile (non ancora approvato o date
+        mancanti). Evidenzia l'eventuale ritardo e conta i giorni di progetto/ritardo.
+        """
+        stati_validi = {Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO, Stato.COMPLETATO}
+        if (self.stato not in stati_validi
+                or not self.data_inizio or not self.data_consegna_prevista):
+            return None
+
+        inizio, fine = self.data_inizio, self.data_consegna_prevista
+        completato = self.stato == Stato.COMPLETATO
+        rif = (self.data_completamento or date.today()) if completato else date.today()
+
+        durata = (fine - inizio).days
+        giorni_totali = max(0, durata)
+        durata_eff = durata if durata > 0 else 1
+        trascorsi = (rif - inizio).days
+        giorni_progetto = max(0, trascorsi)
+        overrun = (rif - fine).days
+
+        if overrun > 0:
+            # In ritardo: barra piena divisa in pianificato (verde) + ritardo (rosso).
+            tot = trascorsi if trascorsi > 0 else 1
+            perc_pianificato = max(0, min(100, round(100 * durata_eff / tot)))
+            perc_ritardo = 100 - perc_pianificato
+            ritardo_giorni = overrun
+            in_ritardo = True
+            perc_display = 100
+        else:
+            perc = max(0, min(100, round(100 * trascorsi / durata_eff)))
+            perc_pianificato = 100 if completato else perc
+            perc_ritardo = 0
+            ritardo_giorni = 0
+            in_ritardo = False
+            perc_display = 100 if completato else perc
+
+        return {
+            "applicabile": True, "completato": completato, "in_ritardo": in_ritardo,
+            "giorni_progetto": giorni_progetto, "giorni_totali": giorni_totali,
+            "ritardo_giorni": ritardo_giorni, "perc_pianificato": perc_pianificato,
+            "perc_ritardo": perc_ritardo, "perc_display": perc_display,
+        }
 
     @transaction.atomic
     def applica(self, azione: str, attore, nota: str = "") -> "Transizione":

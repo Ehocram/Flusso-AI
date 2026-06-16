@@ -160,6 +160,20 @@ h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -.01em; }
 .sav.verde .val { color: var(--verde-fg); }
 .sav .val.tbd { color: var(--testo-3); font-weight: 700; }
 
+/* Avanzamento temporale automatico (schedule vs consegna prevista) */
+.avz { display: flex; align-items: center; gap: 12px; }
+.avz .et { font-size: 11px; font-weight: 700; letter-spacing: .05em; color: var(--testo-3); text-transform: uppercase; }
+.avz .track { flex: 1; height: 7px; border-radius: 6px; background: #ededf0; overflow: hidden; display: flex; }
+.avz .seg-ok { height: 100%; background: #1f8a4c; }
+.avz .seg-rit { height: 100%; background: var(--rosso); }
+.avz .perc { font-weight: 700; font-size: 14px; min-width: 42px; text-align: right; }
+.avz.rit .perc { color: var(--rosso); }
+.avz-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 6px; font-size: 11.5px; color: var(--testo-2); }
+.avz-meta .rit-badge { color: var(--rosso); font-weight: 700; }
+.avz-meta .ok-badge { color: #1f8a4c; font-weight: 700; }
+.savings-3 { grid-template-columns: repeat(3, 1fr); }
+.mini-n.neg { color: var(--rosso); }
+
 .scheda-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 4px; border-top: 1px solid var(--bordo); }
 .scheda-foot .meta { font-size: 12px; color: var(--testo-3); }
 
