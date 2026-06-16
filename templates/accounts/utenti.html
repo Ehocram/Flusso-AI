@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block titolo %}Utenti · ISEO AI{% endblock %}
+{% block contenuto %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Amministrazione</div>
+    <h1>Utenti</h1>
+    <p>Crea le utenze e gestisci le password. La password generata è mostrata una sola volta, subito dopo la creazione o il reset.</p>
+  </div>
+  <div style="display:flex;gap:9px;">
+    <a href="{% url 'accounts:nuovo_utente' %}" class="btn btn-primario"><i class="ti ti-user-plus"></i> Nuovo utente</a>
+  </div>
+</div>
+
+{% if cred %}
+<div class="cred-panel">
+  <div class="cred-head"><i class="ti ti-key"></i> Password {{ cred.azione }} — mostrata una sola volta</div>
+  <div class="cred-body">
+    <div class="cred-item">
+      <span class="cred-lab">Utente</span>
+      <span class="cred-val">{{ cred.username }}</span>
+    </div>
+    <div class="cred-item">
+      <span class="cred-lab">Password temporanea</span>
+      <span class="cred-val mono" id="cred-pwd">{{ cred.password }}</span>
+      <button type="button" class="btn btn-sm" id="cred-copy" onclick="copiaPwd()"><i class="ti ti-copy"></i> Copia</button>
+    </div>
+  </div>
+  <div class="cred-note"><i class="ti ti-info-circle"></i> Comunicala all'utente adesso: al primo accesso dovrà cambiarla. Non sarà più visibile dopo aver lasciato questa pagina.</div>
+</div>
+{% endif %}
+
+<div class="card">
+  <table class="tab-utenti">
+    <thead>
+      <tr><th>Utente</th><th>Ruolo</th><th>Funzione</th><th>Stato</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for u in utenti %}
+      <tr>
+        <td><b>{{ u.get_full_name|default:u.username }}</b><div class="t-mut">{{ u.username }}</div></td>
+        <td>{{ u.get_ruolo_display }}</td>
+        <td>{% if u.funzione %}{{ u.get_funzione_display }}{% else %}<span class="t-mut">—</span>{% endif %}</td>
+        <td>
+          {% if u.is_active %}<span class="stato-ok">Attivo</span>{% else %}<span class="stato-ko">Disattivo</span>{% endif %}
+          {% if u.deve_cambiare_password %}<span class="t-mut"> · deve cambiare pwd</span>{% endif %}
+        </td>
+        <td style="text-align:right;white-space:nowrap;">
+          <form method="post" action="{% url 'accounts:reset_password_utente' u.pk %}" style="display:inline" onsubmit="return confirm('Generare una nuova password temporanea per {{ u.username }}? La password attuale smetterà di funzionare.');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm"><i class="ti ti-refresh"></i> Reset password</button>
+          </form>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="t-mut" style="padding:14px 4px;">Nessun utente.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+function copiaPwd() {
+  var el = document.getElementById('cred-pwd');
+  var btn = document.getElementById('cred-copy');
+  var testo = el.textContent.trim();
+  function feedback() { btn.innerHTML = '<i class="ti ti-check"></i> Copiata'; setTimeout(function(){ btn.innerHTML = '<i class="ti ti-copy"></i> Copia'; }, 2000); }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(testo).then(feedback, function(){ fallback(testo); feedback(); });
+  } else { fallback(testo); feedback(); }
+  function fallback(t) {
+    var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta);
+    ta.select(); try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta);
+  }
+}
+</script>
+{% endblock %}

@@ -339,6 +339,19 @@ class ConfigurazioneAI(models.Model):
         "Istruzioni di sistema", blank=True,
         help_text="Lascia vuoto per usare le istruzioni predefinite.",
     )
+    # --- Notifiche Teams (opzionali, opt-in) --------------------------------
+    teams_abilitato = models.BooleanField("Notifiche Teams abilitate", default=False)
+    teams_webhook_url = models.CharField(
+        "URL webhook Teams", max_length=500, blank=True,
+        help_text="URL del flusso Power Automate «Pubblica su un canale quando "
+                  "viene ricevuta una richiesta webhook».",
+    )
+    teams_eventi = models.CharField(
+        "Eventi da notificare", max_length=12,
+        choices=[("importanti", "Solo cambi di stato importanti"),
+                 ("tutti", "Tutti i cambi di stato")],
+        default="importanti",
+    )
     ultima_analisi = models.TextField("Ultima analisi generata", blank=True)
     ultima_analisi_il = models.DateTimeField(null=True, blank=True)
     ultimo_modello = models.CharField(max_length=60, blank=True)

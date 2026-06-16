@@ -95,11 +95,15 @@ class ImpostazioniAIForm(forms.ModelForm):
 
     class Meta:
         model = ConfigurazioneAI
-        fields = ["abilitato", "modello", "max_tokens", "includi_titoli", "prompt_sistema"]
+        fields = ["abilitato", "modello", "max_tokens", "includi_titoli", "prompt_sistema",
+                  "teams_abilitato", "teams_webhook_url", "teams_eventi"]
         widgets = {
             "max_tokens": forms.NumberInput(attrs={"min": 256, "max": 4096, "step": 1}),
             "prompt_sistema": forms.Textarea(attrs={
                 "rows": 5, "placeholder": "Lascia vuoto per usare le istruzioni predefinite.",
+            }),
+            "teams_webhook_url": forms.TextInput(attrs={
+                "placeholder": "https://… (URL del flusso Power Automate)", "autocomplete": "off",
             }),
         }
 

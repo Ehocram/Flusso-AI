@@ -5,7 +5,7 @@
 <div class="page-head">
   <div class="eyebrow">Configurazione · AI</div>
   <h1>Impostazioni AI</h1>
-  <p>Chiave API, modello e parametri della lettura esecutiva dei KPI.</p>
+  <p>Chiave API, modello e parametri della lettura esecutiva dei KPI, e notifiche Teams.</p>
 </div>
 
 <div class="cfg">
@@ -24,6 +24,11 @@
     <div class="cfg-stato-item">
       <span class="cfg-k">Modello attuale</span>
       <span class="cfg-v">{{ config.get_modello_display }}</span>
+    </div>
+    <div class="cfg-stato-item">
+      <span class="cfg-k">Notifiche Teams</span>
+      {% if config.teams_abilitato and config.teams_webhook_url %}<span class="badge-ok"><i class="ti ti-bell-ringing"></i> Attive</span>
+      {% else %}<span class="badge-off"><i class="ti ti-bell-off"></i> Non attive</span>{% endif %}
     </div>
   </div>
 
@@ -71,6 +76,28 @@
       {{ form.prompt_sistema.errors }}
     </div>
 
+    <div class="cfg-sep"></div>
+    <div class="cfg-sezione"><i class="ti ti-bell-ringing"></i> Notifiche Teams</div>
+
+    <label class="cfg-toggle">
+      {{ form.teams_abilitato }}
+      <span><b>Invia notifiche su Microsoft Teams</b><small>Pubblica una scheda nel canale Teams a ogni cambio di stato selezionato. È opzionale: se disattivo o senza URL, non viene inviato nulla e il flusso funziona normalmente.</small></span>
+    </label>
+
+    <div class="cfg-field">
+      <label for="{{ form.teams_webhook_url.id_for_label }}">URL webhook Teams (Power Automate)</label>
+      {{ form.teams_webhook_url }}
+      <small class="cfg-help">Incolla l'URL del flusso «Pubblica su un canale quando viene ricevuta una richiesta webhook». Te lo fornisce chi crea il canale e l'automatismo in Teams.</small>
+      {{ form.teams_webhook_url.errors }}
+    </div>
+
+    <div class="cfg-field">
+      <label for="{{ form.teams_eventi.id_for_label }}">Quali cambi notificare</label>
+      {{ form.teams_eventi }}
+      <small class="cfg-help"><b>Solo importanti</b>: invio, approvazione, respinta, avvio progetto, completamento. <b>Tutti</b>: include anche presa in carico, richiesta di integrazione, presentazione per l'approvazione e passaggio a monitoraggio.</small>
+      {{ form.teams_eventi.errors }}
+    </div>
+
     <div class="cfg-actions">
       <button type="submit" class="btn btn-primario"><i class="ti ti-device-floppy"></i> Salva impostazioni</button>
       <button type="submit" class="btn" formaction="{% url 'flusso:prova_connessione_ai' %}"><i class="ti ti-plug-connected"></i> Prova connessione</button>
@@ -78,6 +105,6 @@
     </div>
   </form>
 
-  <p class="cfg-nota"><i class="ti ti-shield-lock"></i> La chiave non viene mai mostrata in chiaro in questa pagina. Per non salvarla nel database, lasciala vuota qui e imposta la variabile d'ambiente <code>ANTHROPIC_API_KEY</code>. Il test contatta <code>api.anthropic.com</code> in uscita.</p>
+  <p class="cfg-nota"><i class="ti ti-shield-lock"></i> La chiave non viene mai mostrata in chiaro in questa pagina. Per non salvarla nel database, lasciala vuota qui e imposta la variabile d'ambiente <code>ANTHROPIC_API_KEY</code>. Il test contatta <code>api.anthropic.com</code> in uscita. Le notifiche Teams, se attive, contattano in uscita l'endpoint Power Automate del flusso: il server on-prem deve poterlo raggiungere in HTTPS.</p>
 </div>
 {% endblock %}

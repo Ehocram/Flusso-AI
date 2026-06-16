@@ -23,6 +23,9 @@ class CreazioneUtenteForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["first_name"].required = True
         self.fields["last_name"].required = True
+        for f in self.fields.values():
+            css = f.widget.attrs.get("class", "")
+            f.widget.attrs["class"] = (css + " campo").strip()
 
     def save(self, commit=True):
         user = super().save(commit=False)

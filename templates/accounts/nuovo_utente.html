@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block titolo %}Nuovo utente · ISEO AI{% endblock %}
+{% block contenuto %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow"><a href="{% url 'accounts:utenti' %}" style="color:inherit">Utenti</a> · Nuovo</div>
+    <h1>Nuovo utente</h1>
+    <p>La password viene generata automaticamente e mostrata una sola volta dopo la creazione. L'utente dovrà cambiarla al primo accesso.</p>
+  </div>
+</div>
+
+<div class="card" style="max-width:680px;">
+  <form method="post">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="err" style="margin-bottom:10px;">{{ form.non_field_errors|striptags }}</div>{% endif %}
+
+    <div class="f-row" style="margin-bottom:14px;">
+      <label for="{{ form.username.id_for_label }}">{{ form.username.label }}</label>
+      {{ form.username }}
+      {% if form.username.help_text %}<div class="t-mut" style="margin-top:4px;">{{ form.username.help_text }}</div>{% endif %}
+      {% if form.username.errors %}<div class="err">{{ form.username.errors|striptags }}</div>{% endif %}
+    </div>
+
+    <div class="form-grid">
+      <div class="f-row">
+        <label for="{{ form.first_name.id_for_label }}">Nome</label>
+        {{ form.first_name }}
+        {% if form.first_name.errors %}<div class="err">{{ form.first_name.errors|striptags }}</div>{% endif %}
+      </div>
+      <div class="f-row">
+        <label for="{{ form.last_name.id_for_label }}">Cognome</label>
+        {{ form.last_name }}
+        {% if form.last_name.errors %}<div class="err">{{ form.last_name.errors|striptags }}</div>{% endif %}
+      </div>
+      <div class="f-row">
+        <label for="{{ form.ruolo.id_for_label }}">Ruolo</label>
+        {{ form.ruolo }}
+        {% if form.ruolo.errors %}<div class="err">{{ form.ruolo.errors|striptags }}</div>{% endif %}
+      </div>
+      <div class="f-row">
+        <label for="{{ form.funzione.id_for_label }}">Funzione</label>
+        {{ form.funzione }}
+        {% if form.funzione.help_text %}<div class="t-mut" style="margin-top:4px;">{{ form.funzione.help_text }}</div>{% endif %}
+        {% if form.funzione.errors %}<div class="err">{{ form.funzione.errors|striptags }}</div>{% endif %}
+      </div>
+      <div class="f-row">
+        <label for="{{ form.dipartimento.id_for_label }}">Dipartimento</label>
+        {{ form.dipartimento }}
+        {% if form.dipartimento.errors %}<div class="err">{{ form.dipartimento.errors|striptags }}</div>{% endif %}
+      </div>
+    </div>
+
+    <div class="form-actions" style="margin-top:16px;display:flex;gap:9px;">
+      <button type="submit" class="btn btn-primario"><i class="ti ti-user-plus"></i> Crea utente</button>
+      <a href="{% url 'accounts:utenti' %}" class="btn">Annulla</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

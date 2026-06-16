@@ -21,6 +21,7 @@ from django.views.decorators.http import require_POST
 from .forms import RichiestaForm, SalForm, AnalisiAIForm, ImpostazioniAIForm
 from .models import ConfigurazioneAI, PROMPT_SISTEMA_DEFAULT, Richiesta
 from .kpi import calcola_kpi
+from .notifiche import notifica_transizione
 from .ai_client import genera_analisi, prova_connessione
 from django.utils import timezone
 from .workflow import FASI, STATI_OPERATIVI, STATI_TERMINALI, Stato, azioni_disponibili, puo_eseguire, transizione
@@ -225,6 +226,7 @@ def esegui_azione(request, pk):
         return redirect(richiesta)
 
     evento = richiesta.applica(azione, attore=request.user, nota=nota)
+    notifica_transizione(request, richiesta, evento)
     messages.success(request, f"{evento.etichetta}: {richiesta.stato_label}.")
     return redirect(richiesta)
 
