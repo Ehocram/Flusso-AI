@@ -12,6 +12,7 @@ urlpatterns = [
     path("kpi/genera/", views.genera_analisi_kpi, name="genera_analisi_kpi"),
     path("kpi/impostazioni/", views.impostazioni_ai, name="impostazioni_ai"),
     path("kpi/impostazioni/prova/", views.prova_connessione_ai, name="prova_connessione_ai"),
+    path("rischio/", views.rischio, name="rischio"),
     path("richieste/nuova/", views.nuova, name="nuova"),
     path("richieste/<int:pk>/", views.dettaglio, name="dettaglio"),
     path("richieste/<int:pk>/modifica/", views.modifica, name="modifica"),
@@ -19,4 +20,6 @@ urlpatterns = [
     path("richieste/<int:pk>/azione/", views.esegui_azione, name="esegui_azione"),
     path("richieste/<int:pk>/analisi/", views.aggiorna_analisi, name="aggiorna_analisi"),
     path("richieste/<int:pk>/sal/", views.aggiorna_sal, name="aggiorna_sal"),
+    path("richieste/<int:pk>/rischio/analizza/", views.analizza_rischio, name="analizza_rischio"),
+    path("richieste/<int:pk>/rischio/<str:tipo>/valida/", views.valida_rischio, name="valida_rischio"),
 ]

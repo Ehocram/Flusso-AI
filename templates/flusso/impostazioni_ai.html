@@ -77,6 +77,29 @@
     </div>
 
     <div class="cfg-sep"></div>
+    <div class="cfg-sezione"><i class="ti ti-scale"></i> Classificazione del rischio (AI Act, NIS2, GDPR)</div>
+    <p class="cfg-help" style="margin:-6px 0 6px;">La classificazione usa lo stesso modello e la stessa chiave configurati sopra. È preliminare e va validata dai presìdi (Funzione Legale, CISO, DPO). Le tre dimensioni vengono generate all'import e alla presa in carico; la pagina «Rischio &amp; Conformità» ne dà la visione d'insieme.</p>
+
+    <div class="cfg-field">
+      <label for="{{ form.prompt_rischio_aiact.id_for_label }}">Istruzioni AI Act (validate dalla Funzione Legale)</label>
+      {{ form.prompt_rischio_aiact }}
+      <details class="cfg-details"><summary>Mostra le istruzioni predefinite</summary><p style="white-space:pre-wrap">{{ prompt_rischio_default.AIACT }}</p></details>
+      {{ form.prompt_rischio_aiact.errors }}
+    </div>
+    <div class="cfg-field">
+      <label for="{{ form.prompt_rischio_nis2.id_for_label }}">Istruzioni NIS2 (validate dal CISO)</label>
+      {{ form.prompt_rischio_nis2 }}
+      <details class="cfg-details"><summary>Mostra le istruzioni predefinite</summary><p style="white-space:pre-wrap">{{ prompt_rischio_default.NIS2 }}</p></details>
+      {{ form.prompt_rischio_nis2.errors }}
+    </div>
+    <div class="cfg-field">
+      <label for="{{ form.prompt_rischio_gdpr.id_for_label }}">Istruzioni GDPR (validate dal DPO)</label>
+      {{ form.prompt_rischio_gdpr }}
+      <details class="cfg-details"><summary>Mostra le istruzioni predefinite</summary><p style="white-space:pre-wrap">{{ prompt_rischio_default.GDPR }}</p></details>
+      {{ form.prompt_rischio_gdpr.errors }}
+    </div>
+
+    <div class="cfg-sep"></div>
     <div class="cfg-sezione"><i class="ti ti-bell-ringing"></i> Notifiche Teams</div>
 
     <label class="cfg-toggle">

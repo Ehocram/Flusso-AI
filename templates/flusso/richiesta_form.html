@@ -38,17 +38,18 @@
         {{ form.descrizione }}
         {% if form.descrizione.errors %}<div class="err">{{ form.descrizione.errors|striptags }}</div>{% endif %}
       </div>
-      <div class="f-row">
+      <div class="f-row full"><div class="metric-hint"><i class="ti ti-robot"></i> Se lasci vuoti «incremento qualitativo» ed «efficienza», li stima l'AI in base alla descrizione (sempre modificabili).</div></div>
+      <div class="f-row full metric">
         <label for="{{ form.saving_economico.id_for_label }}">Saving economico (€)</label>
-        {{ form.saving_economico }}
+        <div class="metric-row">{{ form.saving_economico }}{{ form.saving_economico_note }}</div>
       </div>
-      <div class="f-row">
+      <div class="f-row full metric">
         <label for="{{ form.incremento_qualitativo.id_for_label }}">Incremento qualitativo (%)</label>
-        {{ form.incremento_qualitativo }}
+        <div class="metric-row">{{ form.incremento_qualitativo }}{{ form.incremento_qualitativo_note }}</div>
       </div>
-      <div class="f-row">
+      <div class="f-row full metric">
         <label for="{{ form.incremento_efficienza.id_for_label }}">Incremento efficienza (%)</label>
-        {{ form.incremento_efficienza }}
+        <div class="metric-row">{{ form.incremento_efficienza }}{{ form.incremento_efficienza_note }}</div>
       </div>
     </div>
     <div class="form-actions">

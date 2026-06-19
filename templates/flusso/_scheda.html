@@ -35,14 +35,17 @@
     <div class="sav">
       <span class="lab">Saving economico</span>
       <span class="val {% if r.saving_economico_fmt is None %}tbd{% endif %}">{{ r.saving_economico_fmt|default:"—" }}</span>
+      {% if r.saving_economico_note %}<span class="sav-note">{{ r.saving_economico_note }}</span>{% endif %}
     </div>
     <div class="sav verde">
       <span class="lab">Incremento qualitativo</span>
       <span class="val">{{ r.incremento_qualitativo_fmt|default:"—" }}</span>
+      {% if r.incremento_qualitativo_note %}<span class="sav-note">{{ r.incremento_qualitativo_note }}</span>{% endif %}
     </div>
     <div class="sav verde">
       <span class="lab">Incremento efficienza</span>
       <span class="val">{{ r.incremento_efficienza_fmt|default:"—" }}</span>
+      {% if r.incremento_efficienza_note %}<span class="sav-note">{{ r.incremento_efficienza_note }}</span>{% endif %}
     </div>
   </div>
 

@@ -31,6 +31,12 @@ UTENTI = [
      Ruolo.APPROVATORE, "", "Direzione Generale", False, False),
     ("paolo.laini", "Paolo", "Laini", "paolo.laini@iseo.com",
      Ruolo.AUDITOR, "", "MS & ESG", False, False),
+    ("legale", "Funzione", "Legale", "legale@iseo.com",
+     Ruolo.LEGALE, "", "Affari Legali / Compliance", False, False),
+    ("ciso", "Funzione", "Sicurezza", "ciso@iseo.com",
+     Ruolo.CISO, "", "Information Security (NIS2)", False, False),
+    ("dpo", "Funzione", "Privacy", "dpo@iseo.com",
+     Ruolo.DPO, "", "Data Protection (GDPR)", False, False),
     ("owner.it", "Owner", "IT", "owner.it@iseo.com",
      Ruolo.OWNER, Funzione.IT, "Information Technology", False, False),
     ("owner.rnd", "Owner", "R&D", "owner.rnd@iseo.com",
@@ -57,36 +63,64 @@ class Command(BaseCommand):
         parser.add_argument("--file", default=str(importer.DEFAULT_XLSX), help="Percorso del file Excel.")
         parser.add_argument("--reset", action="store_true", help="Elimina le richieste prima di ricreare.")
         parser.add_argument("--solo-utenti", action="store_true", help="Crea/aggiorna solo gli utenti.")
+        parser.add_argument("--senza-ai", action="store_true",
+                            help="Non generare con l'AI rischi e stime (importa solo i dati).")
 
-    @transaction.atomic
     def handle(self, *args, **opt):
-        if opt["reset"]:
-            n = Richiesta.objects.count()
-            Richiesta.objects.all().delete()
-            self.stdout.write(self.style.WARNING(f"Eliminate {n} richieste esistenti."))
+        with transaction.atomic():
+            if opt["reset"]:
+                n = Richiesta.objects.count()
+                Richiesta.objects.all().delete()
+                self.stdout.write(self.style.WARNING(f"Eliminate {n} richieste esistenti."))
 
-        attori = self._crea_utenti(opt["password"])
-        self.stdout.write(self.style.SUCCESS(f"Utenti pronti: {len(attori)} (password «{opt['password']}» alla creazione)."))
-        self.stdout.write("  · marco.bonometti è superuser (accesso completo all'admin).")
+            attori = self._crea_utenti(opt["password"])
+            self.stdout.write(self.style.SUCCESS(f"Utenti pronti: {len(attori)} (password «{opt['password']}» alla creazione)."))
+            self.stdout.write("  · marco.bonometti è superuser (accesso completo all'admin).")
 
-        if opt["solo_utenti"]:
-            return
+            if opt["solo_utenti"]:
+                return
 
-        owner_per_funzione = {
-            Funzione.IT: attori["owner.it"], Funzione.RND: attori["owner.rnd"],
-            Funzione.SALES: attori["owner.sales"], Funzione.SUPPLY_CHAIN: attori["owner.sc"],
-            Funzione.HR: attori["owner.hr"], Funzione.OPERATIONS: attori["owner.ops"],
-            Funzione.FINANCE: attori["owner.finance"],
-        }
-        chiavi = {"ai": attori["marco.bonometti"], "appr": attori["approvatore"]}
+            owner_per_funzione = {
+                Funzione.IT: attori["owner.it"], Funzione.RND: attori["owner.rnd"],
+                Funzione.SALES: attori["owner.sales"], Funzione.SUPPLY_CHAIN: attori["owner.sc"],
+                Funzione.HR: attori["owner.hr"], Funzione.OPERATIONS: attori["owner.ops"],
+                Funzione.FINANCE: attori["owner.finance"],
+            }
+            chiavi = {"ai": attori["marco.bonometti"], "appr": attori["approvatore"]}
 
-        self.stdout.write("\nImporto i progetti dall'Excel:")
-        creati = importer.importa(owner_per_funzione, chiavi, path=opt["file"], log=self.stdout.write)
+            self.stdout.write("\nImporto i progetti dall'Excel:")
+            creati = importer.importa(owner_per_funzione, chiavi, path=opt["file"], log=self.stdout.write)
+            self.stdout.write(self.style.SUCCESS(f"\nCreate {creati} richieste dall'elenco."))
 
-        self.stdout.write(self.style.SUCCESS(f"\nCreate {creati} richieste dall'elenco."))
+        # Generazione AI fuori dalla transazione dati: stime incrementi + 3 classificazioni.
+        if not opt["senza_ai"]:
+            self._genera_ai(attori["marco.bonometti"])
+
         self.stdout.write(self.style.WARNING(
             "Dati reali, credenziali DIMOSTRATIVE: cambia le password prima dell'uso reale."
         ))
+
+    def _genera_ai(self, attore):
+        """All'import: per ogni richiesta stima gli incrementi mancanti + classifica i 3 rischi."""
+        from flusso import servizi
+        from flusso.models import ConfigurazioneAI
+
+        cfg = ConfigurazioneAI.load()
+        if not cfg.abilitato or not cfg.configurata:
+            self.stdout.write(self.style.WARNING(
+                "\nAnalisi AI non configurata: rischi e stime NON generati. "
+                "Configura chiave/abilitazione (o riesegui seed_demo) per generarli; "
+                "in alternativa usa le schede («Analizza le tre dimensioni con l'AI»)."))
+            return
+        richieste = list(Richiesta.objects.order_by("numero"))
+        self.stdout.write(f"\nGenero stime e classificazioni di rischio con l'AI per {len(richieste)} progetti…")
+        for r in richieste:
+            esito = servizi.genera_tutto(r, attore=attore)
+            self.stdout.write(
+                f"  · {r.codice}: incrementi={'sì' if esito['incrementi'] else 'no'}, "
+                f"rischi ok={esito['rischi_ok']}/3"
+                + (f", errori={list(esito['rischi_errori'])}" if esito['rischi_errori'] else ""))
+        self.stdout.write(self.style.SUCCESS("Generazione AI completata."))
 
     def _crea_utenti(self, pwd):
         """Crea gli utenti mancanti e allinea i campi di quelli esistenti."""

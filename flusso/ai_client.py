@@ -120,3 +120,159 @@ def genera_analisi(kpi: dict, config) -> tuple[str | None, str | None]:
                       "Verificare l'uscita HTTPS verso api.anthropic.com.")
     except Exception as e:  # pragma: no cover
         return None, f"Errore imprevisto: {e}"
+
+
+# =============================================================================
+# Classificazione del rischio (AI Act, NIS2, GDPR) e stima incrementi — via Claude
+# =============================================================================
+
+RISCHIO_TIMEOUT = 45
+
+
+def _estrai_json(testo: str):
+    """Estrae il primo oggetto JSON da una risposta del modello (robusto ai backtick)."""
+    import re
+    t = (testo or "").strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z]*\n?", "", t)
+        t = re.sub(r"\n?```$", "", t).strip()
+    try:
+        return json.loads(t)
+    except Exception:
+        pass
+    m = re.search(r"\{.*\}", t, re.S)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:
+            return None
+    return None
+
+
+def _descrizione_progetto(richiesta) -> str:
+    righe = [
+        f"Funzione aziendale richiedente: {richiesta.get_funzione_display()}",
+        f"Titolo: {richiesta.titolo}",
+    ]
+    if richiesta.tipo_soluzione:
+        righe.append(f"Tipo di soluzione: {richiesta.tipo_soluzione}")
+    righe.append(f"Descrizione: {richiesta.descrizione}")
+    return "\n".join(righe)
+
+
+def _chiama_modello(config, system, contenuto, max_tokens, timeout):
+    """Chiamata POST a Claude. Ritorna (data_dict, None) o (None, errore)."""
+    chiave = config.chiave_effettiva()
+    if not chiave:
+        return None, "API key non configurata."
+    if not config.modello:
+        return None, "Nessun modello selezionato."
+    payload = {
+        "model": config.modello,
+        "max_tokens": max_tokens,
+        "system": system,
+        "messages": [{"role": "user", "content": contenuto}],
+    }
+    req = urllib.request.Request(
+        API_URL, data=json.dumps(payload).encode("utf-8"), method="POST",
+        headers={"content-type": "application/json", "x-api-key": chiave,
+                 "anthropic-version": ANTHROPIC_VERSION},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8")), None
+    except urllib.error.HTTPError as e:
+        try:
+            err = json.loads(e.read().decode("utf-8"))
+            msg = err.get("error", {}).get("message", f"HTTP {e.code}")
+        except Exception:
+            msg = f"HTTP {e.code}"
+        return None, f"Errore API ({e.code}): {msg}"
+    except urllib.error.URLError as e:
+        return None, (f"Connessione non riuscita: {e.reason}. "
+                      "Verificare l'uscita HTTPS verso api.anthropic.com.")
+    except Exception as e:  # pragma: no cover
+        return None, f"Errore imprevisto: {e}"
+
+
+def _testo_risposta(data) -> str:
+    parti = [b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"]
+    return "\n".join(p for p in parti if p).strip()
+
+
+def classifica_rischio(richiesta, config, tipo) -> tuple[dict | None, str | None]:
+    """Classificazione PRELIMINARE di UNA dimensione di rischio (AI Act, NIS2, GDPR).
+
+    Usa la stessa configurazione (chiave + modello) della lettura KPI e il prompt
+    della dimensione richiesta. Ritorna ({'categoria','motivazione','riferimenti',
+    'obblighi','modello'}, None) in caso di successo, oppure (None, errore).
+    """
+    from .models import categorie_valide  # evita import circolari a livello di modulo
+
+    valide = categorie_valide(tipo)
+    if not valide:
+        return None, f"Tipo di rischio sconosciuto: {tipo}."
+    system = config.prompt_rischio_effettivo(tipo)
+    contenuto = ("Classifica il rischio del seguente progetto e rispondi solo con il JSON richiesto.\n\n"
+                 + _descrizione_progetto(richiesta))
+    data, errore = _chiama_modello(config, system, contenuto, 800, RISCHIO_TIMEOUT)
+    if errore:
+        return None, errore
+    obj = _estrai_json(_testo_risposta(data))
+    if not isinstance(obj, dict):
+        return None, "Risposta del modello non interpretabile come JSON."
+    categoria = str(obj.get("categoria", "")).strip().upper()
+    if categoria not in valide:
+        return None, f"Categoria non valida per {tipo}: «{obj.get('categoria')}»."
+    audit.info("rischio_ai richiesta=%s tipo=%s categoria=%s modello=%s token_out=%s",
+               getattr(richiesta, "codice", "?"), tipo, categoria, config.modello,
+               data.get("usage", {}).get("output_tokens", "?"))
+    return {
+        "categoria": categoria,
+        "motivazione": str(obj.get("motivazione", "")).strip(),
+        "riferimenti": str(obj.get("riferimenti", "")).strip()[:300],
+        "obblighi": str(obj.get("obblighi", "")).strip(),
+        "modello": config.modello,
+    }, None
+
+
+PROMPT_INCREMENTI = (
+    "Sei un analista che stima i ritorni ATTESI di un progetto di AI per ISEO Group "
+    "(produttore di sistemi di chiusura e controllo accessi). In base alla descrizione, "
+    "stima due percentuali realistiche e prudenti: l'incremento di EFFICIENZA e l'incremento "
+    "di QUALITA' che il progetto puo' portare al processo interessato. Usa valori interi 0-100; "
+    "se un incremento non e' plausibile usa 0. Non essere ottimista: sono stime preliminari, "
+    "modificabili dall'owner.\n"
+    "Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e senza "
+    'backtick, con ESATTAMENTE queste chiavi: {"efficienza": <numero 0-100>, "qualita": <numero 0-100>}'
+)
+
+
+def stima_incrementi(richiesta, config) -> tuple[dict | None, str | None]:
+    """Stima preliminare di incremento efficienza/qualita' (%). Via Claude.
+
+    Ritorna ({'efficienza': float|None, 'qualita': float|None, 'modello': str}, None)
+    oppure (None, errore).
+    """
+    contenuto = ("Stima gli incrementi del seguente progetto e rispondi solo con il JSON richiesto.\n\n"
+                 + _descrizione_progetto(richiesta))
+    data, errore = _chiama_modello(config, PROMPT_INCREMENTI, contenuto, 200, RISCHIO_TIMEOUT)
+    if errore:
+        return None, errore
+    obj = _estrai_json(_testo_risposta(data))
+    if not isinstance(obj, dict):
+        return None, "Risposta del modello non interpretabile come JSON."
+
+    def _pct(v):
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            return None
+        return max(0.0, min(100.0, round(x, 1)))
+
+    eff, qual = _pct(obj.get("efficienza")), _pct(obj.get("qualita"))
+    if eff is None and qual is None:
+        return None, "Nessun valore numerico valido nella risposta."
+    audit.info("incrementi_ai richiesta=%s eff=%s qual=%s modello=%s",
+               getattr(richiesta, "codice", "?"), eff, qual, config.modello)
+    return {"efficienza": eff, "qualita": qual, "modello": config.modello}, None

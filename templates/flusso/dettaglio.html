@@ -94,6 +94,69 @@
       {% endif %}
     </div>
 
+    <div class="card rischio-card" style="margin-top:18px;">
+      <div class="rischio-cardhead">
+        <h2><i class="ti ti-scale" style="vertical-align:-2px;color:var(--rosso)"></i> Rischio &amp; Conformità
+          <span class="sub">classificazione preliminare · da validare dai presìdi</span></h2>
+        <span class="rk-conta {% if richiesta.rischi_tutti_validati %}ok{% endif %}"><i class="ti ti-clipboard-check"></i> Validazioni {{ richiesta.rischi_validati_n }}/3</span>
+      </div>
+
+      {% if blocco_approvazione %}
+      <div class="msg msg-info" style="margin:10px 0 4px;"><i class="ti ti-alert-triangle"></i>
+        Per presentare alla Direzione servono le tre validazioni di rischio (AI Act → Funzione Legale, NIS2 → CISO, GDPR → DPO).{% if rischi_mancanti %} Mancano: <b>{{ rischi_mancanti }}</b>.{% endif %}</div>
+      {% endif %}
+
+      {% for d in rischi %}
+      <div class="rk-dim">
+        <div class="rk-dim-top">
+          <span class="rk-dim-tit">{{ d.c.get_tipo_display }}</span>
+          <span class="rk {{ d.c.categoria_css }}">{{ d.c.categoria_label }}</span>
+          {% if d.c.stato == 'VALIDATO' %}<span class="rk-stato rks-ok"><i class="ti ti-gavel"></i> Validato · {{ d.c.validatore_label }}</span>
+          {% elif d.c.stato == 'MODIFICATO' %}<span class="rk-stato rks-mod"><i class="ti ti-gavel"></i> Modificato · {{ d.c.validatore_label }}</span>
+          {% elif d.c.stato == 'PROPOSTO_AI' %}<span class="rk-stato rks-att"><i class="ti ti-robot"></i> Da validare ({{ d.c.validatore_label }})</span>
+          {% else %}<span class="rk-stato rks-nd">Da analizzare</span>{% endif %}
+        </div>
+
+        {% if d.c.difforme %}
+        <div class="msg msg-info" style="margin:8px 0;"><i class="ti ti-alert-triangle"></i>
+          L'AI ora propone <b>{{ d.c.ai_label }}</b>, diverso dal valore validato. Il presidio può rivedere la decisione.</div>
+        {% endif %}
+
+        {% if d.c.motivazione %}<p class="rischio-mot">{{ d.c.motivazione }}</p>{% endif %}
+        <div class="rischio-grid">
+          {% if d.c.riferimenti %}<div class="dato"><span class="lab">Riferimenti</span><span class="val">{{ d.c.riferimenti }}</span></div>{% endif %}
+          {% if d.c.obblighi %}<div class="dato"><span class="lab">Obblighi derivati</span><span class="val">{{ d.c.obblighi }}</span></div>{% endif %}
+        </div>
+        <div class="t-mut" style="margin-top:8px;">
+          {% if d.c.ai_il %}<i class="ti ti-robot" style="vertical-align:-2px;"></i> Stima AI{% if d.c.ai_modello %} ({{ d.c.ai_modello }}){% endif %} del {{ d.c.ai_il|date:"d/m/Y H:i" }}{% endif %}
+          {% if d.c.validato %} · <i class="ti ti-gavel" style="vertical-align:-2px;"></i> {{ d.c.validato_da.get_full_name|default:d.c.validato_da.username }} il {{ d.c.validato_il|date:"d/m/Y H:i" }}{% endif %}
+        </div>
+        {% if d.c.nota_validatore %}<div class="t-nota" style="margin-top:6px;">Nota {{ d.c.validatore_label }}: {{ d.c.nota_validatore }}</div>{% endif %}
+
+        {% if d.form %}
+        <form method="post" action="{% url 'flusso:valida_rischio' richiesta.pk d.c.tipo %}" class="rk-valida">
+          {% csrf_token %}
+          <div class="rk-valida-row">
+            <div class="f-row"><label for="{{ d.form.categoria.id_for_label }}">Categoria</label>{{ d.form.categoria }}</div>
+            <div class="f-row"><label for="{{ d.form.nota.id_for_label }}">Nota</label>{{ d.form.nota }}</div>
+          </div>
+          <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.form.motivazione.id_for_label }}">Motivazione (opzionale)</label>{{ d.form.motivazione }}</div>
+          <button type="submit" class="btn btn-positivo btn-sm"><i class="ti ti-check"></i> Conferma {{ d.c.get_tipo_display }}</button>
+          <span class="t-mut" style="margin-left:8px;">Conferma = validato; categoria diversa = modificato.</span>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      {% if puo_analizza_rischio %}
+      <form method="post" action="{% url 'flusso:analizza_rischio' richiesta.pk %}" style="margin-top:14px;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm"><i class="ti ti-robot"></i> Analizza le tre dimensioni con l'AI</button>
+        <span class="t-mut" style="margin-left:8px;">La descrizione del progetto viene inviata a Claude.</span>
+      </form>
+      {% endif %}
+    </div>
+
     <div class="card" style="margin-top:18px;">
       <h2><i class="ti ti-history" style="vertical-align:-2px;color:var(--rosso)"></i> Audit trail</h2>
       <ul class="timeline">
