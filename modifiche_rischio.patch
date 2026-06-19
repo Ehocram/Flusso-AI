@@ -1,0 +1,310 @@
+diff --git a/flusso/ai_client.py b/flusso/ai_client.py
+index 02bfb2c..86c75f1 100644
+--- a/flusso/ai_client.py
++++ b/flusso/ai_client.py
+@@ -227,11 +227,16 @@ def classifica_rischio(richiesta, config, tipo) -> tuple[dict | None, str | None
+     audit.info("rischio_ai richiesta=%s tipo=%s categoria=%s modello=%s token_out=%s",
+                getattr(richiesta, "codice", "?"), tipo, categoria, config.modello,
+                data.get("usage", {}).get("output_tokens", "?"))
++    obblighi_raw = obj.get("obblighi", "")
++    if isinstance(obblighi_raw, (list, tuple)):
++        obblighi = "\n".join(str(x).strip() for x in obblighi_raw if str(x).strip())
++    else:
++        obblighi = str(obblighi_raw).strip()
+     return {
+         "categoria": categoria,
+         "motivazione": str(obj.get("motivazione", "")).strip(),
+         "riferimenti": str(obj.get("riferimenti", "")).strip()[:300],
+-        "obblighi": str(obj.get("obblighi", "")).strip(),
++        "obblighi": obblighi,
+         "modello": config.modello,
+     }, None
+ 
+diff --git a/flusso/forms.py b/flusso/forms.py
+index 8655e60..e827d1f 100644
+--- a/flusso/forms.py
++++ b/flusso/forms.py
+@@ -148,6 +148,11 @@ class ValidazioneRischioForm(forms.Form):
+         required=False, label="Motivazione (opzionale)",
+         widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Lascia vuoto per mantenere la motivazione dell'AI."}),
+     )
++    obblighi = forms.CharField(
++        required=False, label="Obblighi e misure di trattamento",
++        widget=forms.Textarea(attrs={"rows": 4, "placeholder": "Una misura per riga. Vuoto = mantiene le misure proposte dall'AI."}),
++        help_text="Una voce per riga: misure e adempimenti con cui il presidio tratta il rischio.",
++    )
+     nota = forms.CharField(
+         required=False, max_length=300, label="Nota del presidio",
+         widget=forms.TextInput(attrs={"placeholder": "Es. confermato dopo verifica interna."}),
+diff --git a/flusso/models.py b/flusso/models.py
+index 69d2848..47dd4ad 100644
+--- a/flusso/models.py
++++ b/flusso/models.py
+@@ -63,6 +63,42 @@ CATEGORIE_RISCHIO = {
+ # Ruolo (processo) che valida/modifica ciascuna dimensione.
+ RUOLO_VALIDATORE = {"AIACT": "LEGALE", "NIS2": "CISO", "GDPR": "DPO"}
+ ETICHETTA_VALIDATORE = {"AIACT": "Funzione Legale", "NIS2": "CISO", "GDPR": "DPO"}
++# Mappa inversa: ruolo del presidio -> dimensione di rischio di sua competenza.
++DIMENSIONE_PER_RUOLO = {ruolo: dim for dim, ruolo in RUOLO_VALIDATORE.items()}
++
++
++def obblighi_in_voci(testo) -> list:
++    """Normalizza il campo `obblighi` in un elenco pulito di voci.
++
++    Accetta indifferentemente: un array JSON, la repr di una lista Python
++    (compatibilita' con dati storici salvati come str(list)), oppure testo con
++    voci separate da a-capo o ';'. Rimuove marcatori iniziali e voci vuote.
++    """
++    import ast
++    import json
++    import re
++
++    t = (testo or "").strip()
++    if not t:
++        return []
++    voci = None
++    if t[0] in "[(":
++        for parser in (json.loads, ast.literal_eval):
++            try:
++                val = parser(t)
++            except Exception:
++                continue
++            if isinstance(val, (list, tuple)):
++                voci = [str(x) for x in val]
++                break
++    if voci is None:
++        voci = re.split(r"[\n;]+", t)
++    out = []
++    for v in voci:
++        v = re.sub(r"^[\s\-\u2022\u00b7\*]+", "", str(v)).strip()
++        if v:
++            out.append(v)
++    return out
+ 
+ _CSS_AIACT = {"VIETATO": "rk-vietato", "ALTO": "rk-alto", "LIMITATO": "rk-limitato", "MINIMO": "rk-minimo"}
+ _CSS_LIVELLO = {"ALTO": "rk-vietato", "MEDIO": "rk-alto", "BASSO": "rk-minimo", "NA": "rk-nd"}
+@@ -504,6 +540,11 @@ class ClassificazioneRischio(models.Model):
+     def ruolo_validatore(self) -> str:
+         return RUOLO_VALIDATORE.get(self.tipo, "")
+ 
++    @property
++    def obblighi_voci(self) -> list:
++        """Elenco pulito delle misure/obblighi di trattamento (robusto ai dati storici)."""
++        return obblighi_in_voci(self.obblighi)
++
+     @transaction.atomic
+     def applica_ai(self, categoria, motivazione="", riferimenti="", obblighi="", modello="", attore=None):
+         """Registra la proposta dell'AI; non sovrascrive una decisione già presa dal presidio."""
+@@ -529,8 +570,12 @@ class ClassificazioneRischio(models.Model):
+         return self
+ 
+     @transaction.atomic
+-    def valida(self, categoria, attore, nota="", motivazione=None):
+-        """Il presidio competente conferma (validato) o cambia categoria (modificato)."""
++    def valida(self, categoria, attore, nota="", motivazione=None, obblighi=None):
++        """Il presidio competente conferma (validato) o cambia categoria (modificato).
++
++        Puo' anche rifinire il trattamento del rischio (misure/obblighi): se
++        `obblighi` e' valorizzato, sostituisce le misure proposte dall'AI.
++        """
+         categoria = str(categoria)
+         modificato = bool(self.ai_categoria) and categoria != self.ai_categoria
+         if not self.ai_categoria and categoria != self.categoria:
+@@ -538,6 +583,8 @@ class ClassificazioneRischio(models.Model):
+         self.categoria = categoria
+         if motivazione is not None and motivazione.strip():
+             self.motivazione = motivazione.strip()
++        if obblighi is not None and obblighi.strip():
++            self.obblighi = obblighi.strip()
+         self.nota_validatore = nota or ""
+         self.stato = StatoRischio.MODIFICATO if modificato else StatoRischio.VALIDATO
+         self.validato_da = attore
+@@ -590,7 +637,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
+ - "categoria": uno tra "VIETATO", "ALTO", "LIMITATO", "MINIMO"
+ - "motivazione": 1-3 frasi in italiano che spiegano la classificazione riferendosi al caso d'uso
+ - "riferimenti": articolo o allegato pertinente (es. "Allegato III, punto 4" oppure "Art. 50")
+-- "obblighi": elenco sintetico degli obblighi derivati (es. DPIA/FRIA, registrazione UE, sorveglianza umana, informativa agli interessati); per la categoria MINIMO indica che non vi sono obblighi specifici oltre ai principi generali e al GDPR.
++- "obblighi": array JSON di 3-6 stringhe brevi, ciascuna una misura concreta e attuabile di trattamento del rischio, formulata in modo professionale e specifica per il caso (es. "Condurre una DPIA/FRIA prima del rilascio", "Predisporre una sorveglianza umana effettiva sull'output", "Registrare il sistema nella banca dati UE se richiesto", "Fornire un'informativa chiara agli interessati"); per la categoria MINIMO usa un'unica voce che non vi sono obblighi specifici oltre ai principi generali e al GDPR.
+ 
+ La classificazione è preliminare e dovrà essere validata dalla Funzione Legale."""
+ 
+@@ -608,7 +655,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
+ - "categoria": uno tra "ALTO", "MEDIO", "BASSO", "NA"
+ - "motivazione": 1-3 frasi in italiano riferite al caso d'uso
+ - "riferimenti": riferimento pertinente (es. "Art. 21 — misure di gestione del rischio" o "Art. 23 — notifica incidenti")
+-- "obblighi": elenco sintetico delle misure/obblighi che ne derivano; per "NA" indica che non vi sono obblighi NIS2 specifici.
++- "obblighi": array JSON di 3-6 stringhe brevi, ciascuna una misura concreta e attuabile di trattamento del rischio, formulata in modo professionale e specifica per il caso (es. "Definire misure di gestione del rischio ex art. 21", "Predisporre il processo di rilevamento e notifica degli incidenti", "Valutare la sicurezza della catena di fornitura coinvolta", "Applicare controllo accessi, segmentazione e cifratura"); per "NA" usa un'unica voce che non vi sono obblighi NIS2 specifici.
+ 
+ La classificazione è preliminare e dovrà essere validata dal CISO."""
+ 
+@@ -626,7 +673,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
+ - "categoria": uno tra "ALTO", "MEDIO", "BASSO", "NA"
+ - "motivazione": 1-3 frasi in italiano riferite al caso d'uso
+ - "riferimenti": riferimento pertinente (es. "Art. 35 — DPIA", "Art. 9 — categorie particolari", "Art. 6 — base giuridica")
+-- "obblighi": elenco sintetico degli obblighi che ne derivano (es. base giuridica, informativa, DPIA, minimizzazione); per "NA" indica che non vi sono obblighi GDPR specifici.
++- "obblighi": array JSON di 3-6 stringhe brevi, ciascuna una misura concreta e attuabile di trattamento del rischio, formulata in modo professionale e specifica per il caso (es. "Individuare e documentare la base giuridica del trattamento", "Aggiornare il Registro dei trattamenti (art. 30)", "Applicare la minimizzazione e limitare l'accesso ai soli autorizzati", "Garantire misure di sicurezza adeguate, quali controllo accessi e cifratura"); per "NA" usa un'unica voce che non vi sono obblighi GDPR specifici.
+ 
+ La classificazione è preliminare e dovrà essere validata dal DPO."""
+ 
+diff --git a/flusso/views.py b/flusso/views.py
+index 462f4f0..b20f4e6 100644
+--- a/flusso/views.py
++++ b/flusso/views.py
+@@ -23,7 +23,9 @@ from . import servizi
+ from .ai_client import genera_analisi, prova_connessione
+ from .forms import AnalisiAIForm, ImpostazioniAIForm, RichiestaForm, SalForm, ValidazioneRischioForm
+ from .kpi import calcola_kpi
+-from .models import ConfigurazioneAI, PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta, TipoRischio
++from .models import (ClassificazioneRischio, ConfigurazioneAI, DIMENSIONE_PER_RUOLO,
++                     PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
++                     StatoRischio, TipoRischio)
+ from .notifiche import notifica_transizione
+ from .workflow import FASI, STATI_OPERATIVI, STATI_TERMINALI, Stato, azioni_disponibili, puo_eseguire, transizione
+ 
+@@ -39,9 +41,14 @@ def _richieste_visibili(utente):
+ 
+ 
+ def _puo_validare(utente, tipo) -> bool:
+-    """True se l'utente è il presidio competente per quella dimensione di rischio."""
+-    if utente.is_superuser:
+-        return True
++    """True SOLO se l'utente è il presidio competente per quella dimensione.
++
++    Separazione dei compiti: validare il rischio è un atto di governance legato
++    al ruolo (Funzione Legale → AI Act, CISO → NIS2, DPO → GDPR), non un
++    privilegio amministrativo. La Funzione AI (che è superuser per gestire
++    l'applicazione) e ogni altro superuser NON possono quindi validare al posto
++    del presidio: la validazione resta sempre dei tre presìdi competenti.
++    """
+     return {"AIACT": utente.is_legale, "NIS2": utente.is_ciso, "GDPR": utente.is_dpo}.get(tipo, False)
+ 
+ 
+@@ -69,10 +76,25 @@ def dashboard(request):
+ 
+     da_fare = [r for r in qs if azioni_disponibili(r, request.user)]
+ 
++    # Presidio (Legale/CISO/DPO): rischi della propria dimensione in attesa di validazione.
++    rischi_da_validare, dimensione_presidio = [], ""
++    if request.user.is_validatore_rischio:
++        dim = DIMENSIONE_PER_RUOLO.get(request.user.ruolo)
++        if dim:
++            dimensione_presidio = dict(TipoRischio.choices).get(dim, dim)
++            rischi_da_validare = list(
++                ClassificazioneRischio.objects
++                .filter(tipo=dim, stato=StatoRischio.PROPOSTO_AI)
++                .select_related("richiesta", "richiesta__proponente")
++                .order_by("richiesta__numero")
++            )
++
+     return render(request, "flusso/dashboard.html", {
+         "totale": totale, "aperte": aperte, "attivi": attivi,
+         "conteggio_fasi": conteggio_fasi, "distribuzione": distribuzione,
+         "max_funzione": max_funzione, "da_fare": da_fare[:8], "da_fare_totale": len(da_fare),
++        "rischi_da_validare": rischi_da_validare, "dimensione_presidio": dimensione_presidio,
++        "rischi_da_validare_n": len(rischi_da_validare),
+     })
+ 
+ 
+@@ -136,7 +158,8 @@ def dettaglio(request, pk):
+         form = None
+         if _puo_validare(request.user, c.tipo):
+             form = ValidazioneRischioForm(tipo=c.tipo, initial={
+-                "categoria": c.categoria or c.ai_categoria or None})
++                "categoria": c.categoria or c.ai_categoria or None,
++                "obblighi": "\n".join(c.obblighi_voci)})
+         rischi.append({"c": c, "form": form})
+     blocco_approvazione = richiesta.stato == Stato.IN_QUALIFICA and not richiesta.rischi_tutti_validati
+     if blocco_approvazione:
+@@ -445,6 +468,7 @@ def valida_rischio(request, pk, tipo):
+         classificazione.valida(
+             form.cleaned_data["categoria"], attore=request.user,
+             nota=form.cleaned_data["nota"], motivazione=form.cleaned_data["motivazione"],
++            obblighi=form.cleaned_data.get("obblighi"),
+         )
+         verbo = "modificato" if classificazione.stato == "MODIFICATO" else "validato"
+         messages.success(request, f"Rischio {_NOMI_RISCHIO[tipo]} {verbo}: {classificazione.categoria_label}.")
+diff --git a/static/css/app.css b/static/css/app.css
+index 98ea3e4..3215ffa 100644
+--- a/static/css/app.css
++++ b/static/css/app.css
+@@ -533,6 +533,11 @@ body.auth { background: #080a10; overflow-x: hidden; }
+ .rischio-mot { font-size:13.5px; color:var(--testo-2); margin:12px 0 10px; white-space:pre-line; }
+ .rischio-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+ @media (max-width:560px){ .rischio-grid { grid-template-columns:1fr; } }
++.rischio-misure-wrap { margin-top:10px; }
++.rischio-misure-wrap > .lab { font-size:10px; font-weight:700; letter-spacing:.02em; color:var(--testo-3); text-transform:uppercase; display:block; margin-bottom:6px; }
++.rischio-misure { margin:0; padding:0; list-style:none; display:grid; gap:6px; }
++.rischio-misure li { position:relative; padding:7px 12px 7px 30px; background:#f7f8f9; border-radius:9px; font-size:13.5px; line-height:1.4; color:var(--inchiostro); }
++.rischio-misure li::before { content:""; position:absolute; left:12px; top:13px; width:7px; height:7px; border-radius:50%; background:var(--rosso); }
+ .rischio-legale { margin-top:16px; padding-top:14px; border-top:1px dashed var(--bordo-2); }
+ .rischio-legale-tit { font-size:13px; font-weight:700; color:var(--testo-2); margin-bottom:10px; display:flex; align-items:center; gap:7px; }
+ .rischio-legale-tit .ti { color:var(--rosso); }
+diff --git a/templates/flusso/dashboard.html b/templates/flusso/dashboard.html
+index 1b27c7d..f4fe33f 100644
+--- a/templates/flusso/dashboard.html
++++ b/templates/flusso/dashboard.html
+@@ -17,6 +17,28 @@
+   <div class="kpi"><div class="n">{{ da_fare_totale }}</div><div class="l">In attesa di una tua azione</div></div>
+ </div>
+ 
++{% if dimensione_presidio %}
++<div class="card" style="margin-bottom:16px;border-left:3px solid var(--rosso);">
++  <h2><i class="ti ti-gavel" style="vertical-align:-2px;color:var(--rosso)"></i> Da validare — {{ dimensione_presidio }} <span class="sub">— rischi in attesa della tua validazione o trattamento</span></h2>
++  {% if rischi_da_validare %}
++  <div class="todo-list">
++    {% for c in rischi_da_validare %}
++    <a href="{{ c.richiesta.get_absolute_url }}#rischio" class="todo-item">
++      <span class="scheda-icona {{ c.richiesta.funzione|classe_funzione }}" style="width:32px;height:32px;font-size:16px;"><i class="ti {{ c.richiesta.funzione|icona_funzione }}"></i></span>
++      <span class="ti-corpo">
++        <span class="t-tit">{{ c.richiesta.codice }} · {{ c.richiesta.titolo }}</span>
++        <span class="t-sub">{{ c.richiesta.get_funzione_display }} · proposta AI: <b>{{ c.ai_label }}</b></span>
++      </span>
++      <span class="rk-stato rks-att"><i class="ti ti-robot"></i> Da validare</span>
++    </a>
++    {% endfor %}
++  </div>
++  {% else %}
++  <div class="vuoto"><i class="ti ti-circle-check" style="font-size:22px;display:block;margin-bottom:6px;color:var(--ok)"></i>Nessun rischio in attesa della tua validazione.</div>
++  {% endif %}
++</div>
++{% endif %}
++
+ <div class="cols-2">
+   <div class="card">
+     <h2><i class="ti ti-checklist" style="vertical-align:-2px;color:var(--rosso)"></i> Da gestire <span class="sub">— richiedono un'azione del tuo ruolo</span></h2>
+diff --git a/templates/flusso/dettaglio.html b/templates/flusso/dettaglio.html
+index ea8a524..62c66e7 100644
+--- a/templates/flusso/dettaglio.html
++++ b/templates/flusso/dettaglio.html
+@@ -94,7 +94,7 @@
+       {% endif %}
+     </div>
+ 
+-    <div class="card rischio-card" style="margin-top:18px;">
++    <div class="card rischio-card" id="rischio" style="margin-top:18px;">
+       <div class="rischio-cardhead">
+         <h2><i class="ti ti-scale" style="vertical-align:-2px;color:var(--rosso)"></i> Rischio &amp; Conformità
+           <span class="sub">classificazione preliminare · da validare dai presìdi</span></h2>
+@@ -125,8 +125,13 @@
+         {% if d.c.motivazione %}<p class="rischio-mot">{{ d.c.motivazione }}</p>{% endif %}
+         <div class="rischio-grid">
+           {% if d.c.riferimenti %}<div class="dato"><span class="lab">Riferimenti</span><span class="val">{{ d.c.riferimenti }}</span></div>{% endif %}
+-          {% if d.c.obblighi %}<div class="dato"><span class="lab">Obblighi derivati</span><span class="val">{{ d.c.obblighi }}</span></div>{% endif %}
+         </div>
++        {% if d.c.obblighi_voci %}
++        <div class="rischio-misure-wrap">
++          <span class="lab">Obblighi e misure di trattamento</span>
++          <ul class="rischio-misure">{% for voce in d.c.obblighi_voci %}<li>{{ voce }}</li>{% endfor %}</ul>
++        </div>
++        {% endif %}
+         <div class="t-mut" style="margin-top:8px;">
+           {% if d.c.ai_il %}<i class="ti ti-robot" style="vertical-align:-2px;"></i> Stima AI{% if d.c.ai_modello %} ({{ d.c.ai_modello }}){% endif %} del {{ d.c.ai_il|date:"d/m/Y H:i" }}{% endif %}
+           {% if d.c.validato %} · <i class="ti ti-gavel" style="vertical-align:-2px;"></i> {{ d.c.validato_da.get_full_name|default:d.c.validato_da.username }} il {{ d.c.validato_il|date:"d/m/Y H:i" }}{% endif %}
+@@ -141,6 +146,7 @@
+             <div class="f-row"><label for="{{ d.form.nota.id_for_label }}">Nota</label>{{ d.form.nota }}</div>
+           </div>
+           <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.form.motivazione.id_for_label }}">Motivazione (opzionale)</label>{{ d.form.motivazione }}</div>
++          <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.form.obblighi.id_for_label }}">Obblighi e misure di trattamento</label>{{ d.form.obblighi }}<span class="t-mut" style="display:block;margin-top:4px;">Una misura per riga. Vuoto = mantiene le misure proposte dall'AI.</span></div>
+           <button type="submit" class="btn btn-positivo btn-sm"><i class="ti ti-check"></i> Conferma {{ d.c.get_tipo_display }}</button>
+           <span class="t-mut" style="margin-left:8px;">Conferma = validato; categoria diversa = modificato.</span>
+         </form>

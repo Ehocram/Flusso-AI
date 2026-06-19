@@ -227,11 +227,16 @@ def classifica_rischio(richiesta, config, tipo) -> tuple[dict | None, str | None
     audit.info("rischio_ai richiesta=%s tipo=%s categoria=%s modello=%s token_out=%s",
                getattr(richiesta, "codice", "?"), tipo, categoria, config.modello,
                data.get("usage", {}).get("output_tokens", "?"))
+    obblighi_raw = obj.get("obblighi", "")
+    if isinstance(obblighi_raw, (list, tuple)):
+        obblighi = "\n".join(str(x).strip() for x in obblighi_raw if str(x).strip())
+    else:
+        obblighi = str(obblighi_raw).strip()
     return {
         "categoria": categoria,
         "motivazione": str(obj.get("motivazione", "")).strip(),
         "riferimenti": str(obj.get("riferimenti", "")).strip()[:300],
-        "obblighi": str(obj.get("obblighi", "")).strip(),
+        "obblighi": obblighi,
         "modello": config.modello,
     }, None
 

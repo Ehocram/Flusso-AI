@@ -148,6 +148,11 @@ class ValidazioneRischioForm(forms.Form):
         required=False, label="Motivazione (opzionale)",
         widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Lascia vuoto per mantenere la motivazione dell'AI."}),
     )
+    obblighi = forms.CharField(
+        required=False, label="Obblighi e misure di trattamento",
+        widget=forms.Textarea(attrs={"rows": 4, "placeholder": "Una misura per riga. Vuoto = mantiene le misure proposte dall'AI."}),
+        help_text="Una voce per riga: misure e adempimenti con cui il presidio tratta il rischio.",
+    )
     nota = forms.CharField(
         required=False, max_length=300, label="Nota del presidio",
         widget=forms.TextInput(attrs={"placeholder": "Es. confermato dopo verifica interna."}),

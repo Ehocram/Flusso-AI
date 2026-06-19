@@ -23,7 +23,9 @@ from . import servizi
 from .ai_client import genera_analisi, prova_connessione
 from .forms import AnalisiAIForm, ImpostazioniAIForm, RichiestaForm, SalForm, ValidazioneRischioForm
 from .kpi import calcola_kpi
-from .models import ConfigurazioneAI, PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta, TipoRischio
+from .models import (ClassificazioneRischio, ConfigurazioneAI, DIMENSIONE_PER_RUOLO,
+                     PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
+                     StatoRischio, TipoRischio)
 from .notifiche import notifica_transizione
 from .workflow import FASI, STATI_OPERATIVI, STATI_TERMINALI, Stato, azioni_disponibili, puo_eseguire, transizione
 
@@ -39,9 +41,14 @@ def _richieste_visibili(utente):
 
 
 def _puo_validare(utente, tipo) -> bool:
-    """True se l'utente è il presidio competente per quella dimensione di rischio."""
-    if utente.is_superuser:
-        return True
+    """True SOLO se l'utente è il presidio competente per quella dimensione.
+
+    Separazione dei compiti: validare il rischio è un atto di governance legato
+    al ruolo (Funzione Legale → AI Act, CISO → NIS2, DPO → GDPR), non un
+    privilegio amministrativo. La Funzione AI (che è superuser per gestire
+    l'applicazione) e ogni altro superuser NON possono quindi validare al posto
+    del presidio: la validazione resta sempre dei tre presìdi competenti.
+    """
     return {"AIACT": utente.is_legale, "NIS2": utente.is_ciso, "GDPR": utente.is_dpo}.get(tipo, False)
 
 
@@ -69,10 +76,25 @@ def dashboard(request):
 
     da_fare = [r for r in qs if azioni_disponibili(r, request.user)]
 
+    # Presidio (Legale/CISO/DPO): rischi della propria dimensione in attesa di validazione.
+    rischi_da_validare, dimensione_presidio = [], ""
+    if request.user.is_validatore_rischio:
+        dim = DIMENSIONE_PER_RUOLO.get(request.user.ruolo)
+        if dim:
+            dimensione_presidio = dict(TipoRischio.choices).get(dim, dim)
+            rischi_da_validare = list(
+                ClassificazioneRischio.objects
+                .filter(tipo=dim, stato=StatoRischio.PROPOSTO_AI)
+                .select_related("richiesta", "richiesta__proponente")
+                .order_by("richiesta__numero")
+            )
+
     return render(request, "flusso/dashboard.html", {
         "totale": totale, "aperte": aperte, "attivi": attivi,
         "conteggio_fasi": conteggio_fasi, "distribuzione": distribuzione,
         "max_funzione": max_funzione, "da_fare": da_fare[:8], "da_fare_totale": len(da_fare),
+        "rischi_da_validare": rischi_da_validare, "dimensione_presidio": dimensione_presidio,
+        "rischi_da_validare_n": len(rischi_da_validare),
     })
 
 
@@ -136,7 +158,8 @@ def dettaglio(request, pk):
         form = None
         if _puo_validare(request.user, c.tipo):
             form = ValidazioneRischioForm(tipo=c.tipo, initial={
-                "categoria": c.categoria or c.ai_categoria or None})
+                "categoria": c.categoria or c.ai_categoria or None,
+                "obblighi": "\n".join(c.obblighi_voci)})
         rischi.append({"c": c, "form": form})
     blocco_approvazione = richiesta.stato == Stato.IN_QUALIFICA and not richiesta.rischi_tutti_validati
     if blocco_approvazione:
@@ -445,6 +468,7 @@ def valida_rischio(request, pk, tipo):
         classificazione.valida(
             form.cleaned_data["categoria"], attore=request.user,
             nota=form.cleaned_data["nota"], motivazione=form.cleaned_data["motivazione"],
+            obblighi=form.cleaned_data.get("obblighi"),
         )
         verbo = "modificato" if classificazione.stato == "MODIFICATO" else "validato"
         messages.success(request, f"Rischio {_NOMI_RISCHIO[tipo]} {verbo}: {classificazione.categoria_label}.")

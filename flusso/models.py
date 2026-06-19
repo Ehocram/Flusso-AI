@@ -63,6 +63,42 @@ CATEGORIE_RISCHIO = {
 # Ruolo (processo) che valida/modifica ciascuna dimensione.
 RUOLO_VALIDATORE = {"AIACT": "LEGALE", "NIS2": "CISO", "GDPR": "DPO"}
 ETICHETTA_VALIDATORE = {"AIACT": "Funzione Legale", "NIS2": "CISO", "GDPR": "DPO"}
+# Mappa inversa: ruolo del presidio -> dimensione di rischio di sua competenza.
+DIMENSIONE_PER_RUOLO = {ruolo: dim for dim, ruolo in RUOLO_VALIDATORE.items()}
+
+
+def obblighi_in_voci(testo) -> list:
+    """Normalizza il campo `obblighi` in un elenco pulito di voci.
+
+    Accetta indifferentemente: un array JSON, la repr di una lista Python
+    (compatibilita' con dati storici salvati come str(list)), oppure testo con
+    voci separate da a-capo o ';'. Rimuove marcatori iniziali e voci vuote.
+    """
+    import ast
+    import json
+    import re
+
+    t = (testo or "").strip()
+    if not t:
+        return []
+    voci = None
+    if t[0] in "[(":
+        for parser in (json.loads, ast.literal_eval):
+            try:
+                val = parser(t)
+            except Exception:
+                continue
+            if isinstance(val, (list, tuple)):
+                voci = [str(x) for x in val]
+                break
+    if voci is None:
+        voci = re.split(r"[\n;]+", t)
+    out = []
+    for v in voci:
+        v = re.sub(r"^[\s\-\u2022\u00b7\*]+", "", str(v)).strip()
+        if v:
+            out.append(v)
+    return out
 
 _CSS_AIACT = {"VIETATO": "rk-vietato", "ALTO": "rk-alto", "LIMITATO": "rk-limitato", "MINIMO": "rk-minimo"}
 _CSS_LIVELLO = {"ALTO": "rk-vietato", "MEDIO": "rk-alto", "BASSO": "rk-minimo", "NA": "rk-nd"}
@@ -504,6 +540,11 @@ class ClassificazioneRischio(models.Model):
     def ruolo_validatore(self) -> str:
         return RUOLO_VALIDATORE.get(self.tipo, "")
 
+    @property
+    def obblighi_voci(self) -> list:
+        """Elenco pulito delle misure/obblighi di trattamento (robusto ai dati storici)."""
+        return obblighi_in_voci(self.obblighi)
+
     @transaction.atomic
     def applica_ai(self, categoria, motivazione="", riferimenti="", obblighi="", modello="", attore=None):
         """Registra la proposta dell'AI; non sovrascrive una decisione già presa dal presidio."""
@@ -529,8 +570,12 @@ class ClassificazioneRischio(models.Model):
         return self
 
     @transaction.atomic
-    def valida(self, categoria, attore, nota="", motivazione=None):
-        """Il presidio competente conferma (validato) o cambia categoria (modificato)."""
+    def valida(self, categoria, attore, nota="", motivazione=None, obblighi=None):
+        """Il presidio competente conferma (validato) o cambia categoria (modificato).
+
+        Puo' anche rifinire il trattamento del rischio (misure/obblighi): se
+        `obblighi` e' valorizzato, sostituisce le misure proposte dall'AI.
+        """
         categoria = str(categoria)
         modificato = bool(self.ai_categoria) and categoria != self.ai_categoria
         if not self.ai_categoria and categoria != self.categoria:
@@ -538,6 +583,8 @@ class ClassificazioneRischio(models.Model):
         self.categoria = categoria
         if motivazione is not None and motivazione.strip():
             self.motivazione = motivazione.strip()
+        if obblighi is not None and obblighi.strip():
+            self.obblighi = obblighi.strip()
         self.nota_validatore = nota or ""
         self.stato = StatoRischio.MODIFICATO if modificato else StatoRischio.VALIDATO
         self.validato_da = attore
@@ -590,7 +637,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
 - "categoria": uno tra "VIETATO", "ALTO", "LIMITATO", "MINIMO"
 - "motivazione": 1-3 frasi in italiano che spiegano la classificazione riferendosi al caso d'uso
 - "riferimenti": articolo o allegato pertinente (es. "Allegato III, punto 4" oppure "Art. 50")
-- "obblighi": elenco sintetico degli obblighi derivati (es. DPIA/FRIA, registrazione UE, sorveglianza umana, informativa agli interessati); per la categoria MINIMO indica che non vi sono obblighi specifici oltre ai principi generali e al GDPR.
+- "obblighi": array JSON di 3-6 stringhe brevi, ciascuna una misura concreta e attuabile di trattamento del rischio, formulata in modo professionale e specifica per il caso (es. "Condurre una DPIA/FRIA prima del rilascio", "Predisporre una sorveglianza umana effettiva sull'output", "Registrare il sistema nella banca dati UE se richiesto", "Fornire un'informativa chiara agli interessati"); per la categoria MINIMO usa un'unica voce che non vi sono obblighi specifici oltre ai principi generali e al GDPR.
 
 La classificazione è preliminare e dovrà essere validata dalla Funzione Legale."""
 
@@ -608,7 +655,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
 - "categoria": uno tra "ALTO", "MEDIO", "BASSO", "NA"
 - "motivazione": 1-3 frasi in italiano riferite al caso d'uso
 - "riferimenti": riferimento pertinente (es. "Art. 21 — misure di gestione del rischio" o "Art. 23 — notifica incidenti")
-- "obblighi": elenco sintetico delle misure/obblighi che ne derivano; per "NA" indica che non vi sono obblighi NIS2 specifici.
+- "obblighi": array JSON di 3-6 stringhe brevi, ciascuna una misura concreta e attuabile di trattamento del rischio, formulata in modo professionale e specifica per il caso (es. "Definire misure di gestione del rischio ex art. 21", "Predisporre il processo di rilevamento e notifica degli incidenti", "Valutare la sicurezza della catena di fornitura coinvolta", "Applicare controllo accessi, segmentazione e cifratura"); per "NA" usa un'unica voce che non vi sono obblighi NIS2 specifici.
 
 La classificazione è preliminare e dovrà essere validata dal CISO."""
 
@@ -626,7 +673,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
 - "categoria": uno tra "ALTO", "MEDIO", "BASSO", "NA"
 - "motivazione": 1-3 frasi in italiano riferite al caso d'uso
 - "riferimenti": riferimento pertinente (es. "Art. 35 — DPIA", "Art. 9 — categorie particolari", "Art. 6 — base giuridica")
-- "obblighi": elenco sintetico degli obblighi che ne derivano (es. base giuridica, informativa, DPIA, minimizzazione); per "NA" indica che non vi sono obblighi GDPR specifici.
+- "obblighi": array JSON di 3-6 stringhe brevi, ciascuna una misura concreta e attuabile di trattamento del rischio, formulata in modo professionale e specifica per il caso (es. "Individuare e documentare la base giuridica del trattamento", "Aggiornare il Registro dei trattamenti (art. 30)", "Applicare la minimizzazione e limitare l'accesso ai soli autorizzati", "Garantire misure di sicurezza adeguate, quali controllo accessi e cifratura"); per "NA" usa un'unica voce che non vi sono obblighi GDPR specifici.
 
 La classificazione è preliminare e dovrà essere validata dal DPO."""
 

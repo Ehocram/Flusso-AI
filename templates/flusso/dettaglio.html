@@ -94,7 +94,7 @@
       {% endif %}
     </div>
 
-    <div class="card rischio-card" style="margin-top:18px;">
+    <div class="card rischio-card" id="rischio" style="margin-top:18px;">
       <div class="rischio-cardhead">
         <h2><i class="ti ti-scale" style="vertical-align:-2px;color:var(--rosso)"></i> Rischio &amp; Conformità
           <span class="sub">classificazione preliminare · da validare dai presìdi</span></h2>
@@ -125,8 +125,13 @@
         {% if d.c.motivazione %}<p class="rischio-mot">{{ d.c.motivazione }}</p>{% endif %}
         <div class="rischio-grid">
           {% if d.c.riferimenti %}<div class="dato"><span class="lab">Riferimenti</span><span class="val">{{ d.c.riferimenti }}</span></div>{% endif %}
-          {% if d.c.obblighi %}<div class="dato"><span class="lab">Obblighi derivati</span><span class="val">{{ d.c.obblighi }}</span></div>{% endif %}
         </div>
+        {% if d.c.obblighi_voci %}
+        <div class="rischio-misure-wrap">
+          <span class="lab">Obblighi e misure di trattamento</span>
+          <ul class="rischio-misure">{% for voce in d.c.obblighi_voci %}<li>{{ voce }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
         <div class="t-mut" style="margin-top:8px;">
           {% if d.c.ai_il %}<i class="ti ti-robot" style="vertical-align:-2px;"></i> Stima AI{% if d.c.ai_modello %} ({{ d.c.ai_modello }}){% endif %} del {{ d.c.ai_il|date:"d/m/Y H:i" }}{% endif %}
           {% if d.c.validato %} · <i class="ti ti-gavel" style="vertical-align:-2px;"></i> {{ d.c.validato_da.get_full_name|default:d.c.validato_da.username }} il {{ d.c.validato_il|date:"d/m/Y H:i" }}{% endif %}
@@ -141,6 +146,7 @@
             <div class="f-row"><label for="{{ d.form.nota.id_for_label }}">Nota</label>{{ d.form.nota }}</div>
           </div>
           <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.form.motivazione.id_for_label }}">Motivazione (opzionale)</label>{{ d.form.motivazione }}</div>
+          <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.form.obblighi.id_for_label }}">Obblighi e misure di trattamento</label>{{ d.form.obblighi }}<span class="t-mut" style="display:block;margin-top:4px;">Una misura per riga. Vuoto = mantiene le misure proposte dall'AI.</span></div>
           <button type="submit" class="btn btn-positivo btn-sm"><i class="ti ti-check"></i> Conferma {{ d.c.get_tipo_display }}</button>
           <span class="t-mut" style="margin-left:8px;">Conferma = validato; categoria diversa = modificato.</span>
         </form>
