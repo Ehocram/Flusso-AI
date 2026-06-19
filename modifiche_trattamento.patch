@@ -1,0 +1,899 @@
+diff --git a/flusso/admin.py b/flusso/admin.py
+index ef3fc50..afcff62 100644
+--- a/flusso/admin.py
++++ b/flusso/admin.py
+@@ -2,16 +2,23 @@
+ 
+ from django.contrib import admin
+ 
+-from .models import ClassificazioneRischio, Richiesta, Transizione
++from .models import AzioneTrattamento, ClassificazioneRischio, Richiesta, Transizione
+ 
+ 
+ class ClassificazioneRischioInline(admin.TabularInline):
+     model = ClassificazioneRischio
+     extra = 0
+-    fields = ("tipo", "categoria", "stato", "ai_categoria", "validato_da", "validato_il")
++    fields = ("tipo", "categoria", "stato", "ai_categoria", "strategia",
++              "rischio_residuo", "residuo_convalidato", "validato_da", "validato_il")
+     readonly_fields = ("ai_categoria", "validato_il")
+ 
+ 
++class AzioneTrattamentoInline(admin.TabularInline):
++    model = AzioneTrattamento
++    extra = 0
++    fields = ("descrizione", "data_prevista", "ordine")
++
++
+ class TransizioneInline(admin.TabularInline):
+     model = Transizione
+     extra = 0
+@@ -33,10 +40,13 @@ class RichiestaAdmin(admin.ModelAdmin):
+ 
+ @admin.register(ClassificazioneRischio)
+ class ClassificazioneRischioAdmin(admin.ModelAdmin):
+-    list_display = ("richiesta", "tipo", "categoria", "stato", "validato_da", "validato_il")
+-    list_filter = ("tipo", "stato")
++    list_display = ("richiesta", "tipo", "categoria", "stato", "strategia",
++                    "rischio_residuo", "residuo_convalidato", "validato_da")
++    list_filter = ("tipo", "stato", "strategia", "residuo_convalidato")
+     search_fields = ("richiesta__titolo", "richiesta__numero")
+-    readonly_fields = ("ai_categoria", "ai_il", "ai_modello", "validato_il", "aggiornata_il")
++    readonly_fields = ("ai_categoria", "ai_il", "ai_modello", "validato_il",
++                       "trattato_da", "trattato_il", "aggiornata_il")
++    inlines = [AzioneTrattamentoInline]
+ 
+ 
+ @admin.register(Transizione)
+diff --git a/flusso/ai_client.py b/flusso/ai_client.py
+index 02bfb2c..86c75f1 100644
+--- a/flusso/ai_client.py
++++ b/flusso/ai_client.py
+@@ -227,11 +227,16 @@ def classifica_rischio(richiesta, config, tipo) -> tuple[dict | None, str | None
+     audit.info("rischio_ai richiesta=%s tipo=%s categoria=%s modello=%s token_out=%s",
+                getattr(richiesta, "codice", "?"), tipo, categoria, config.modello,
+                data.get("usage", {}).get("output_tokens", "?"))
++    obblighi_raw = obj.get("obblighi", "")
++    if isinstance(obblighi_raw, (list, tuple)):
++        obblighi = "\n".join(str(x).strip() for x in obblighi_raw if str(x).strip())
++    else:
++        obblighi = str(obblighi_raw).strip()
+     return {
+         "categoria": categoria,
+         "motivazione": str(obj.get("motivazione", "")).strip(),
+         "riferimenti": str(obj.get("riferimenti", "")).strip()[:300],
+-        "obblighi": str(obj.get("obblighi", "")).strip(),
++        "obblighi": obblighi,
+         "modello": config.modello,
+     }, None
+ 
+diff --git a/flusso/forms.py b/flusso/forms.py
+index 8655e60..a1f2e90 100644
+--- a/flusso/forms.py
++++ b/flusso/forms.py
+@@ -1,8 +1,10 @@
+ """Form per compilazione/modifica della scheda (rettangolo slide 8-9)."""
+ 
+ from django import forms
++from django.forms import inlineformset_factory
+ 
+-from .models import CATEGORIE_RISCHIO, ConfigurazioneAI, Richiesta
++from .models import (AzioneTrattamento, CATEGORIE_RISCHIO, ClassificazioneRischio,
++                     ConfigurazioneAI, Richiesta)
+ 
+ 
+ class AnalisiAIForm(forms.ModelForm):
+@@ -148,6 +150,11 @@ class ValidazioneRischioForm(forms.Form):
+         required=False, label="Motivazione (opzionale)",
+         widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Lascia vuoto per mantenere la motivazione dell'AI."}),
+     )
++    obblighi = forms.CharField(
++        required=False, label="Obblighi e misure di trattamento",
++        widget=forms.Textarea(attrs={"rows": 4, "placeholder": "Una misura per riga. Vuoto = mantiene le misure proposte dall'AI."}),
++        help_text="Una voce per riga: misure e adempimenti con cui il presidio tratta il rischio.",
++    )
+     nota = forms.CharField(
+         required=False, max_length=300, label="Nota del presidio",
+         widget=forms.TextInput(attrs={"placeholder": "Es. confermato dopo verifica interna."}),
+@@ -159,3 +166,56 @@ class ValidazioneRischioForm(forms.Form):
+         for campo in self.fields.values():
+             css = campo.widget.attrs.get("class", "")
+             campo.widget.attrs["class"] = (css + " campo").strip()
++
++
++class TrattamentoRischioForm(forms.ModelForm):
++    """Trattamento del rischio da parte del presidio competente (ISO 27005).
++
++    Strategia (accetta/mitiga/trasferisci/evita) + livello residuo + convalida.
++    Le azioni di mitigazione (con data) sono gestite dal formset collegato.
++    """
++
++    rischio_residuo = forms.ChoiceField(choices=[], required=False, label="Rischio residuo")
++
++    class Meta:
++        model = ClassificazioneRischio
++        fields = ["strategia", "rischio_residuo", "residuo_convalidato", "trattamento_note"]
++        widgets = {
++            "trattamento_note": forms.Textarea(attrs={
++                "rows": 3,
++                "placeholder": "Trasferimento: a chi e come (assicurazione, contratto, fornitore). "
++                               "Accettazione: motivazione. Lascia vuoto se non serve.",
++            }),
++        }
++        labels = {
++            "strategia": "Strategia di trattamento",
++            "residuo_convalidato": "Convalida il rischio residuo",
++            "trattamento_note": "Note di trattamento",
++        }
++
++    def __init__(self, *args, tipo=None, **kwargs):
++        super().__init__(*args, **kwargs)
++        self.fields["rischio_residuo"].choices = (
++            [("", "— pari al rischio inerente —")] + list(CATEGORIE_RISCHIO.get(tipo, []))
++        )
++        for nome, campo in self.fields.items():
++            if isinstance(campo.widget, forms.CheckboxInput):
++                continue
++            css = campo.widget.attrs.get("class", "")
++            campo.widget.attrs["class"] = (css + " campo").strip()
++
++
++AzioneTrattamentoFormSet = inlineformset_factory(
++    ClassificazioneRischio,
++    AzioneTrattamento,
++    fields=["descrizione", "data_prevista"],
++    extra=1,
++    can_delete=True,
++    widgets={
++        "descrizione": forms.TextInput(attrs={
++            "class": "campo",
++            "placeholder": "Es. Implementare la cifratura at-rest sui repository indicizzati",
++        }),
++        "data_prevista": forms.DateInput(attrs={"type": "date", "class": "campo"}, format="%Y-%m-%d"),
++    },
++)
+diff --git a/flusso/migrations/0009_classificazionerischio_residuo_convalidato_and_more.py b/flusso/migrations/0009_classificazionerischio_residuo_convalidato_and_more.py
+new file mode 100644
+index 0000000..552eb21
+--- /dev/null
++++ b/flusso/migrations/0009_classificazionerischio_residuo_convalidato_and_more.py
+@@ -0,0 +1,63 @@
++# Generated by Django 5.2.15 on 2026-06-19 20:08
++
++import django.db.models.deletion
++import django.utils.timezone
++from django.conf import settings
++from django.db import migrations, models
++
++
++class Migration(migrations.Migration):
++
++    dependencies = [
++        ('flusso', '0008_remove_configurazioneai_prompt_rischio_and_more'),
++        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
++    ]
++
++    operations = [
++        migrations.AddField(
++            model_name='classificazionerischio',
++            name='residuo_convalidato',
++            field=models.BooleanField(default=False, verbose_name='Rischio residuo convalidato dal presidio'),
++        ),
++        migrations.AddField(
++            model_name='classificazionerischio',
++            name='rischio_residuo',
++            field=models.CharField(blank=True, help_text='Livello atteso dopo il trattamento. Vuoto = pari al rischio inerente.', max_length=12, verbose_name='Rischio residuo'),
++        ),
++        migrations.AddField(
++            model_name='classificazionerischio',
++            name='strategia',
++            field=models.CharField(choices=[('ACCETTATO', 'Accettato'), ('MITIGATO', 'Mitigato (ridotto)'), ('TRASFERITO', 'Trasferito'), ('EVITATO', 'Evitato (eliminato)')], default='ACCETTATO', max_length=12, verbose_name='Strategia di trattamento'),
++        ),
++        migrations.AddField(
++            model_name='classificazionerischio',
++            name='trattamento_note',
++            field=models.TextField(blank=True, help_text="Per il trasferimento: a chi/come. Per l'accettazione: motivazione.", verbose_name='Note di trattamento'),
++        ),
++        migrations.AddField(
++            model_name='classificazionerischio',
++            name='trattato_da',
++            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='rischi_trattati', to=settings.AUTH_USER_MODEL),
++        ),
++        migrations.AddField(
++            model_name='classificazionerischio',
++            name='trattato_il',
++            field=models.DateTimeField(blank=True, null=True),
++        ),
++        migrations.CreateModel(
++            name='AzioneTrattamento',
++            fields=[
++                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
++                ('descrizione', models.CharField(max_length=500, verbose_name='Azione da intraprendere')),
++                ('data_prevista', models.DateField(blank=True, null=True, verbose_name='Data prevista di applicazione')),
++                ('ordine', models.PositiveIntegerField(default=0)),
++                ('creata_il', models.DateTimeField(default=django.utils.timezone.now, editable=False)),
++                ('classificazione', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='azioni', to='flusso.classificazionerischio')),
++            ],
++            options={
++                'verbose_name': 'Azione di trattamento',
++                'verbose_name_plural': 'Azioni di trattamento',
++                'ordering': ['ordine', 'id'],
++            },
++        ),
++    ]
+diff --git a/flusso/models.py b/flusso/models.py
+index 69d2848..c694dbf 100644
+--- a/flusso/models.py
++++ b/flusso/models.py
+@@ -38,6 +38,15 @@ class StatoRischio(models.TextChoices):
+     MODIFICATO = "MODIFICATO", "Modificato dal presidio"
+ 
+ 
++class StrategiaTrattamento(models.TextChoices):
++    """Strategia di trattamento del rischio (ISO 27005 / ISO 31000)."""
++
++    ACCETTATO = "ACCETTATO", "Accettato"
++    MITIGATO = "MITIGATO", "Mitigato (ridotto)"
++    TRASFERITO = "TRASFERITO", "Trasferito"
++    EVITATO = "EVITATO", "Evitato (eliminato)"
++
++
+ # Categorie ammesse per ciascuna dimensione (codice, etichetta).
+ CATEGORIE_RISCHIO = {
+     "AIACT": [
+@@ -63,6 +72,42 @@ CATEGORIE_RISCHIO = {
+ # Ruolo (processo) che valida/modifica ciascuna dimensione.
+ RUOLO_VALIDATORE = {"AIACT": "LEGALE", "NIS2": "CISO", "GDPR": "DPO"}
+ ETICHETTA_VALIDATORE = {"AIACT": "Funzione Legale", "NIS2": "CISO", "GDPR": "DPO"}
++# Mappa inversa: ruolo del presidio -> dimensione di rischio di sua competenza.
++DIMENSIONE_PER_RUOLO = {ruolo: dim for dim, ruolo in RUOLO_VALIDATORE.items()}
++
++
++def obblighi_in_voci(testo) -> list:
++    """Normalizza il campo `obblighi` in un elenco pulito di voci.
++
++    Accetta indifferentemente: un array JSON, la repr di una lista Python
++    (compatibilita' con dati storici salvati come str(list)), oppure testo con
++    voci separate da a-capo o ';'. Rimuove marcatori iniziali e voci vuote.
++    """
++    import ast
++    import json
++    import re
++
++    t = (testo or "").strip()
++    if not t:
++        return []
++    voci = None
++    if t[0] in "[(":
++        for parser in (json.loads, ast.literal_eval):
++            try:
++                val = parser(t)
++            except Exception:
++                continue
++            if isinstance(val, (list, tuple)):
++                voci = [str(x) for x in val]
++                break
++    if voci is None:
++        voci = re.split(r"[\n;]+", t)
++    out = []
++    for v in voci:
++        v = re.sub(r"^[\s\-\u2022\u00b7\*]+", "", str(v)).strip()
++        if v:
++            out.append(v)
++    return out
+ 
+ _CSS_AIACT = {"VIETATO": "rk-vietato", "ALTO": "rk-alto", "LIMITATO": "rk-limitato", "MINIMO": "rk-minimo"}
+ _CSS_LIVELLO = {"ALTO": "rk-vietato", "MEDIO": "rk-alto", "BASSO": "rk-minimo", "NA": "rk-nd"}
+@@ -85,6 +130,35 @@ def categoria_css(tipo, code) -> str:
+     return tabella.get(code, "rk-nd")
+ 
+ 
++# Scala ordinale dei livelli per dimensione (serve a confrontare inerente vs residuo).
++_ORDINE_LIVELLO = {
++    "AIACT": {"MINIMO": 1, "LIMITATO": 2, "ALTO": 3, "VIETATO": 4},
++    "NIS2": {"NA": 0, "BASSO": 1, "MEDIO": 2, "ALTO": 3},
++    "GDPR": {"NA": 0, "BASSO": 1, "MEDIO": 2, "ALTO": 3},
++}
++
++
++def livello_ordinale(tipo, code):
++    """Posizione del livello nella scala della dimensione (None se sconosciuto)."""
++    return _ORDINE_LIVELLO.get(tipo, {}).get(code)
++
++
++def livello_suggerito_residuo(tipo, code):
++    """Suggerimento INDICATIVO del residuo: un livello sotto l'inerente (mai negativo).
++
++    Non e' un calcolo vincolante: il residuo resta una valutazione del presidio.
++    """
++    scala = _ORDINE_LIVELLO.get(tipo, {})
++    pos = scala.get(code)
++    if pos is None:
++        return ""
++    target = max(min(scala.values()), pos - 1)
++    for c, p in scala.items():
++        if p == target:
++            return c
++    return code
++
++
+ class Richiesta(models.Model):
+     """Esigenza/opportunita' AT proposta da una funzione aziendale."""
+ 
+@@ -457,6 +531,28 @@ class ClassificazioneRischio(models.Model):
+     )
+     validato_il = models.DateTimeField(null=True, blank=True)
+     nota_validatore = models.TextField(blank=True)
++    # --- Trattamento del rischio (ISO 27005): strategia + residuo --------------
++    strategia = models.CharField(
++        max_length=12, choices=StrategiaTrattamento.choices,
++        default=StrategiaTrattamento.ACCETTATO,
++        verbose_name="Strategia di trattamento",
++    )
++    rischio_residuo = models.CharField(
++        max_length=12, blank=True, verbose_name="Rischio residuo",
++        help_text="Livello atteso dopo il trattamento. Vuoto = pari al rischio inerente.",
++    )
++    residuo_convalidato = models.BooleanField(
++        default=False, verbose_name="Rischio residuo convalidato dal presidio",
++    )
++    trattamento_note = models.TextField(
++        blank=True, verbose_name="Note di trattamento",
++        help_text="Per il trasferimento: a chi/come. Per l'accettazione: motivazione.",
++    )
++    trattato_da = models.ForeignKey(
++        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
++        related_name="rischi_trattati",
++    )
++    trattato_il = models.DateTimeField(null=True, blank=True)
+     aggiornata_il = models.DateTimeField(auto_now=True)
+ 
+     class Meta:
+@@ -504,6 +600,74 @@ class ClassificazioneRischio(models.Model):
+     def ruolo_validatore(self) -> str:
+         return RUOLO_VALIDATORE.get(self.tipo, "")
+ 
++    @property
++    def obblighi_voci(self) -> list:
++        """Elenco pulito delle misure/obblighi di trattamento (robusto ai dati storici)."""
++        return obblighi_in_voci(self.obblighi)
++
++    # --- Trattamento del rischio: residuo, direzione, etichetta dell'operazione ---
++    @property
++    def residuo_codice(self) -> str:
++        """Livello residuo EFFETTIVO. Evitato => nessun residuo; altrimenti residuo o inerente."""
++        if self.strategia == StrategiaTrattamento.EVITATO:
++            return ""
++        return self.rischio_residuo or self.categoria
++
++    @property
++    def residuo_label(self) -> str:
++        if self.strategia == StrategiaTrattamento.EVITATO:
++            return "Eliminato"
++        return categoria_label(self.tipo, self.residuo_codice)
++
++    @property
++    def residuo_css(self) -> str:
++        if self.strategia == StrategiaTrattamento.EVITATO:
++            return "rk-minimo"
++        return categoria_css(self.tipo, self.residuo_codice)
++
++    @property
++    def residuo_suggerito(self) -> str:
++        """Suggerimento indicativo (un livello sotto l'inerente), non vincolante."""
++        return livello_suggerito_residuo(self.tipo, self.categoria)
++
++    @property
++    def residuo_direzione(self) -> str:
++        """'giu' (ridotto), 'pari' (invariato), 'su' (aumentato) o '' se non confrontabile."""
++        if self.strategia == StrategiaTrattamento.EVITATO:
++            return "giu"
++        a = livello_ordinale(self.tipo, self.categoria)
++        b = livello_ordinale(self.tipo, self.residuo_codice)
++        if a is None or b is None:
++            return ""
++        return "giu" if b < a else ("su" if b > a else "pari")
++
++    @property
++    def trattato(self) -> bool:
++        """True se il presidio ha applicato un trattamento diverso dalla semplice accettazione."""
++        return self.strategia != StrategiaTrattamento.ACCETTATO or bool(self.trattato_il)
++
++    @property
++    def residuo_da_convalidare(self) -> bool:
++        return (self.strategia in (StrategiaTrattamento.MITIGATO, StrategiaTrattamento.TRASFERITO)
++                and not self.residuo_convalidato)
++
++    @property
++    def trattamento_operazione(self) -> str:
++        """Etichetta che esplicita l'operazione di calcolo del rischio residuo."""
++        iner = self.categoria_label
++        if self.strategia == StrategiaTrattamento.ACCETTATO:
++            return f"Rischio accettato al livello inerente ({iner}); nessuna mitigazione applicata."
++        if self.strategia == StrategiaTrattamento.EVITATO:
++            return "Rischio evitato: il caso d'uso non procede nella forma che genera il rischio (residuo eliminato)."
++        n = self.azioni.count()
++        if self.strategia == StrategiaTrattamento.MITIGATO:
++            azioni_txt = f"{n} azione/i di mitigazione" if n else "le misure di trattamento"
++            return (f"Rischio residuo {self.residuo_label} = rischio inerente {iner} "
++                    f"ridotto tramite {azioni_txt}.")
++        # TRASFERITO
++        return (f"Rischio trasferito a terzi; livello residuo trattenuto {self.residuo_label} "
++                f"(rischio inerente {iner}).")
++
+     @transaction.atomic
+     def applica_ai(self, categoria, motivazione="", riferimenti="", obblighi="", modello="", attore=None):
+         """Registra la proposta dell'AI; non sovrascrive una decisione già presa dal presidio."""
+@@ -529,8 +693,12 @@ class ClassificazioneRischio(models.Model):
+         return self
+ 
+     @transaction.atomic
+-    def valida(self, categoria, attore, nota="", motivazione=None):
+-        """Il presidio competente conferma (validato) o cambia categoria (modificato)."""
++    def valida(self, categoria, attore, nota="", motivazione=None, obblighi=None):
++        """Il presidio competente conferma (validato) o cambia categoria (modificato).
++
++        Puo' anche rifinire il trattamento del rischio (misure/obblighi): se
++        `obblighi` e' valorizzato, sostituisce le misure proposte dall'AI.
++        """
+         categoria = str(categoria)
+         modificato = bool(self.ai_categoria) and categoria != self.ai_categoria
+         if not self.ai_categoria and categoria != self.categoria:
+@@ -538,6 +706,8 @@ class ClassificazioneRischio(models.Model):
+         self.categoria = categoria
+         if motivazione is not None and motivazione.strip():
+             self.motivazione = motivazione.strip()
++        if obblighi is not None and obblighi.strip():
++            self.obblighi = obblighi.strip()
+         self.nota_validatore = nota or ""
+         self.stato = StatoRischio.MODIFICATO if modificato else StatoRischio.VALIDATO
+         self.validato_da = attore
+@@ -554,10 +724,49 @@ class ClassificazioneRischio(models.Model):
+                    verbo, self.tipo, categoria, getattr(attore, "username", "?"))
+         return self
+ 
++    @transaction.atomic
++    def registra_trattamento(self, attore):
++        """Scrive l'audit del trattamento (le azioni sono salvate a parte dal formset)."""
++        self.trattato_da = attore
++        self.trattato_il = timezone.now()
++        # Coerenza: ACCETTATO/EVITATO non hanno un residuo selezionabile.
++        if self.strategia in (StrategiaTrattamento.ACCETTATO, StrategiaTrattamento.EVITATO):
++            self.rischio_residuo = ""
++            self.residuo_convalidato = False
++        self.save()
++        etichetta = f"Rischio {self.get_tipo_display()} — trattamento: {self.get_strategia_display()}"
++        nota = self.trattamento_operazione
++        if self.residuo_da_convalidare:
++            nota += " · rischio residuo DA CONVALIDARE"
++        Transizione.objects.create(
++            richiesta=self.richiesta, azione=f"rischio_trattato_{self.tipo.lower()}",
++            etichetta=etichetta, stato_da=self.richiesta.stato, stato_a=self.richiesta.stato,
++            attore=attore, nota=nota,
++        )
++        audit.info("richiesta=%s rischio_trattato tipo=%s strategia=%s residuo=%s conv=%s attore=%s",
++                   self.richiesta.codice, self.tipo, self.strategia, self.residuo_codice,
++                   self.residuo_convalidato, getattr(attore, "username", "?"))
++        return self
++
++
++class AzioneTrattamento(models.Model):
++    """Azione di mitigazione pianificata per una classificazione di rischio."""
+ 
+-# =============================================================================
+-# Configurazione AI (singleton) per la lettura esecutiva dei KPI
+-# =============================================================================
++    classificazione = models.ForeignKey(
++        ClassificazioneRischio, on_delete=models.CASCADE, related_name="azioni",
++    )
++    descrizione = models.CharField(max_length=500, verbose_name="Azione da intraprendere")
++    data_prevista = models.DateField(null=True, blank=True, verbose_name="Data prevista di applicazione")
++    ordine = models.PositiveIntegerField(default=0)
++    creata_il = models.DateTimeField(default=timezone.now, editable=False)
++
++    class Meta:
++        verbose_name = "Azione di trattamento"
++        verbose_name_plural = "Azioni di trattamento"
++        ordering = ["ordine", "id"]
++
++    def __str__(self) -> str:
++        return f"{self.classificazione.tipo} · {self.descrizione[:40]}"
+ 
+ MODELLI_CLAUDE = [
+     ("claude-sonnet-4-6", "Claude Sonnet 4.6 — consigliato (qualità/costo)"),
+@@ -590,7 +799,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
+ - "categoria": uno tra "VIETATO", "ALTO", "LIMITATO", "MINIMO"
+ - "motivazione": 1-3 frasi in italiano che spiegano la classificazione riferendosi al caso d'uso
+ - "riferimenti": articolo o allegato pertinente (es. "Allegato III, punto 4" oppure "Art. 50")
+-- "obblighi": elenco sintetico degli obblighi derivati (es. DPIA/FRIA, registrazione UE, sorveglianza umana, informativa agli interessati); per la categoria MINIMO indica che non vi sono obblighi specifici oltre ai principi generali e al GDPR.
++- "obblighi": array JSON di 3-6 stringhe brevi, ciascuna una misura concreta e attuabile di trattamento del rischio, formulata in modo professionale e specifica per il caso (es. "Condurre una DPIA/FRIA prima del rilascio", "Predisporre una sorveglianza umana effettiva sull'output", "Registrare il sistema nella banca dati UE se richiesto", "Fornire un'informativa chiara agli interessati"); per la categoria MINIMO usa un'unica voce che non vi sono obblighi specifici oltre ai principi generali e al GDPR.
+ 
+ La classificazione è preliminare e dovrà essere validata dalla Funzione Legale."""
+ 
+@@ -608,7 +817,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
+ - "categoria": uno tra "ALTO", "MEDIO", "BASSO", "NA"
+ - "motivazione": 1-3 frasi in italiano riferite al caso d'uso
+ - "riferimenti": riferimento pertinente (es. "Art. 21 — misure di gestione del rischio" o "Art. 23 — notifica incidenti")
+-- "obblighi": elenco sintetico delle misure/obblighi che ne derivano; per "NA" indica che non vi sono obblighi NIS2 specifici.
++- "obblighi": array JSON di 3-6 stringhe brevi, ciascuna una misura concreta e attuabile di trattamento del rischio, formulata in modo professionale e specifica per il caso (es. "Definire misure di gestione del rischio ex art. 21", "Predisporre il processo di rilevamento e notifica degli incidenti", "Valutare la sicurezza della catena di fornitura coinvolta", "Applicare controllo accessi, segmentazione e cifratura"); per "NA" usa un'unica voce che non vi sono obblighi NIS2 specifici.
+ 
+ La classificazione è preliminare e dovrà essere validata dal CISO."""
+ 
+@@ -626,7 +835,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
+ - "categoria": uno tra "ALTO", "MEDIO", "BASSO", "NA"
+ - "motivazione": 1-3 frasi in italiano riferite al caso d'uso
+ - "riferimenti": riferimento pertinente (es. "Art. 35 — DPIA", "Art. 9 — categorie particolari", "Art. 6 — base giuridica")
+-- "obblighi": elenco sintetico degli obblighi che ne derivano (es. base giuridica, informativa, DPIA, minimizzazione); per "NA" indica che non vi sono obblighi GDPR specifici.
++- "obblighi": array JSON di 3-6 stringhe brevi, ciascuna una misura concreta e attuabile di trattamento del rischio, formulata in modo professionale e specifica per il caso (es. "Individuare e documentare la base giuridica del trattamento", "Aggiornare il Registro dei trattamenti (art. 30)", "Applicare la minimizzazione e limitare l'accesso ai soli autorizzati", "Garantire misure di sicurezza adeguate, quali controllo accessi e cifratura"); per "NA" usa un'unica voce che non vi sono obblighi GDPR specifici.
+ 
+ La classificazione è preliminare e dovrà essere validata dal DPO."""
+ 
+diff --git a/flusso/urls.py b/flusso/urls.py
+index 4985d60..09b845c 100644
+--- a/flusso/urls.py
++++ b/flusso/urls.py
+@@ -22,4 +22,5 @@ urlpatterns = [
+     path("richieste/<int:pk>/sal/", views.aggiorna_sal, name="aggiorna_sal"),
+     path("richieste/<int:pk>/rischio/analizza/", views.analizza_rischio, name="analizza_rischio"),
+     path("richieste/<int:pk>/rischio/<str:tipo>/valida/", views.valida_rischio, name="valida_rischio"),
++    path("richieste/<int:pk>/rischio/<str:tipo>/tratta/", views.tratta_rischio, name="tratta_rischio"),
+ ]
+diff --git a/flusso/views.py b/flusso/views.py
+index 462f4f0..36e4b57 100644
+--- a/flusso/views.py
++++ b/flusso/views.py
+@@ -21,9 +21,12 @@ from django.views.decorators.http import require_POST
+ 
+ from . import servizi
+ from .ai_client import genera_analisi, prova_connessione
+-from .forms import AnalisiAIForm, ImpostazioniAIForm, RichiestaForm, SalForm, ValidazioneRischioForm
++from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, ImpostazioniAIForm, RichiestaForm,
++                    SalForm, TrattamentoRischioForm, ValidazioneRischioForm)
+ from .kpi import calcola_kpi
+-from .models import ConfigurazioneAI, PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta, TipoRischio
++from .models import (ClassificazioneRischio, ConfigurazioneAI, DIMENSIONE_PER_RUOLO,
++                     PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
++                     StatoRischio, TipoRischio)
+ from .notifiche import notifica_transizione
+ from .workflow import FASI, STATI_OPERATIVI, STATI_TERMINALI, Stato, azioni_disponibili, puo_eseguire, transizione
+ 
+@@ -39,9 +42,14 @@ def _richieste_visibili(utente):
+ 
+ 
+ def _puo_validare(utente, tipo) -> bool:
+-    """True se l'utente è il presidio competente per quella dimensione di rischio."""
+-    if utente.is_superuser:
+-        return True
++    """True SOLO se l'utente è il presidio competente per quella dimensione.
++
++    Separazione dei compiti: validare il rischio è un atto di governance legato
++    al ruolo (Funzione Legale → AI Act, CISO → NIS2, DPO → GDPR), non un
++    privilegio amministrativo. La Funzione AI (che è superuser per gestire
++    l'applicazione) e ogni altro superuser NON possono quindi validare al posto
++    del presidio: la validazione resta sempre dei tre presìdi competenti.
++    """
+     return {"AIACT": utente.is_legale, "NIS2": utente.is_ciso, "GDPR": utente.is_dpo}.get(tipo, False)
+ 
+ 
+@@ -69,10 +77,25 @@ def dashboard(request):
+ 
+     da_fare = [r for r in qs if azioni_disponibili(r, request.user)]
+ 
++    # Presidio (Legale/CISO/DPO): rischi della propria dimensione in attesa di validazione.
++    rischi_da_validare, dimensione_presidio = [], ""
++    if request.user.is_validatore_rischio:
++        dim = DIMENSIONE_PER_RUOLO.get(request.user.ruolo)
++        if dim:
++            dimensione_presidio = dict(TipoRischio.choices).get(dim, dim)
++            rischi_da_validare = list(
++                ClassificazioneRischio.objects
++                .filter(tipo=dim, stato=StatoRischio.PROPOSTO_AI)
++                .select_related("richiesta", "richiesta__proponente")
++                .order_by("richiesta__numero")
++            )
++
+     return render(request, "flusso/dashboard.html", {
+         "totale": totale, "aperte": aperte, "attivi": attivi,
+         "conteggio_fasi": conteggio_fasi, "distribuzione": distribuzione,
+         "max_funzione": max_funzione, "da_fare": da_fare[:8], "da_fare_totale": len(da_fare),
++        "rischi_da_validare": rischi_da_validare, "dimensione_presidio": dimensione_presidio,
++        "rischi_da_validare_n": len(rischi_da_validare),
+     })
+ 
+ 
+@@ -134,10 +157,18 @@ def dettaglio(request, pk):
+     rischi = []
+     for c in richiesta.lista_rischi():
+         form = None
++        tratta_form = None
++        azioni_formset = None
+         if _puo_validare(request.user, c.tipo):
+             form = ValidazioneRischioForm(tipo=c.tipo, initial={
+-                "categoria": c.categoria or c.ai_categoria or None})
+-        rischi.append({"c": c, "form": form})
++                "categoria": c.categoria or c.ai_categoria or None,
++                "obblighi": "\n".join(c.obblighi_voci)})
++            tratta_form = TrattamentoRischioForm(
++                instance=c, tipo=c.tipo, prefix=f"tr_{c.tipo}",
++                initial={"rischio_residuo": c.rischio_residuo or c.residuo_suggerito})
++            azioni_formset = AzioneTrattamentoFormSet(instance=c, prefix=f"az_{c.tipo}")
++        rischi.append({"c": c, "form": form, "tratta_form": tratta_form,
++                       "azioni_formset": azioni_formset})
+     blocco_approvazione = richiesta.stato == Stato.IN_QUALIFICA and not richiesta.rischi_tutti_validati
+     if blocco_approvazione:
+         azioni = [a for a in azioni if a.azione != "presenta_approvazione"]
+@@ -445,9 +476,41 @@ def valida_rischio(request, pk, tipo):
+         classificazione.valida(
+             form.cleaned_data["categoria"], attore=request.user,
+             nota=form.cleaned_data["nota"], motivazione=form.cleaned_data["motivazione"],
++            obblighi=form.cleaned_data.get("obblighi"),
+         )
+         verbo = "modificato" if classificazione.stato == "MODIFICATO" else "validato"
+         messages.success(request, f"Rischio {_NOMI_RISCHIO[tipo]} {verbo}: {classificazione.categoria_label}.")
+     else:
+         messages.error(request, "Selezione non valida.")
+     return redirect(richiesta)
++
++
++@login_required
++@require_POST
++def tratta_rischio(request, pk, tipo):
++    """Il presidio competente registra il TRATTAMENTO del rischio di UNA dimensione.
++
++    Strategia (accetta/mitiga/trasferisci/evita), azioni con data, rischio
++    residuo e relativa convalida. Stesso vincolo di competenza della validazione.
++    """
++    tipo = (tipo or "").upper()
++    if tipo not in dict(TipoRischio.choices):
++        return HttpResponseForbidden("Dimensione di rischio non valida.")
++    if not _puo_validare(request.user, tipo):
++        return HttpResponseForbidden("Non sei il presidio competente per questa dimensione di rischio.")
++    richiesta = get_object_or_404(Richiesta, pk=pk)
++    richiesta.assicura_classificazioni()
++    classificazione = richiesta.classificazioni.get(tipo=tipo)
++    form = TrattamentoRischioForm(request.POST, instance=classificazione, tipo=tipo, prefix=f"tr_{tipo}")
++    formset = AzioneTrattamentoFormSet(request.POST, instance=classificazione, prefix=f"az_{tipo}")
++    if form.is_valid() and formset.is_valid():
++        form.save()
++        formset.save()
++        classificazione.registra_trattamento(attore=request.user)
++        msg = f"Trattamento {_NOMI_RISCHIO[tipo]} salvato: {classificazione.get_strategia_display()}."
++        if classificazione.residuo_da_convalidare:
++            msg += " Rischio residuo da convalidare."
++        messages.success(request, msg)
++    else:
++        messages.error(request, "Trattamento non valido: controlla le azioni e il livello residuo.")
++    return redirect(richiesta)
+diff --git a/static/css/app.css b/static/css/app.css
+index 98ea3e4..d91c41e 100644
+--- a/static/css/app.css
++++ b/static/css/app.css
+@@ -533,6 +533,44 @@ body.auth { background: #080a10; overflow-x: hidden; }
+ .rischio-mot { font-size:13.5px; color:var(--testo-2); margin:12px 0 10px; white-space:pre-line; }
+ .rischio-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+ @media (max-width:560px){ .rischio-grid { grid-template-columns:1fr; } }
++.rischio-misure-wrap { margin-top:10px; }
++.rischio-misure-wrap > .lab { font-size:10px; font-weight:700; letter-spacing:.02em; color:var(--testo-3); text-transform:uppercase; display:block; margin-bottom:6px; }
++.rischio-misure { margin:0; padding:0; list-style:none; display:grid; gap:6px; }
++.rischio-misure li { position:relative; padding:7px 12px 7px 30px; background:#f7f8f9; border-radius:9px; font-size:13.5px; line-height:1.4; color:var(--inchiostro); }
++.rischio-misure li::before { content:""; position:absolute; left:12px; top:13px; width:7px; height:7px; border-radius:50%; background:var(--rosso); }
++
++/* --- Trattamento del rischio --- */
++.trk { margin-top:12px; padding:11px 13px; border:1px solid var(--bordo); border-left:3px solid var(--info); border-radius:11px; background:#fbfcfe; }
++.trk-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
++.trk-lab { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color:var(--testo-3); }
++.trk-lab .ti { color:var(--info); }
++.trk-strat { display:inline-flex; align-items:center; border-radius:var(--r-pill); font-size:12px; font-weight:700; padding:3px 11px; }
++.trk-accettato { background:#eef0f2; color:var(--testo-2); }
++.trk-mitigato  { background:var(--verde-bg); color:var(--verde-fg); }
++.trk-trasferito{ background:#e6f0fa; color:#114a7a; }
++.trk-evitato   { background:#fdebec; color:var(--rosso-scuro); }
++.trk-res { font-size:12.5px; font-weight:600; color:var(--testo-2); display:inline-flex; align-items:center; gap:6px; }
++.rk-arrow { font-weight:800; font-size:15px; line-height:1; }
++.rk-giu { color:var(--ok); }
++.rk-su  { color:var(--rosso); }
++.rk-pari{ color:var(--testo-3); }
++.trk-op { font-size:13px; color:var(--testo-2); margin:8px 0 0; }
++.trk-azioni { margin:8px 0 0; padding:0; list-style:none; display:grid; gap:5px; }
++.trk-azioni li { display:flex; align-items:baseline; justify-content:space-between; gap:10px; background:#fff; border:1px solid var(--bordo); border-radius:8px; padding:6px 10px; font-size:13px; }
++.trk-az-data { font-size:12px; font-weight:700; color:var(--testo-2); white-space:nowrap; }
++.trk-az-data .ti { vertical-align:-2px; }
++.trk-form { margin-top:12px; padding-top:12px; border-top:1px dashed var(--bordo-2); }
++.trk-form-tit { font-size:13px; font-weight:700; color:var(--testo-2); display:flex; align-items:center; gap:7px; margin-bottom:10px; }
++.trk-form-tit .ti { color:var(--info); }
++.trk-blocco { margin:6px 0 10px; }
++.trk-blocco > .lab { font-size:10px; font-weight:700; letter-spacing:.02em; color:var(--testo-3); text-transform:uppercase; display:block; margin-bottom:6px; }
++.trk-rows { display:grid; gap:7px; margin-bottom:8px; }
++.trk-row { display:grid; grid-template-columns:1fr 175px auto; gap:8px; align-items:center; }
++@media (max-width:560px){ .trk-row { grid-template-columns:1fr; } }
++.trk-row-del { font-size:12px; color:var(--testo-3); display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
++.trk-check { display:inline-flex; align-items:center; gap:7px; font-size:13px; color:var(--testo-2); cursor:pointer; }
++.btn-ghost { background:#fff; border:1px solid var(--bordo-2); color:var(--testo-2); }
++.btn-ghost:hover { background:var(--sfondo); }
+ .rischio-legale { margin-top:16px; padding-top:14px; border-top:1px dashed var(--bordo-2); }
+ .rischio-legale-tit { font-size:13px; font-weight:700; color:var(--testo-2); margin-bottom:10px; display:flex; align-items:center; gap:7px; }
+ .rischio-legale-tit .ti { color:var(--rosso); }
+diff --git a/templates/flusso/dashboard.html b/templates/flusso/dashboard.html
+index 1b27c7d..f4fe33f 100644
+--- a/templates/flusso/dashboard.html
++++ b/templates/flusso/dashboard.html
+@@ -17,6 +17,28 @@
+   <div class="kpi"><div class="n">{{ da_fare_totale }}</div><div class="l">In attesa di una tua azione</div></div>
+ </div>
+ 
++{% if dimensione_presidio %}
++<div class="card" style="margin-bottom:16px;border-left:3px solid var(--rosso);">
++  <h2><i class="ti ti-gavel" style="vertical-align:-2px;color:var(--rosso)"></i> Da validare — {{ dimensione_presidio }} <span class="sub">— rischi in attesa della tua validazione o trattamento</span></h2>
++  {% if rischi_da_validare %}
++  <div class="todo-list">
++    {% for c in rischi_da_validare %}
++    <a href="{{ c.richiesta.get_absolute_url }}#rischio" class="todo-item">
++      <span class="scheda-icona {{ c.richiesta.funzione|classe_funzione }}" style="width:32px;height:32px;font-size:16px;"><i class="ti {{ c.richiesta.funzione|icona_funzione }}"></i></span>
++      <span class="ti-corpo">
++        <span class="t-tit">{{ c.richiesta.codice }} · {{ c.richiesta.titolo }}</span>
++        <span class="t-sub">{{ c.richiesta.get_funzione_display }} · proposta AI: <b>{{ c.ai_label }}</b></span>
++      </span>
++      <span class="rk-stato rks-att"><i class="ti ti-robot"></i> Da validare</span>
++    </a>
++    {% endfor %}
++  </div>
++  {% else %}
++  <div class="vuoto"><i class="ti ti-circle-check" style="font-size:22px;display:block;margin-bottom:6px;color:var(--ok)"></i>Nessun rischio in attesa della tua validazione.</div>
++  {% endif %}
++</div>
++{% endif %}
++
+ <div class="cols-2">
+   <div class="card">
+     <h2><i class="ti ti-checklist" style="vertical-align:-2px;color:var(--rosso)"></i> Da gestire <span class="sub">— richiedono un'azione del tuo ruolo</span></h2>
+diff --git a/templates/flusso/dettaglio.html b/templates/flusso/dettaglio.html
+index ea8a524..0946d6f 100644
+--- a/templates/flusso/dettaglio.html
++++ b/templates/flusso/dettaglio.html
+@@ -94,7 +94,7 @@
+       {% endif %}
+     </div>
+ 
+-    <div class="card rischio-card" style="margin-top:18px;">
++    <div class="card rischio-card" id="rischio" style="margin-top:18px;">
+       <div class="rischio-cardhead">
+         <h2><i class="ti ti-scale" style="vertical-align:-2px;color:var(--rosso)"></i> Rischio &amp; Conformità
+           <span class="sub">classificazione preliminare · da validare dai presìdi</span></h2>
+@@ -125,14 +125,44 @@
+         {% if d.c.motivazione %}<p class="rischio-mot">{{ d.c.motivazione }}</p>{% endif %}
+         <div class="rischio-grid">
+           {% if d.c.riferimenti %}<div class="dato"><span class="lab">Riferimenti</span><span class="val">{{ d.c.riferimenti }}</span></div>{% endif %}
+-          {% if d.c.obblighi %}<div class="dato"><span class="lab">Obblighi derivati</span><span class="val">{{ d.c.obblighi }}</span></div>{% endif %}
+         </div>
++        {% if d.c.obblighi_voci %}
++        <div class="rischio-misure-wrap">
++          <span class="lab">Obblighi e misure di trattamento</span>
++          <ul class="rischio-misure">{% for voce in d.c.obblighi_voci %}<li>{{ voce }}</li>{% endfor %}</ul>
++        </div>
++        {% endif %}
+         <div class="t-mut" style="margin-top:8px;">
+           {% if d.c.ai_il %}<i class="ti ti-robot" style="vertical-align:-2px;"></i> Stima AI{% if d.c.ai_modello %} ({{ d.c.ai_modello }}){% endif %} del {{ d.c.ai_il|date:"d/m/Y H:i" }}{% endif %}
+           {% if d.c.validato %} · <i class="ti ti-gavel" style="vertical-align:-2px;"></i> {{ d.c.validato_da.get_full_name|default:d.c.validato_da.username }} il {{ d.c.validato_il|date:"d/m/Y H:i" }}{% endif %}
+         </div>
+         {% if d.c.nota_validatore %}<div class="t-nota" style="margin-top:6px;">Nota {{ d.c.validatore_label }}: {{ d.c.nota_validatore }}</div>{% endif %}
+ 
++        {% if d.c.trattato %}
++        <div class="trk">
++          <div class="trk-head">
++            <span class="trk-lab"><i class="ti ti-shield-check"></i> Trattamento</span>
++            <span class="trk-strat trk-{{ d.c.strategia|lower }}">{{ d.c.get_strategia_display }}</span>
++            {% if d.c.strategia == 'MITIGATO' or d.c.strategia == 'TRASFERITO' %}
++            <span class="rk-arrow rk-{{ d.c.residuo_direzione }}">{% if d.c.residuo_direzione == 'giu' %}&#8595;{% elif d.c.residuo_direzione == 'su' %}&#8593;{% else %}={% endif %}</span>
++            <span class="trk-res">Residuo: <span class="rk {{ d.c.residuo_css }}">{{ d.c.residuo_label }}</span></span>
++            {% if d.c.residuo_da_convalidare %}<span class="rk-stato rks-att"><i class="ti ti-clock"></i> Residuo da convalidare</span>
++            {% else %}<span class="rk-stato rks-ok"><i class="ti ti-check"></i> Residuo convalidato</span>{% endif %}
++            {% endif %}
++          </div>
++          <p class="trk-op">{{ d.c.trattamento_operazione }}</p>
++          {% if d.c.azioni.all %}
++          <ul class="trk-azioni">
++            {% for a in d.c.azioni.all %}
++            <li><span class="trk-az-desc">{{ a.descrizione }}</span>{% if a.data_prevista %}<span class="trk-az-data"><i class="ti ti-calendar-event"></i> {{ a.data_prevista|date:"d/m/Y" }}</span>{% endif %}</li>
++            {% endfor %}
++          </ul>
++          {% endif %}
++          {% if d.c.trattamento_note %}<div class="t-nota" style="margin-top:6px;">Note: {{ d.c.trattamento_note }}</div>{% endif %}
++          {% if d.c.trattato_il %}<div class="t-mut" style="margin-top:6px;"><i class="ti ti-gavel" style="vertical-align:-2px;"></i> {{ d.c.trattato_da.get_full_name|default:d.c.trattato_da.username }} il {{ d.c.trattato_il|date:"d/m/Y H:i" }}</div>{% endif %}
++        </div>
++        {% endif %}
++
+         {% if d.form %}
+         <form method="post" action="{% url 'flusso:valida_rischio' richiesta.pk d.c.tipo %}" class="rk-valida">
+           {% csrf_token %}
+@@ -141,10 +171,53 @@
+             <div class="f-row"><label for="{{ d.form.nota.id_for_label }}">Nota</label>{{ d.form.nota }}</div>
+           </div>
+           <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.form.motivazione.id_for_label }}">Motivazione (opzionale)</label>{{ d.form.motivazione }}</div>
++          <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.form.obblighi.id_for_label }}">Obblighi e misure di trattamento</label>{{ d.form.obblighi }}<span class="t-mut" style="display:block;margin-top:4px;">Una misura per riga. Vuoto = mantiene le misure proposte dall'AI.</span></div>
+           <button type="submit" class="btn btn-positivo btn-sm"><i class="ti ti-check"></i> Conferma {{ d.c.get_tipo_display }}</button>
+           <span class="t-mut" style="margin-left:8px;">Conferma = validato; categoria diversa = modificato.</span>
+         </form>
+         {% endif %}
++
++        {% if d.tratta_form %}
++        <form method="post" action="{% url 'flusso:tratta_rischio' richiesta.pk d.c.tipo %}" class="trk-form" data-trk>
++          {% csrf_token %}
++          <div class="trk-form-tit"><i class="ti ti-shield-check"></i> Tratta il rischio</div>
++          <div class="f-row" style="margin-bottom:8px;"><label for="{{ d.tratta_form.strategia.id_for_label }}">Strategia di trattamento</label>{{ d.tratta_form.strategia }}</div>
++
++          <div class="trk-blocco" data-trk-azioni>
++            <span class="lab">Azioni da intraprendere (con data prevista di applicazione)</span>
++            {{ d.azioni_formset.management_form }}
++            <div class="trk-rows" data-formset-rows data-prefix="{{ d.azioni_formset.prefix }}">
++              {% for af in d.azioni_formset %}
++              <div class="trk-row" data-formset-row>
++                {{ af.id }}
++                <div class="trk-row-desc">{{ af.descrizione }}</div>
++                <div class="trk-row-data">{{ af.data_prevista }}</div>
++                {% if af.instance.pk %}<label class="trk-row-del">{{ af.DELETE }} elimina</label>{% endif %}
++              </div>
++              {% endfor %}
++            </div>
++            <template data-empty-row>
++              <div class="trk-row" data-formset-row>
++                <div class="trk-row-desc">{{ d.azioni_formset.empty_form.descrizione }}</div>
++                <div class="trk-row-data">{{ d.azioni_formset.empty_form.data_prevista }}</div>
++              </div>
++            </template>
++            <button type="button" class="btn btn-ghost btn-sm" data-add-row><i class="ti ti-plus"></i> Aggiungi azione</button>
++          </div>
++
++          <div class="trk-blocco" data-trk-residuo>
++            <div class="rk-valida-row">
++              <div class="f-row"><label for="{{ d.tratta_form.rischio_residuo.id_for_label }}">Rischio residuo</label>{{ d.tratta_form.rischio_residuo }}<span class="t-mut" style="display:block;margin-top:4px;">Suggerito (indicativo): <b>{{ d.c.residuo_suggerito|default:"—" }}</b> — un livello sotto l'inerente. La decisione resta del presidio.</span></div>
++              <div class="f-row"><label>&nbsp;</label><label class="trk-check">{{ d.tratta_form.residuo_convalidato }} <span>Convalida il rischio residuo</span></label></div>
++            </div>
++          </div>
++
++          <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.tratta_form.trattamento_note.id_for_label }}">Note di trattamento</label>{{ d.tratta_form.trattamento_note }}</div>
++
++          <button type="submit" class="btn btn-positivo btn-sm"><i class="ti ti-device-floppy"></i> Salva trattamento {{ d.c.get_tipo_display }}</button>
++          <span class="t-mut" style="margin-left:8px;">Se non tratti nulla, il rischio resta accettato come proposto dall'AI.</span>
++        </form>
++        {% endif %}
+       </div>
+       {% endfor %}
+ 
+@@ -226,4 +299,37 @@
+     </div>
+   </aside>
+ </div>
++
++<script>
++(function(){
++  document.querySelectorAll('form[data-trk]').forEach(function(form){
++    var sel = form.querySelector('select[name$="-strategia"]');
++    var blkAz = form.querySelector('[data-trk-azioni]');
++    var blkRes = form.querySelector('[data-trk-residuo]');
++    function apply(){
++      var v = sel ? sel.value : 'ACCETTATO';
++      if(blkAz) blkAz.style.display = (v === 'MITIGATO') ? '' : 'none';
++      if(blkRes) blkRes.style.display = (v === 'MITIGATO' || v === 'TRASFERITO') ? '' : 'none';
++    }
++    if(sel) sel.addEventListener('change', apply);
++    apply();
++
++    var addBtn = form.querySelector('[data-add-row]');
++    var rows = form.querySelector('[data-formset-rows]');
++    var tpl = form.querySelector('template[data-empty-row]');
++    if(addBtn && rows && tpl){
++      addBtn.addEventListener('click', function(){
++        var prefix = rows.getAttribute('data-prefix');
++        var total = form.querySelector('input[name="'+prefix+'-TOTAL_FORMS"]');
++        var idx = parseInt(total.value, 10);
++        var html = tpl.innerHTML.replace(/__prefix__/g, idx).trim();
++        var wrap = document.createElement('div');
++        wrap.innerHTML = html;
++        rows.appendChild(wrap.firstElementChild);
++        total.value = idx + 1;
++      });
++    }
++  });
++})();
++</script>
+ {% endblock %}

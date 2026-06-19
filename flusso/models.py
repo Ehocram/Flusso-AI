@@ -38,6 +38,15 @@ class StatoRischio(models.TextChoices):
     MODIFICATO = "MODIFICATO", "Modificato dal presidio"
 
 
+class StrategiaTrattamento(models.TextChoices):
+    """Strategia di trattamento del rischio (ISO 27005 / ISO 31000)."""
+
+    ACCETTATO = "ACCETTATO", "Accettato"
+    MITIGATO = "MITIGATO", "Mitigato (ridotto)"
+    TRASFERITO = "TRASFERITO", "Trasferito"
+    EVITATO = "EVITATO", "Evitato (eliminato)"
+
+
 # Categorie ammesse per ciascuna dimensione (codice, etichetta).
 CATEGORIE_RISCHIO = {
     "AIACT": [
@@ -119,6 +128,35 @@ def categoria_css(tipo, code) -> str:
         return "rk-nd"
     tabella = _CSS_AIACT if tipo == "AIACT" else _CSS_LIVELLO
     return tabella.get(code, "rk-nd")
+
+
+# Scala ordinale dei livelli per dimensione (serve a confrontare inerente vs residuo).
+_ORDINE_LIVELLO = {
+    "AIACT": {"MINIMO": 1, "LIMITATO": 2, "ALTO": 3, "VIETATO": 4},
+    "NIS2": {"NA": 0, "BASSO": 1, "MEDIO": 2, "ALTO": 3},
+    "GDPR": {"NA": 0, "BASSO": 1, "MEDIO": 2, "ALTO": 3},
+}
+
+
+def livello_ordinale(tipo, code):
+    """Posizione del livello nella scala della dimensione (None se sconosciuto)."""
+    return _ORDINE_LIVELLO.get(tipo, {}).get(code)
+
+
+def livello_suggerito_residuo(tipo, code):
+    """Suggerimento INDICATIVO del residuo: un livello sotto l'inerente (mai negativo).
+
+    Non e' un calcolo vincolante: il residuo resta una valutazione del presidio.
+    """
+    scala = _ORDINE_LIVELLO.get(tipo, {})
+    pos = scala.get(code)
+    if pos is None:
+        return ""
+    target = max(min(scala.values()), pos - 1)
+    for c, p in scala.items():
+        if p == target:
+            return c
+    return code
 
 
 class Richiesta(models.Model):
@@ -493,6 +531,28 @@ class ClassificazioneRischio(models.Model):
     )
     validato_il = models.DateTimeField(null=True, blank=True)
     nota_validatore = models.TextField(blank=True)
+    # --- Trattamento del rischio (ISO 27005): strategia + residuo --------------
+    strategia = models.CharField(
+        max_length=12, choices=StrategiaTrattamento.choices,
+        default=StrategiaTrattamento.ACCETTATO,
+        verbose_name="Strategia di trattamento",
+    )
+    rischio_residuo = models.CharField(
+        max_length=12, blank=True, verbose_name="Rischio residuo",
+        help_text="Livello atteso dopo il trattamento. Vuoto = pari al rischio inerente.",
+    )
+    residuo_convalidato = models.BooleanField(
+        default=False, verbose_name="Rischio residuo convalidato dal presidio",
+    )
+    trattamento_note = models.TextField(
+        blank=True, verbose_name="Note di trattamento",
+        help_text="Per il trasferimento: a chi/come. Per l'accettazione: motivazione.",
+    )
+    trattato_da = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="rischi_trattati",
+    )
+    trattato_il = models.DateTimeField(null=True, blank=True)
     aggiornata_il = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -544,6 +604,69 @@ class ClassificazioneRischio(models.Model):
     def obblighi_voci(self) -> list:
         """Elenco pulito delle misure/obblighi di trattamento (robusto ai dati storici)."""
         return obblighi_in_voci(self.obblighi)
+
+    # --- Trattamento del rischio: residuo, direzione, etichetta dell'operazione ---
+    @property
+    def residuo_codice(self) -> str:
+        """Livello residuo EFFETTIVO. Evitato => nessun residuo; altrimenti residuo o inerente."""
+        if self.strategia == StrategiaTrattamento.EVITATO:
+            return ""
+        return self.rischio_residuo or self.categoria
+
+    @property
+    def residuo_label(self) -> str:
+        if self.strategia == StrategiaTrattamento.EVITATO:
+            return "Eliminato"
+        return categoria_label(self.tipo, self.residuo_codice)
+
+    @property
+    def residuo_css(self) -> str:
+        if self.strategia == StrategiaTrattamento.EVITATO:
+            return "rk-minimo"
+        return categoria_css(self.tipo, self.residuo_codice)
+
+    @property
+    def residuo_suggerito(self) -> str:
+        """Suggerimento indicativo (un livello sotto l'inerente), non vincolante."""
+        return livello_suggerito_residuo(self.tipo, self.categoria)
+
+    @property
+    def residuo_direzione(self) -> str:
+        """'giu' (ridotto), 'pari' (invariato), 'su' (aumentato) o '' se non confrontabile."""
+        if self.strategia == StrategiaTrattamento.EVITATO:
+            return "giu"
+        a = livello_ordinale(self.tipo, self.categoria)
+        b = livello_ordinale(self.tipo, self.residuo_codice)
+        if a is None or b is None:
+            return ""
+        return "giu" if b < a else ("su" if b > a else "pari")
+
+    @property
+    def trattato(self) -> bool:
+        """True se il presidio ha applicato un trattamento diverso dalla semplice accettazione."""
+        return self.strategia != StrategiaTrattamento.ACCETTATO or bool(self.trattato_il)
+
+    @property
+    def residuo_da_convalidare(self) -> bool:
+        return (self.strategia in (StrategiaTrattamento.MITIGATO, StrategiaTrattamento.TRASFERITO)
+                and not self.residuo_convalidato)
+
+    @property
+    def trattamento_operazione(self) -> str:
+        """Etichetta che esplicita l'operazione di calcolo del rischio residuo."""
+        iner = self.categoria_label
+        if self.strategia == StrategiaTrattamento.ACCETTATO:
+            return f"Rischio accettato al livello inerente ({iner}); nessuna mitigazione applicata."
+        if self.strategia == StrategiaTrattamento.EVITATO:
+            return "Rischio evitato: il caso d'uso non procede nella forma che genera il rischio (residuo eliminato)."
+        n = self.azioni.count()
+        if self.strategia == StrategiaTrattamento.MITIGATO:
+            azioni_txt = f"{n} azione/i di mitigazione" if n else "le misure di trattamento"
+            return (f"Rischio residuo {self.residuo_label} = rischio inerente {iner} "
+                    f"ridotto tramite {azioni_txt}.")
+        # TRASFERITO
+        return (f"Rischio trasferito a terzi; livello residuo trattenuto {self.residuo_label} "
+                f"(rischio inerente {iner}).")
 
     @transaction.atomic
     def applica_ai(self, categoria, motivazione="", riferimenti="", obblighi="", modello="", attore=None):
@@ -601,10 +724,49 @@ class ClassificazioneRischio(models.Model):
                    verbo, self.tipo, categoria, getattr(attore, "username", "?"))
         return self
 
+    @transaction.atomic
+    def registra_trattamento(self, attore):
+        """Scrive l'audit del trattamento (le azioni sono salvate a parte dal formset)."""
+        self.trattato_da = attore
+        self.trattato_il = timezone.now()
+        # Coerenza: ACCETTATO/EVITATO non hanno un residuo selezionabile.
+        if self.strategia in (StrategiaTrattamento.ACCETTATO, StrategiaTrattamento.EVITATO):
+            self.rischio_residuo = ""
+            self.residuo_convalidato = False
+        self.save()
+        etichetta = f"Rischio {self.get_tipo_display()} — trattamento: {self.get_strategia_display()}"
+        nota = self.trattamento_operazione
+        if self.residuo_da_convalidare:
+            nota += " · rischio residuo DA CONVALIDARE"
+        Transizione.objects.create(
+            richiesta=self.richiesta, azione=f"rischio_trattato_{self.tipo.lower()}",
+            etichetta=etichetta, stato_da=self.richiesta.stato, stato_a=self.richiesta.stato,
+            attore=attore, nota=nota,
+        )
+        audit.info("richiesta=%s rischio_trattato tipo=%s strategia=%s residuo=%s conv=%s attore=%s",
+                   self.richiesta.codice, self.tipo, self.strategia, self.residuo_codice,
+                   self.residuo_convalidato, getattr(attore, "username", "?"))
+        return self
 
-# =============================================================================
-# Configurazione AI (singleton) per la lettura esecutiva dei KPI
-# =============================================================================
+
+class AzioneTrattamento(models.Model):
+    """Azione di mitigazione pianificata per una classificazione di rischio."""
+
+    classificazione = models.ForeignKey(
+        ClassificazioneRischio, on_delete=models.CASCADE, related_name="azioni",
+    )
+    descrizione = models.CharField(max_length=500, verbose_name="Azione da intraprendere")
+    data_prevista = models.DateField(null=True, blank=True, verbose_name="Data prevista di applicazione")
+    ordine = models.PositiveIntegerField(default=0)
+    creata_il = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        verbose_name = "Azione di trattamento"
+        verbose_name_plural = "Azioni di trattamento"
+        ordering = ["ordine", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.classificazione.tipo} · {self.descrizione[:40]}"
 
 MODELLI_CLAUDE = [
     ("claude-sonnet-4-6", "Claude Sonnet 4.6 — consigliato (qualità/costo)"),

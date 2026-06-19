@@ -538,6 +538,39 @@ body.auth { background: #080a10; overflow-x: hidden; }
 .rischio-misure { margin:0; padding:0; list-style:none; display:grid; gap:6px; }
 .rischio-misure li { position:relative; padding:7px 12px 7px 30px; background:#f7f8f9; border-radius:9px; font-size:13.5px; line-height:1.4; color:var(--inchiostro); }
 .rischio-misure li::before { content:""; position:absolute; left:12px; top:13px; width:7px; height:7px; border-radius:50%; background:var(--rosso); }
+
+/* --- Trattamento del rischio --- */
+.trk { margin-top:12px; padding:11px 13px; border:1px solid var(--bordo); border-left:3px solid var(--info); border-radius:11px; background:#fbfcfe; }
+.trk-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.trk-lab { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color:var(--testo-3); }
+.trk-lab .ti { color:var(--info); }
+.trk-strat { display:inline-flex; align-items:center; border-radius:var(--r-pill); font-size:12px; font-weight:700; padding:3px 11px; }
+.trk-accettato { background:#eef0f2; color:var(--testo-2); }
+.trk-mitigato  { background:var(--verde-bg); color:var(--verde-fg); }
+.trk-trasferito{ background:#e6f0fa; color:#114a7a; }
+.trk-evitato   { background:#fdebec; color:var(--rosso-scuro); }
+.trk-res { font-size:12.5px; font-weight:600; color:var(--testo-2); display:inline-flex; align-items:center; gap:6px; }
+.rk-arrow { font-weight:800; font-size:15px; line-height:1; }
+.rk-giu { color:var(--ok); }
+.rk-su  { color:var(--rosso); }
+.rk-pari{ color:var(--testo-3); }
+.trk-op { font-size:13px; color:var(--testo-2); margin:8px 0 0; }
+.trk-azioni { margin:8px 0 0; padding:0; list-style:none; display:grid; gap:5px; }
+.trk-azioni li { display:flex; align-items:baseline; justify-content:space-between; gap:10px; background:#fff; border:1px solid var(--bordo); border-radius:8px; padding:6px 10px; font-size:13px; }
+.trk-az-data { font-size:12px; font-weight:700; color:var(--testo-2); white-space:nowrap; }
+.trk-az-data .ti { vertical-align:-2px; }
+.trk-form { margin-top:12px; padding-top:12px; border-top:1px dashed var(--bordo-2); }
+.trk-form-tit { font-size:13px; font-weight:700; color:var(--testo-2); display:flex; align-items:center; gap:7px; margin-bottom:10px; }
+.trk-form-tit .ti { color:var(--info); }
+.trk-blocco { margin:6px 0 10px; }
+.trk-blocco > .lab { font-size:10px; font-weight:700; letter-spacing:.02em; color:var(--testo-3); text-transform:uppercase; display:block; margin-bottom:6px; }
+.trk-rows { display:grid; gap:7px; margin-bottom:8px; }
+.trk-row { display:grid; grid-template-columns:1fr 175px auto; gap:8px; align-items:center; }
+@media (max-width:560px){ .trk-row { grid-template-columns:1fr; } }
+.trk-row-del { font-size:12px; color:var(--testo-3); display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.trk-check { display:inline-flex; align-items:center; gap:7px; font-size:13px; color:var(--testo-2); cursor:pointer; }
+.btn-ghost { background:#fff; border:1px solid var(--bordo-2); color:var(--testo-2); }
+.btn-ghost:hover { background:var(--sfondo); }
 .rischio-legale { margin-top:16px; padding-top:14px; border-top:1px dashed var(--bordo-2); }
 .rischio-legale-tit { font-size:13px; font-weight:700; color:var(--testo-2); margin-bottom:10px; display:flex; align-items:center; gap:7px; }
 .rischio-legale-tit .ti { color:var(--rosso); }

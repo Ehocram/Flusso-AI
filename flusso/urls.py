@@ -22,4 +22,5 @@ urlpatterns = [
     path("richieste/<int:pk>/sal/", views.aggiorna_sal, name="aggiorna_sal"),
     path("richieste/<int:pk>/rischio/analizza/", views.analizza_rischio, name="analizza_rischio"),
     path("richieste/<int:pk>/rischio/<str:tipo>/valida/", views.valida_rischio, name="valida_rischio"),
+    path("richieste/<int:pk>/rischio/<str:tipo>/tratta/", views.tratta_rischio, name="tratta_rischio"),
 ]

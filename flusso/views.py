@@ -21,7 +21,8 @@ from django.views.decorators.http import require_POST
 
 from . import servizi
 from .ai_client import genera_analisi, prova_connessione
-from .forms import AnalisiAIForm, ImpostazioniAIForm, RichiestaForm, SalForm, ValidazioneRischioForm
+from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, ImpostazioniAIForm, RichiestaForm,
+                    SalForm, TrattamentoRischioForm, ValidazioneRischioForm)
 from .kpi import calcola_kpi
 from .models import (ClassificazioneRischio, ConfigurazioneAI, DIMENSIONE_PER_RUOLO,
                      PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
@@ -156,11 +157,18 @@ def dettaglio(request, pk):
     rischi = []
     for c in richiesta.lista_rischi():
         form = None
+        tratta_form = None
+        azioni_formset = None
         if _puo_validare(request.user, c.tipo):
             form = ValidazioneRischioForm(tipo=c.tipo, initial={
                 "categoria": c.categoria or c.ai_categoria or None,
                 "obblighi": "\n".join(c.obblighi_voci)})
-        rischi.append({"c": c, "form": form})
+            tratta_form = TrattamentoRischioForm(
+                instance=c, tipo=c.tipo, prefix=f"tr_{c.tipo}",
+                initial={"rischio_residuo": c.rischio_residuo or c.residuo_suggerito})
+            azioni_formset = AzioneTrattamentoFormSet(instance=c, prefix=f"az_{c.tipo}")
+        rischi.append({"c": c, "form": form, "tratta_form": tratta_form,
+                       "azioni_formset": azioni_formset})
     blocco_approvazione = richiesta.stato == Stato.IN_QUALIFICA and not richiesta.rischi_tutti_validati
     if blocco_approvazione:
         azioni = [a for a in azioni if a.azione != "presenta_approvazione"]
@@ -474,4 +482,35 @@ def valida_rischio(request, pk, tipo):
         messages.success(request, f"Rischio {_NOMI_RISCHIO[tipo]} {verbo}: {classificazione.categoria_label}.")
     else:
         messages.error(request, "Selezione non valida.")
+    return redirect(richiesta)
+
+
+@login_required
+@require_POST
+def tratta_rischio(request, pk, tipo):
+    """Il presidio competente registra il TRATTAMENTO del rischio di UNA dimensione.
+
+    Strategia (accetta/mitiga/trasferisci/evita), azioni con data, rischio
+    residuo e relativa convalida. Stesso vincolo di competenza della validazione.
+    """
+    tipo = (tipo or "").upper()
+    if tipo not in dict(TipoRischio.choices):
+        return HttpResponseForbidden("Dimensione di rischio non valida.")
+    if not _puo_validare(request.user, tipo):
+        return HttpResponseForbidden("Non sei il presidio competente per questa dimensione di rischio.")
+    richiesta = get_object_or_404(Richiesta, pk=pk)
+    richiesta.assicura_classificazioni()
+    classificazione = richiesta.classificazioni.get(tipo=tipo)
+    form = TrattamentoRischioForm(request.POST, instance=classificazione, tipo=tipo, prefix=f"tr_{tipo}")
+    formset = AzioneTrattamentoFormSet(request.POST, instance=classificazione, prefix=f"az_{tipo}")
+    if form.is_valid() and formset.is_valid():
+        form.save()
+        formset.save()
+        classificazione.registra_trattamento(attore=request.user)
+        msg = f"Trattamento {_NOMI_RISCHIO[tipo]} salvato: {classificazione.get_strategia_display()}."
+        if classificazione.residuo_da_convalidare:
+            msg += " Rischio residuo da convalidare."
+        messages.success(request, msg)
+    else:
+        messages.error(request, "Trattamento non valido: controlla le azioni e il livello residuo.")
     return redirect(richiesta)

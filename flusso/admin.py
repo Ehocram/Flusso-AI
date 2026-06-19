@@ -2,14 +2,21 @@
 
 from django.contrib import admin
 
-from .models import ClassificazioneRischio, Richiesta, Transizione
+from .models import AzioneTrattamento, ClassificazioneRischio, Richiesta, Transizione
 
 
 class ClassificazioneRischioInline(admin.TabularInline):
     model = ClassificazioneRischio
     extra = 0
-    fields = ("tipo", "categoria", "stato", "ai_categoria", "validato_da", "validato_il")
+    fields = ("tipo", "categoria", "stato", "ai_categoria", "strategia",
+              "rischio_residuo", "residuo_convalidato", "validato_da", "validato_il")
     readonly_fields = ("ai_categoria", "validato_il")
+
+
+class AzioneTrattamentoInline(admin.TabularInline):
+    model = AzioneTrattamento
+    extra = 0
+    fields = ("descrizione", "data_prevista", "ordine")
 
 
 class TransizioneInline(admin.TabularInline):
@@ -33,10 +40,13 @@ class RichiestaAdmin(admin.ModelAdmin):
 
 @admin.register(ClassificazioneRischio)
 class ClassificazioneRischioAdmin(admin.ModelAdmin):
-    list_display = ("richiesta", "tipo", "categoria", "stato", "validato_da", "validato_il")
-    list_filter = ("tipo", "stato")
+    list_display = ("richiesta", "tipo", "categoria", "stato", "strategia",
+                    "rischio_residuo", "residuo_convalidato", "validato_da")
+    list_filter = ("tipo", "stato", "strategia", "residuo_convalidato")
     search_fields = ("richiesta__titolo", "richiesta__numero")
-    readonly_fields = ("ai_categoria", "ai_il", "ai_modello", "validato_il", "aggiornata_il")
+    readonly_fields = ("ai_categoria", "ai_il", "ai_modello", "validato_il",
+                       "trattato_da", "trattato_il", "aggiornata_il")
+    inlines = [AzioneTrattamentoInline]
 
 
 @admin.register(Transizione)

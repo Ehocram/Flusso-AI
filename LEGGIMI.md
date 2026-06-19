@@ -1,59 +1,76 @@
-# Gestione Flusso — correzioni Rischio & Conformità
+# Gestione Flusso — Trattamento del rischio (ISO 27005)
 
-Tre interventi sulla classificazione del rischio, **testati end-to-end** (check di
-sistema, test unitari, rendering pagine, POST HTTP). Branch di riferimento:
-`Ehocram-patch-1-completo`.
+Aggiunge un ciclo completo di **trattamento del rischio** sulla scheda Rischio &
+Conformità. Branch: `Ehocram-patch-1-completo`. **Testato end-to-end** (check di
+sistema, 4 suite di test: parser obblighi, autorizzazioni, POST validazione, POST
+trattamento — tutte verdi, nessuna regressione).
 
-## 1. Sicurezza — separazione dei compiti (la più importante)
-**Problema:** la Funzione AI poteva validare le dimensioni di competenza di
-CISO/DPO/Legale.
-**Causa:** il ruolo `AI_OFFICER` è forzato a `is_superuser=True` (requisito SSO) e
-`_puo_validare()` lasciava passare *qualsiasi* superuser.
-**Fix:** in `flusso/views.py`, `_puo_validare()` ora è **strettamente legato al
-ruolo** (Legale→AI Act, CISO→NIS2, DPO→GDPR). Nessun bypass da superuser: né la
-Funzione AI né altri superuser possono validare al posto del presidio.
-Verificato anche via POST: la Funzione AI riceve **403**, il presidio competente
-**302** e salva.
+> Questo pacchetto contiene il **modulo Rischio completo**: include sia il fix
+> precedente (separazione dei compiti, dashboard presìdi, rendering obblighi) sia
+> il nuovo trattamento. I file sono completi: applicandoli ottieni lo stato
+> finale corretto anche se avevi già committato il fix precedente. **Unica
+> novità sul DB: la migrazione 0009** (i nuovi campi di trattamento).
 
-> Residuo da decidere (non modificato): la Funzione AI resta superuser, quindi
-> mantiene accesso al *Django admin*, dove in teoria potrebbe editare le
-> classificazioni. È un percorso separato e audit-trailato. Se vuoi chiudere
-> anche quello, va rivisto il requisito "AI Officer = superuser" (impatti SSO):
-> dimmelo e lo gestiamo.
+## Cosa fa il trattamento
+Per ogni dimensione (AI Act / NIS2 / GDPR), il presidio competente può scegliere
+una **strategia di trattamento** (ISO 27005 / ISO 31000):
 
-## 2. UX — i presìdi vedono subito cosa validare
-In `dashboard.html` + `views.py`: per CISO/DPO/Legale compare in cima alla
-dashboard la card **"Da validare — <dimensione>"** con l'elenco dei rischi della
-*propria* dimensione in stato "proposto dall'AI", linkati direttamente alla
-scheda (ancora `#rischio`). La Funzione AI non la vede (non è un presidio).
+- **Mitigare (ridurre):** elenco di **azioni** con **data prevista di
+  applicazione** + **rischio residuo** atteso. Il sistema genera in automatico
+  l'**etichetta che esplicita l'operazione** ("Rischio residuo BASSO = inerente
+  MEDIO ridotto tramite N azioni di mitigazione"), la **freccia di direzione**
+  (↓ ridotto / = invariato) e lo stato **da convalidare** finché il presidio non
+  spunta "Convalida il rischio residuo".
+- **Trasferire:** livello residuo trattenuto + **campo note** (a chi/come:
+  assicurazione, contratto, fornitore).
+- **Evitare (eliminare):** il caso d'uso non procede nella forma che genera il
+  rischio → residuo eliminato.
+- **Accettare:** è il default. **Se non si fa nulla, il rischio resta accettato**
+  come proposto dall'AI (con campo note facoltativo per motivare l'accettazione).
 
-## 3. Trattamento del rischio — più professionale
-- **Rendering corretto:** gli "Obblighi e misure di trattamento" non sono più una
-  lista Python grezza (`['...','...']`) ma un **elenco puntato pulito**. Un parser
-  robusto (`obblighi_in_voci`) normalizza array JSON, repr di lista (dati storici)
-  e testo a righe → **risolve anche le schede già salvate, senza migrazione**.
-- **Prompt migliorati:** i tre prompt (AI Act/NIS2/GDPR) chiedono ora un *array
-  JSON* di 3-6 misure concrete e attuabili, formulate in modo professionale.
-- **Trattamento editabile dal presidio:** nel form di validazione c'è un campo
-  "Obblighi e misure di trattamento" (una voce per riga), precompilato con le
-  misure proposte dall'AI. Il presidio le rifinisce e le fa proprie. Campo vuoto =
-  mantiene le misure esistenti.
+## Scelta di metodo (importante, CISO-to-CISO)
+Il rischio residuo **non è calcolato aritmeticamente**: "inerente − mitigazioni"
+non è una formula, è un giudizio esperto. Calcolarlo come numero sarebbe falsa
+precisione. Quindi: **il presidio sceglie** il livello residuo, e il sistema
+**automatizza l'etichetta dell'operazione, la direzione e lo stato di convalida**.
+In più, quando si mitiga, viene proposto un **residuo suggerito indicativo** (un
+livello sotto l'inerente) che il presidio conferma o cambia. Hai l'automatismo
+richiesto, senza inventare un valore.
 
-## File modificati (7)
-- `flusso/models.py` — mappa ruolo→dimensione, parser `obblighi_in_voci`,
-  proprietà `obblighi_voci`, `valida()` salva il trattamento, prompt aggiornati
-- `flusso/views.py` — fix `_puo_validare`, dashboard presìdi, form precompilato, salvataggio trattamento
-- `flusso/ai_client.py` — normalizzazione obblighi (array→righe)
-- `flusso/forms.py` — campo `obblighi` nel form di validazione
-- `templates/flusso/dashboard.html` — card "Da validare"
-- `templates/flusso/dettaglio.html` — elenco misure + campo trattamento + ancora `#rischio`
-- `static/css/app.css` — stile elenco misure
+Note di governance:
+- Trattamento e convalida del residuo sono riservati al **presidio competente**
+  (Legale→AI Act, CISO→NIS2, DPO→GDPR), coerente col fix di separazione dei
+  compiti. Verificato via POST: Funzione AI e presidio non competente → **403**.
+- Il gate "presentazione alla Direzione" **non** è stato bloccato sul residuo
+  convalidato (rispetta il principio "se non faccio nulla, accetto"). Se vuoi
+  renderlo vincolante, è una riga in più: dimmelo.
 
-Nessuna migrazione richiesta (nessun campo nuovo nel DB).
+## File (9) + migrazione
+- `flusso/models.py` — enum `StrategiaTrattamento`, campi di trattamento +
+  modello `AzioneTrattamento`, proprietà del residuo (codice/label/direzione/
+  etichetta operazione/stato), `registra_trattamento()`, scala ordinale livelli
+- `flusso/forms.py` — `TrattamentoRischioForm` + formset azioni (`descrizione` + `data_prevista`)
+- `flusso/views.py` — vista `tratta_rischio` (gated), form/formset nel dettaglio
+- `flusso/urls.py` — rotta `…/rischio/<tipo>/tratta/`
+- `flusso/admin.py` — inline azioni + campi trattamento in admin
+- `flusso/ai_client.py` — (dal fix) normalizzazione obblighi
+- `templates/flusso/dettaglio.html` — blocco visualizzazione + form trattamento + JS (toggle strategia, "aggiungi azione")
+- `templates/flusso/dashboard.html` — (dal fix) card "Da validare" per i presìdi
+- `static/css/app.css` — stili trattamento (`.trk*`) + (dal fix) elenco misure
+- `flusso/migrations/0009_…py` — **nuovi campi DB** (tutti con default/null: sicura sui dati esistenti)
 
-## Deploy in produzione (dopo il commit/push sul branch)
+## Deploy (dopo commit/push sul branch)
+La migrazione gira da sola: l'`entrypoint.sh` esegue `migrate` all'avvio del
+container. In alternativa, manuale: `python manage.py migrate`.
 ```
 cd /opt/Flusso-AI && sudo git fetch --depth 1 origin Ehocram-patch-1-completo && \
 sudo git reset --hard origin/Ehocram-patch-1-completo && \
 sudo docker compose up -d --build
 ```
+
+## Nota onesta sui test
+I test coprono logica del residuo, autorizzazioni, salvataggio formset (POST) e
+presenza degli elementi HTML. **Non** ho potuto verificare l'aspetto grafico nel
+browser: quando apri la scheda, controlla l'allineamento del blocco trattamento,
+delle righe azione (formset) e della freccia di direzione. Se qualcosa stona nel
+CSS, lo sistemo in un attimo.

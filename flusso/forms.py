@@ -1,8 +1,10 @@
 """Form per compilazione/modifica della scheda (rettangolo slide 8-9)."""
 
 from django import forms
+from django.forms import inlineformset_factory
 
-from .models import CATEGORIE_RISCHIO, ConfigurazioneAI, Richiesta
+from .models import (AzioneTrattamento, CATEGORIE_RISCHIO, ClassificazioneRischio,
+                     ConfigurazioneAI, Richiesta)
 
 
 class AnalisiAIForm(forms.ModelForm):
@@ -164,3 +166,56 @@ class ValidazioneRischioForm(forms.Form):
         for campo in self.fields.values():
             css = campo.widget.attrs.get("class", "")
             campo.widget.attrs["class"] = (css + " campo").strip()
+
+
+class TrattamentoRischioForm(forms.ModelForm):
+    """Trattamento del rischio da parte del presidio competente (ISO 27005).
+
+    Strategia (accetta/mitiga/trasferisci/evita) + livello residuo + convalida.
+    Le azioni di mitigazione (con data) sono gestite dal formset collegato.
+    """
+
+    rischio_residuo = forms.ChoiceField(choices=[], required=False, label="Rischio residuo")
+
+    class Meta:
+        model = ClassificazioneRischio
+        fields = ["strategia", "rischio_residuo", "residuo_convalidato", "trattamento_note"]
+        widgets = {
+            "trattamento_note": forms.Textarea(attrs={
+                "rows": 3,
+                "placeholder": "Trasferimento: a chi e come (assicurazione, contratto, fornitore). "
+                               "Accettazione: motivazione. Lascia vuoto se non serve.",
+            }),
+        }
+        labels = {
+            "strategia": "Strategia di trattamento",
+            "residuo_convalidato": "Convalida il rischio residuo",
+            "trattamento_note": "Note di trattamento",
+        }
+
+    def __init__(self, *args, tipo=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["rischio_residuo"].choices = (
+            [("", "— pari al rischio inerente —")] + list(CATEGORIE_RISCHIO.get(tipo, []))
+        )
+        for nome, campo in self.fields.items():
+            if isinstance(campo.widget, forms.CheckboxInput):
+                continue
+            css = campo.widget.attrs.get("class", "")
+            campo.widget.attrs["class"] = (css + " campo").strip()
+
+
+AzioneTrattamentoFormSet = inlineformset_factory(
+    ClassificazioneRischio,
+    AzioneTrattamento,
+    fields=["descrizione", "data_prevista"],
+    extra=1,
+    can_delete=True,
+    widgets={
+        "descrizione": forms.TextInput(attrs={
+            "class": "campo",
+            "placeholder": "Es. Implementare la cifratura at-rest sui repository indicizzati",
+        }),
+        "data_prevista": forms.DateInput(attrs={"type": "date", "class": "campo"}, format="%Y-%m-%d"),
+    },
+)

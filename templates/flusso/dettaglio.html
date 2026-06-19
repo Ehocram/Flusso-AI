@@ -138,6 +138,31 @@
         </div>
         {% if d.c.nota_validatore %}<div class="t-nota" style="margin-top:6px;">Nota {{ d.c.validatore_label }}: {{ d.c.nota_validatore }}</div>{% endif %}
 
+        {% if d.c.trattato %}
+        <div class="trk">
+          <div class="trk-head">
+            <span class="trk-lab"><i class="ti ti-shield-check"></i> Trattamento</span>
+            <span class="trk-strat trk-{{ d.c.strategia|lower }}">{{ d.c.get_strategia_display }}</span>
+            {% if d.c.strategia == 'MITIGATO' or d.c.strategia == 'TRASFERITO' %}
+            <span class="rk-arrow rk-{{ d.c.residuo_direzione }}">{% if d.c.residuo_direzione == 'giu' %}&#8595;{% elif d.c.residuo_direzione == 'su' %}&#8593;{% else %}={% endif %}</span>
+            <span class="trk-res">Residuo: <span class="rk {{ d.c.residuo_css }}">{{ d.c.residuo_label }}</span></span>
+            {% if d.c.residuo_da_convalidare %}<span class="rk-stato rks-att"><i class="ti ti-clock"></i> Residuo da convalidare</span>
+            {% else %}<span class="rk-stato rks-ok"><i class="ti ti-check"></i> Residuo convalidato</span>{% endif %}
+            {% endif %}
+          </div>
+          <p class="trk-op">{{ d.c.trattamento_operazione }}</p>
+          {% if d.c.azioni.all %}
+          <ul class="trk-azioni">
+            {% for a in d.c.azioni.all %}
+            <li><span class="trk-az-desc">{{ a.descrizione }}</span>{% if a.data_prevista %}<span class="trk-az-data"><i class="ti ti-calendar-event"></i> {{ a.data_prevista|date:"d/m/Y" }}</span>{% endif %}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if d.c.trattamento_note %}<div class="t-nota" style="margin-top:6px;">Note: {{ d.c.trattamento_note }}</div>{% endif %}
+          {% if d.c.trattato_il %}<div class="t-mut" style="margin-top:6px;"><i class="ti ti-gavel" style="vertical-align:-2px;"></i> {{ d.c.trattato_da.get_full_name|default:d.c.trattato_da.username }} il {{ d.c.trattato_il|date:"d/m/Y H:i" }}</div>{% endif %}
+        </div>
+        {% endif %}
+
         {% if d.form %}
         <form method="post" action="{% url 'flusso:valida_rischio' richiesta.pk d.c.tipo %}" class="rk-valida">
           {% csrf_token %}
@@ -149,6 +174,48 @@
           <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.form.obblighi.id_for_label }}">Obblighi e misure di trattamento</label>{{ d.form.obblighi }}<span class="t-mut" style="display:block;margin-top:4px;">Una misura per riga. Vuoto = mantiene le misure proposte dall'AI.</span></div>
           <button type="submit" class="btn btn-positivo btn-sm"><i class="ti ti-check"></i> Conferma {{ d.c.get_tipo_display }}</button>
           <span class="t-mut" style="margin-left:8px;">Conferma = validato; categoria diversa = modificato.</span>
+        </form>
+        {% endif %}
+
+        {% if d.tratta_form %}
+        <form method="post" action="{% url 'flusso:tratta_rischio' richiesta.pk d.c.tipo %}" class="trk-form" data-trk>
+          {% csrf_token %}
+          <div class="trk-form-tit"><i class="ti ti-shield-check"></i> Tratta il rischio</div>
+          <div class="f-row" style="margin-bottom:8px;"><label for="{{ d.tratta_form.strategia.id_for_label }}">Strategia di trattamento</label>{{ d.tratta_form.strategia }}</div>
+
+          <div class="trk-blocco" data-trk-azioni>
+            <span class="lab">Azioni da intraprendere (con data prevista di applicazione)</span>
+            {{ d.azioni_formset.management_form }}
+            <div class="trk-rows" data-formset-rows data-prefix="{{ d.azioni_formset.prefix }}">
+              {% for af in d.azioni_formset %}
+              <div class="trk-row" data-formset-row>
+                {{ af.id }}
+                <div class="trk-row-desc">{{ af.descrizione }}</div>
+                <div class="trk-row-data">{{ af.data_prevista }}</div>
+                {% if af.instance.pk %}<label class="trk-row-del">{{ af.DELETE }} elimina</label>{% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            <template data-empty-row>
+              <div class="trk-row" data-formset-row>
+                <div class="trk-row-desc">{{ d.azioni_formset.empty_form.descrizione }}</div>
+                <div class="trk-row-data">{{ d.azioni_formset.empty_form.data_prevista }}</div>
+              </div>
+            </template>
+            <button type="button" class="btn btn-ghost btn-sm" data-add-row><i class="ti ti-plus"></i> Aggiungi azione</button>
+          </div>
+
+          <div class="trk-blocco" data-trk-residuo>
+            <div class="rk-valida-row">
+              <div class="f-row"><label for="{{ d.tratta_form.rischio_residuo.id_for_label }}">Rischio residuo</label>{{ d.tratta_form.rischio_residuo }}<span class="t-mut" style="display:block;margin-top:4px;">Suggerito (indicativo): <b>{{ d.c.residuo_suggerito|default:"—" }}</b> — un livello sotto l'inerente. La decisione resta del presidio.</span></div>
+              <div class="f-row"><label>&nbsp;</label><label class="trk-check">{{ d.tratta_form.residuo_convalidato }} <span>Convalida il rischio residuo</span></label></div>
+            </div>
+          </div>
+
+          <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.tratta_form.trattamento_note.id_for_label }}">Note di trattamento</label>{{ d.tratta_form.trattamento_note }}</div>
+
+          <button type="submit" class="btn btn-positivo btn-sm"><i class="ti ti-device-floppy"></i> Salva trattamento {{ d.c.get_tipo_display }}</button>
+          <span class="t-mut" style="margin-left:8px;">Se non tratti nulla, il rischio resta accettato come proposto dall'AI.</span>
         </form>
         {% endif %}
       </div>
@@ -232,4 +299,37 @@
     </div>
   </aside>
 </div>
+
+<script>
+(function(){
+  document.querySelectorAll('form[data-trk]').forEach(function(form){
+    var sel = form.querySelector('select[name$="-strategia"]');
+    var blkAz = form.querySelector('[data-trk-azioni]');
+    var blkRes = form.querySelector('[data-trk-residuo]');
+    function apply(){
+      var v = sel ? sel.value : 'ACCETTATO';
+      if(blkAz) blkAz.style.display = (v === 'MITIGATO') ? '' : 'none';
+      if(blkRes) blkRes.style.display = (v === 'MITIGATO' || v === 'TRASFERITO') ? '' : 'none';
+    }
+    if(sel) sel.addEventListener('change', apply);
+    apply();
+
+    var addBtn = form.querySelector('[data-add-row]');
+    var rows = form.querySelector('[data-formset-rows]');
+    var tpl = form.querySelector('template[data-empty-row]');
+    if(addBtn && rows && tpl){
+      addBtn.addEventListener('click', function(){
+        var prefix = rows.getAttribute('data-prefix');
+        var total = form.querySelector('input[name="'+prefix+'-TOTAL_FORMS"]');
+        var idx = parseInt(total.value, 10);
+        var html = tpl.innerHTML.replace(/__prefix__/g, idx).trim();
+        var wrap = document.createElement('div');
+        wrap.innerHTML = html;
+        rows.appendChild(wrap.firstElementChild);
+        total.value = idx + 1;
+      });
+    }
+  });
+})();
+</script>
 {% endblock %}
