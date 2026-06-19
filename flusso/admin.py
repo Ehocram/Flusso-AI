@@ -2,7 +2,14 @@
 
 from django.contrib import admin
 
-from .models import Richiesta, Transizione
+from .models import ClassificazioneRischio, Richiesta, Transizione
+
+
+class ClassificazioneRischioInline(admin.TabularInline):
+    model = ClassificazioneRischio
+    extra = 0
+    fields = ("tipo", "categoria", "stato", "ai_categoria", "validato_da", "validato_il")
+    readonly_fields = ("ai_categoria", "validato_il")
 
 
 class TransizioneInline(admin.TabularInline):
@@ -21,7 +28,15 @@ class RichiestaAdmin(admin.ModelAdmin):
     list_filter = ("stato", "funzione")
     search_fields = ("titolo", "descrizione")
     readonly_fields = ("numero", "creata_il", "aggiornata_il")
-    inlines = [TransizioneInline]
+    inlines = [ClassificazioneRischioInline, TransizioneInline]
+
+
+@admin.register(ClassificazioneRischio)
+class ClassificazioneRischioAdmin(admin.ModelAdmin):
+    list_display = ("richiesta", "tipo", "categoria", "stato", "validato_da", "validato_il")
+    list_filter = ("tipo", "stato")
+    search_fields = ("richiesta__titolo", "richiesta__numero")
+    readonly_fields = ("ai_categoria", "ai_il", "ai_modello", "validato_il", "aggiornata_il")
 
 
 @admin.register(Transizione)

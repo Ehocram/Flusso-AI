@@ -2,7 +2,7 @@
 
 from django import forms
 
-from .models import ConfigurazioneAI, Richiesta
+from .models import CATEGORIE_RISCHIO, ConfigurazioneAI, Richiesta
 
 
 class AnalisiAIForm(forms.ModelForm):
@@ -43,16 +43,22 @@ class RichiestaForm(forms.ModelForm):
             "descrizione",
             "referente_area",
             "saving_economico",
+            "saving_economico_note",
             "incremento_qualitativo",
+            "incremento_qualitativo_note",
             "incremento_efficienza",
+            "incremento_efficienza_note",
         ]
         widgets = {
             "descrizione": forms.Textarea(attrs={"rows": 3}),
             "titolo": forms.TextInput(attrs={"placeholder": "Es. Knowledge management"}),
             "tipo_soluzione": forms.TextInput(attrs={"placeholder": "Es. Assistente AI interno"}),
             "saving_economico": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
-            "incremento_qualitativo": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "%"}),
-            "incremento_efficienza": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "%"}),
+            "incremento_qualitativo": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "% (vuoto = stima AI)"}),
+            "incremento_efficienza": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "% (vuoto = stima AI)"}),
+            "saving_economico_note": forms.TextInput(attrs={"placeholder": "Note (facoltative)"}),
+            "incremento_qualitativo_note": forms.TextInput(attrs={"placeholder": "Note (facoltative)"}),
+            "incremento_efficienza_note": forms.TextInput(attrs={"placeholder": "Note (facoltative)"}),
         }
 
     def __init__(self, *args, funzione_owner=None, **kwargs):
@@ -96,12 +102,16 @@ class ImpostazioniAIForm(forms.ModelForm):
     class Meta:
         model = ConfigurazioneAI
         fields = ["abilitato", "modello", "max_tokens", "includi_titoli", "prompt_sistema",
+                  "prompt_rischio_aiact", "prompt_rischio_nis2", "prompt_rischio_gdpr",
                   "teams_abilitato", "teams_webhook_url", "teams_eventi"]
         widgets = {
             "max_tokens": forms.NumberInput(attrs={"min": 256, "max": 4096, "step": 1}),
             "prompt_sistema": forms.Textarea(attrs={
                 "rows": 5, "placeholder": "Lascia vuoto per usare le istruzioni predefinite.",
             }),
+            "prompt_rischio_aiact": forms.Textarea(attrs={"rows": 6, "placeholder": "Lascia vuoto per usare le istruzioni predefinite."}),
+            "prompt_rischio_nis2": forms.Textarea(attrs={"rows": 6, "placeholder": "Lascia vuoto per usare le istruzioni predefinite."}),
+            "prompt_rischio_gdpr": forms.Textarea(attrs={"rows": 6, "placeholder": "Lascia vuoto per usare le istruzioni predefinite."}),
             "teams_webhook_url": forms.TextInput(attrs={
                 "placeholder": "https://… (URL del flusso Power Automate)", "autocomplete": "off",
             }),
@@ -124,3 +134,28 @@ class ImpostazioniAIForm(forms.ModelForm):
         if commit:
             obj.save()
         return obj
+
+
+class ValidazioneRischioForm(forms.Form):
+    """Il presidio competente conferma o modifica una classificazione di rischio.
+
+    Le scelte di categoria dipendono dalla dimensione (tipo) e vengono impostate
+    al momento dell'istanza.
+    """
+
+    categoria = forms.ChoiceField(choices=[], label="Categoria")
+    motivazione = forms.CharField(
+        required=False, label="Motivazione (opzionale)",
+        widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Lascia vuoto per mantenere la motivazione dell'AI."}),
+    )
+    nota = forms.CharField(
+        required=False, max_length=300, label="Nota del presidio",
+        widget=forms.TextInput(attrs={"placeholder": "Es. confermato dopo verifica interna."}),
+    )
+
+    def __init__(self, *args, tipo=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["categoria"].choices = CATEGORIE_RISCHIO.get(tipo, [])
+        for campo in self.fields.values():
+            css = campo.widget.attrs.get("class", "")
+            campo.widget.attrs["class"] = (css + " campo").strip()

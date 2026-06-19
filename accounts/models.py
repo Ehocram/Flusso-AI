@@ -5,12 +5,15 @@ from django.db import models
 
 
 class Ruolo(models.TextChoices):
-    """Quattro ruoli del processo."""
+    """Ruoli del processo."""
 
     AI_OFFICER = "AI_OFFICER", "Funzione AI"
     APPROVATORE = "APPROVATORE", "Approvatore"
     OWNER = "OWNER", "Owner di funzione"
     AUDITOR = "AUDITOR", "Auditor (sola lettura)"
+    LEGALE = "LEGALE", "Funzione Legale"
+    CISO = "CISO", "CISO (Sicurezza / NIS2)"
+    DPO = "DPO", "DPO (Privacy / GDPR)"
 
 
 class Funzione(models.TextChoices):
@@ -89,6 +92,29 @@ class Utente(AbstractUser):
         return self.ruolo == Ruolo.AUDITOR
 
     @property
+    def is_legale(self) -> bool:
+        """Funzione Legale: valida o modifica il rischio AI Act attribuito dall'AI."""
+        return self.ruolo == Ruolo.LEGALE
+
+    @property
+    def is_ciso(self) -> bool:
+        """CISO: valida o modifica il rischio NIS2 attribuito dall'AI."""
+        return self.ruolo == Ruolo.CISO
+
+    @property
+    def is_dpo(self) -> bool:
+        """DPO: valida o modifica il rischio GDPR attribuito dall'AI."""
+        return self.ruolo == Ruolo.DPO
+
+    @property
+    def is_validatore_rischio(self) -> bool:
+        """Presidio di rischio: Legale, CISO o DPO."""
+        return self.ruolo in (Ruolo.LEGALE, Ruolo.CISO, Ruolo.DPO)
+
+    @property
     def is_gestore(self) -> bool:
-        """Visibilità completa su tutte le richieste (Auditor incluso, in sola lettura)."""
-        return self.ruolo in (Ruolo.AI_OFFICER, Ruolo.APPROVATORE, Ruolo.AUDITOR) or self.is_superuser
+        """Visibilità completa su tutte le richieste (Auditor e presìdi inclusi, in sola lettura)."""
+        return self.ruolo in (
+            Ruolo.AI_OFFICER, Ruolo.APPROVATORE, Ruolo.AUDITOR,
+            Ruolo.LEGALE, Ruolo.CISO, Ruolo.DPO,
+        ) or self.is_superuser

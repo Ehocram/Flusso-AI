@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block titolo %}Rischio & Conformità · ISEO AI{% endblock %}
+{% block contenuto %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Governance · Rischio & Conformità</div>
+    <h1>Rischio &amp; Conformità</h1>
+    <p>Tre dimensioni per progetto — AI Act, NIS2, GDPR — stimate dall'AI e validate dai presìdi (Funzione Legale, CISO, DPO).</p>
+  </div>
+</div>
+
+{% if user.is_ai_officer and not config.abilitato %}
+<div class="msg msg-error"><i class="ti ti-alert-triangle"></i> Analisi AI non abilitata: attivala nelle <a href="{% url 'flusso:impostazioni_ai' %}">Impostazioni AI</a>. Le classificazioni vengono generate all'import dei dati e alla presa in carico delle nuove richieste; in alternativa, da ogni scheda con «Analizza le tre dimensioni con l'AI».</div>
+{% endif %}
+
+<div class="rk-chips">
+  <span class="rk-chip {% if da_validare.AIACT %}warn{% endif %}"><i class="ti ti-gavel"></i> AI Act da validare (Legale): <b>{{ da_validare.AIACT }}</b></span>
+  <span class="rk-chip {% if da_validare.NIS2 %}warn{% endif %}"><i class="ti ti-gavel"></i> NIS2 da validare (CISO): <b>{{ da_validare.NIS2 }}</b></span>
+  <span class="rk-chip {% if da_validare.GDPR %}warn{% endif %}"><i class="ti ti-gavel"></i> GDPR da validare (DPO): <b>{{ da_validare.GDPR }}</b></span>
+  <span class="rk-chip"><i class="ti ti-circle-check"></i> Pronti per la Direzione: <b>{{ pronti }}</b> / {{ totale }}</span>
+</div>
+
+<div class="card" style="margin-top:16px;padding:0;overflow:hidden;">
+  <table class="rk-tab">
+    <thead>
+      <tr><th>ID</th><th>Progetto</th><th>AI Act</th><th>NIS2</th><th>GDPR</th><th>Validazioni</th><th>Direzione</th></tr>
+    </thead>
+    <tbody>
+      {% for x in righe %}
+      <tr class="{% if not x.pronto %}riga-attesa{% endif %}">
+        <td class="mono">{{ x.r.codice }}</td>
+        <td><a href="{{ x.r.get_absolute_url }}">{{ x.r.titolo }}</a></td>
+        {% include "flusso/_rk_cell.html" with c=x.aiact %}
+        {% include "flusso/_rk_cell.html" with c=x.nis2 %}
+        {% include "flusso/_rk_cell.html" with c=x.gdpr %}
+        <td><span class="rk-conta {% if x.pronto %}ok{% endif %}">{{ x.validati }}/3</span></td>
+        <td>{% if x.pronto %}<span class="rks-ok"><i class="ti ti-circle-check"></i> Pronto</span>{% else %}<span class="t-mut">In attesa</span>{% endif %}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" class="vuoto">Nessuna richiesta.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="cfg-nota" style="margin-top:14px;"><i class="ti ti-shield-lock"></i> Le classificazioni sono <b>preliminari</b>: vanno confermate dai presìdi competenti. Le tre validazioni (AI Act → Legale, NIS2 → CISO, GDPR → DPO) sono <b>obbligatorie</b> prima della presentazione alla Direzione. Per i progetti che trattano dati personali la descrizione inviata all'AI va minimizzata; il GDPR si applica a prescindere dalle scadenze dell'AI Act.</p>
+{% endblock %}

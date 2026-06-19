@@ -1,0 +1,9 @@
+<td>
+  {% if c %}
+    <span class="rk {{ c.categoria_css }}">{{ c.categoria_label }}</span>
+    {% if c.stato == 'VALIDATO' %}<i class="ti ti-gavel rkc-ok" title="Validato"></i>
+    {% elif c.stato == 'MODIFICATO' %}<i class="ti ti-gavel rkc-mod" title="Modificato"></i>
+    {% elif c.stato == 'PROPOSTO_AI' %}<i class="ti ti-robot rkc-att" title="Da validare"></i>{% endif %}
+    {% if c.difforme %}<i class="ti ti-alert-triangle" title="AI difforme dal validato" style="color:var(--attesa)"></i>{% endif %}
+  {% else %}<span class="rk rk-nd">—</span>{% endif %}
+</td>

@@ -513,3 +513,80 @@ body.auth { background: #080a10; overflow-x: hidden; }
 /* Sezioni nel form impostazioni */
 .cfg-sep { border-top: 1px solid #e8e9ec; margin: 8px 0 4px; }
 .cfg-sezione { font-size: 13px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--testo-3); display: flex; align-items: center; gap: 8px; margin: 2px 0 2px; }
+
+/* ============================ Rischio AI Act ============================ */
+.rk { display:inline-flex; align-items:center; gap:6px; border-radius: var(--r-pill); font-size:12.5px; font-weight:700; padding:4px 12px; line-height:1.2; white-space:nowrap; }
+.rk-vietato { background:#fdebec; color:var(--rosso-scuro); }
+.rk-alto    { background:var(--giallo-bg); color:var(--giallo-fg); }
+.rk-limitato{ background:#e6f0fa; color:#114a7a; }
+.rk-minimo  { background:var(--verde-bg); color:var(--verde-fg); }
+.rk-nd      { background:#eef0f2; color:var(--testo-3); }
+
+.rk-stato { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700; }
+.rk-stato .ti { font-size:14px; }
+.rks-ok  { color:var(--ok); }
+.rks-mod { color:var(--info); }
+.rks-att { color:var(--attesa); }
+.rks-nd  { color:var(--testo-3); }
+
+.rischio-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:4px; }
+.rischio-mot { font-size:13.5px; color:var(--testo-2); margin:12px 0 10px; white-space:pre-line; }
+.rischio-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+@media (max-width:560px){ .rischio-grid { grid-template-columns:1fr; } }
+.rischio-legale { margin-top:16px; padding-top:14px; border-top:1px dashed var(--bordo-2); }
+.rischio-legale-tit { font-size:13px; font-weight:700; color:var(--testo-2); margin-bottom:10px; display:flex; align-items:center; gap:7px; }
+.rischio-legale-tit .ti { color:var(--rosso); }
+
+.rk-riepilogo { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:6px; }
+@media (max-width:680px){ .rk-riepilogo { grid-template-columns:repeat(2,1fr); } }
+.rk-tile { background:var(--bianco); border:1px solid var(--bordo); border-left-width:4px; border-radius:12px; box-shadow:var(--ombra); padding:14px 16px; display:flex; flex-direction:column; gap:2px; }
+.rk-tile .n { font-size:26px; font-weight:800; letter-spacing:-.02em; }
+.rk-tile .l { font-size:12px; font-weight:600; color:var(--testo-2); }
+.rk-tile.rk-vietato { border-left-color:var(--rosso); }
+.rk-tile.rk-alto    { border-left-color:var(--giallo-dot); }
+.rk-tile.rk-limitato{ border-left-color:var(--info); }
+.rk-tile.rk-minimo  { border-left-color:var(--ok); }
+
+.rk-chips { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+.rk-chip { display:inline-flex; align-items:center; gap:6px; background:var(--bianco); border:1px solid var(--bordo); border-radius:var(--r-pill); padding:6px 13px; font-size:13px; color:var(--testo-2); }
+.rk-chip b { color:var(--inchiostro); }
+.rk-chip.warn { background:#fff7e6; border-color:#f0d9a8; color:var(--giallo-fg); }
+.rk-chip.warn b { color:var(--giallo-fg); }
+
+.rk-tab { width:100%; border-collapse:collapse; font-size:13.5px; }
+.rk-tab thead th { text-align:left; font-size:11px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--testo-3); padding:11px 14px; background:#fafbfc; border-bottom:1px solid var(--bordo); }
+.rk-tab tbody td { padding:11px 14px; border-bottom:1px solid var(--bordo); vertical-align:middle; }
+.rk-tab tbody tr:last-child td { border-bottom:none; }
+.rk-tab tbody tr:hover { background:#fafbfc; }
+.rk-tab a { font-weight:600; }
+.rk-tab a:hover { color:var(--rosso); }
+.rk-tab .mono { color:var(--testo-3); font-weight:600; font-size:12.5px; white-space:nowrap; }
+.rk-tab .riga-attesa { background:#fff9ee; }
+.rk-tab .riga-attesa:hover { background:#fff4df; }
+
+/* --------- Rischio & Conformità: tre dimensioni nella scheda --------- */
+.rischio-cardhead { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.rk-conta { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:700; color:var(--attesa); background:#fff7e6; border:1px solid #f0d9a8; border-radius:var(--r-pill); padding:4px 11px; white-space:nowrap; }
+.rk-conta.ok { color:var(--ok); background:var(--verde-bg); border-color:#bfe3cc; }
+.rk-conta .ti { font-size:14px; }
+
+.rk-dim { border:1px solid var(--bordo); border-radius:11px; padding:13px 14px; margin-top:12px; background:#fcfcfd; }
+.rk-dim-top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.rk-dim-tit { font-size:13px; font-weight:800; letter-spacing:.02em; text-transform:uppercase; color:var(--testo-2); min-width:54px; }
+.rk-valida { margin-top:12px; padding-top:12px; border-top:1px dashed var(--bordo-2); }
+.rk-valida-row { display:grid; grid-template-columns:200px 1fr; gap:10px; }
+@media (max-width:560px){ .rk-valida-row { grid-template-columns:1fr; } }
+
+.rkc-ok  { color:var(--ok); margin-left:5px; vertical-align:-2px; }
+.rkc-mod { color:var(--info); margin-left:5px; vertical-align:-2px; }
+.rkc-att { color:var(--attesa); margin-left:5px; vertical-align:-2px; }
+
+/* --------- Note metriche (intake + scheda) --------- */
+.metric.full label { display:block; margin-bottom:5px; }
+.metric-row { display:flex; gap:10px; align-items:center; }
+.metric-row .campo:first-child { max-width:180px; }
+.metric-row .campo:last-child { flex:1; }
+@media (max-width:520px){ .metric-row { flex-direction:column; align-items:stretch; } .metric-row .campo:first-child { max-width:none; } }
+.metric-hint { font-size:12.5px; color:var(--testo-2); background:#f4f8fb; border:1px solid #d9e6f0; border-radius:8px; padding:8px 11px; }
+.metric-hint .ti { color:var(--info); vertical-align:-2px; }
+.sav-note { display:block; font-size:11px; color:var(--testo-3); margin-top:3px; line-height:1.3; }
