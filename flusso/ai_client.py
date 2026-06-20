@@ -156,6 +156,10 @@ def _descrizione_progetto(richiesta) -> str:
     ]
     if richiesta.tipo_soluzione:
         righe.append(f"Tipo di soluzione: {richiesta.tipo_soluzione}")
+    if richiesta.ai_autonomia:
+        righe.append(f"Grado di autonomia dell'AI: {richiesta.get_ai_autonomia_display()}")
+    if richiesta.ai_deployment:
+        righe.append(f"Infrastruttura prevista per i modelli: {richiesta.get_ai_deployment_display()}")
     righe.append(f"Descrizione: {richiesta.descrizione}")
     return "\n".join(righe)
 
@@ -281,3 +285,47 @@ def stima_incrementi(richiesta, config) -> tuple[dict | None, str | None]:
     audit.info("incrementi_ai richiesta=%s eff=%s qual=%s modello=%s",
                getattr(richiesta, "codice", "?"), eff, qual, config.modello)
     return {"efficienza": eff, "qualita": qual, "modello": config.modello}, None
+
+
+PROMPT_COSTO_TOKEN = (
+    "Sei un analista che stima il COSTO DI CONSUMO TOKEN (API di modelli LLM) di un progetto di AI "
+    "per ISEO Group (produttore di sistemi di chiusura e controllo accessi). Stima un importo in EURO, "
+    "realistico e PRUDENTE, per il solo consumo di token dei modelli. Regole tassative:\n"
+    "- Se l'infrastruttura prevista e' 'LLM locale (on-premise)', il costo dei token API e' nullo "
+    "(i costi sono di infrastruttura, non di token): restituisci 0.\n"
+    "- Se e' 'API (cloud)', stima il costo in base all'uso atteso desumibile dalla descrizione.\n"
+    "- Se e' 'Ibrido', stima solo la quota a consumo via API.\n"
+    "- Riferisci l'importo alla PERIODICITA' e all'AMBITO indicati: se l'ambito e' 'per utente' o "
+    "'per team', stima il costo per UN SINGOLO utente/team; se 'complessivo' o assente, il costo totale.\n"
+    "- E' una stima PRELIMINARE, sara' rivista da una persona: non essere ottimista.\n"
+    "Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e senza backtick, "
+    'con ESATTAMENTE questa chiave: {"costo": <numero in euro, maggiore o uguale a 0>}'
+)
+
+
+def stima_costo_token(richiesta, config) -> tuple[dict | None, str | None]:
+    """Stima preliminare del costo token (EUR) per la periodicita'/ambito scelti. Via Claude.
+
+    Ritorna ({'costo': float, 'modello': str}, None) oppure (None, errore).
+    """
+    contesto = [_descrizione_progetto(richiesta)]
+    if richiesta.costo_token_periodicita:
+        contesto.append(f"Periodicita' per la stima: {richiesta.get_costo_token_periodicita_display()}")
+    if richiesta.costo_token_ambito:
+        contesto.append(f"Ambito per la stima: {richiesta.get_costo_token_ambito_display()}")
+    contenuto = ("Stima il costo di consumo token del seguente progetto e rispondi solo con il JSON richiesto.\n\n"
+                 + "\n".join(contesto))
+    data, errore = _chiama_modello(config, PROMPT_COSTO_TOKEN, contenuto, 200, RISCHIO_TIMEOUT)
+    if errore:
+        return None, errore
+    obj = _estrai_json(_testo_risposta(data))
+    if not isinstance(obj, dict):
+        return None, "Risposta del modello non interpretabile come JSON."
+    try:
+        costo = float(obj.get("costo"))
+    except (TypeError, ValueError):
+        return None, "Nessun importo valido nella risposta."
+    costo = max(0.0, round(costo, 2))
+    audit.info("costo_token_ai richiesta=%s costo=%s modello=%s",
+               getattr(richiesta, "codice", "?"), costo, config.modello)
+    return {"costo": costo, "modello": config.modello}, None

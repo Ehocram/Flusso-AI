@@ -261,6 +261,11 @@ h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -.01em; }
 .form-card { max-width: 760px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .form-grid .full { grid-column: 1 / -1; }
+.costo-token-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
+@media (max-width: 680px) { .costo-token-row { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 460px) { .costo-token-row { grid-template-columns: 1fr; } }
+.badge-ai { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; color:var(--info); background:#e6f0fa; border-radius:var(--r-pill); padding:2px 8px; vertical-align:middle; }
+.badge-ai .ti { font-size:13px; }
 .f-row label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
 .f-row .help { font-size: 12px; color: var(--testo-3); margin-top: 4px; }
 .f-row .err { color: var(--rosso); font-size: 12px; margin-top: 4px; }

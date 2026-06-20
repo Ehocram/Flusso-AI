@@ -1,76 +1,87 @@
-# Gestione Flusso — Trattamento del rischio (ISO 27005)
+# Gestione Flusso — Aggiornamento unico (Rischio & Conformità + Analisi + KPI)
 
-Aggiunge un ciclo completo di **trattamento del rischio** sulla scheda Rischio &
-Conformità. Branch: `Ehocram-patch-1-completo`. **Testato end-to-end** (check di
-sistema, 4 suite di test: parser obblighi, autorizzazioni, POST validazione, POST
-trattamento — tutte verdi, nessuna regressione).
+Pacchetto **completo** con tutte le modifiche di questa sessione. File interi: con
+`git reset --hard` ottieni lo stato finale coerente in un solo aggiornamento.
+**Testato end-to-end**: 7 suite di test (oltre 130 verifiche), check di sistema
+pulito, nessuna regressione.
 
-> Questo pacchetto contiene il **modulo Rischio completo**: include sia il fix
-> precedente (separazione dei compiti, dashboard presìdi, rendering obblighi) sia
-> il nuovo trattamento. I file sono completi: applicandoli ottieni lo stato
-> finale corretto anche se avevi già committato il fix precedente. **Unica
-> novità sul DB: la migrazione 0009** (i nuovi campi di trattamento).
+## Contenuto (in ordine cronologico)
 
-## Cosa fa il trattamento
-Per ogni dimensione (AI Act / NIS2 / GDPR), il presidio competente può scegliere
-una **strategia di trattamento** (ISO 27005 / ISO 31000):
+### 1. Sicurezza — separazione dei compiti
+La validazione del rischio è ora **strettamente legata al ruolo** (Legale→AI Act,
+CISO→NIS2, DPO→GDPR): nessun bypass da superuser. La Funzione AI non può più
+validare al posto dei presìdi (verificato: POST → 403).
 
-- **Mitigare (ridurre):** elenco di **azioni** con **data prevista di
-  applicazione** + **rischio residuo** atteso. Il sistema genera in automatico
-  l'**etichetta che esplicita l'operazione** ("Rischio residuo BASSO = inerente
-  MEDIO ridotto tramite N azioni di mitigazione"), la **freccia di direzione**
-  (↓ ridotto / = invariato) e lo stato **da convalidare** finché il presidio non
-  spunta "Convalida il rischio residuo".
-- **Trasferire:** livello residuo trattenuto + **campo note** (a chi/come:
-  assicurazione, contratto, fornitore).
-- **Evitare (eliminare):** il caso d'uso non procede nella forma che genera il
-  rischio → residuo eliminato.
-- **Accettare:** è il default. **Se non si fa nulla, il rischio resta accettato**
-  come proposto dall'AI (con campo note facoltativo per motivare l'accettazione).
+### 2. Dashboard presìdi
+CISO/DPO/Legale vedono in cima alla dashboard la card "Da validare —
+<dimensione>" coi rischi della propria dimensione, linkati alla scheda.
 
-## Scelta di metodo (importante, CISO-to-CISO)
-Il rischio residuo **non è calcolato aritmeticamente**: "inerente − mitigazioni"
-non è una formula, è un giudizio esperto. Calcolarlo come numero sarebbe falsa
-precisione. Quindi: **il presidio sceglie** il livello residuo, e il sistema
-**automatizza l'etichetta dell'operazione, la direzione e lo stato di convalida**.
-In più, quando si mitiga, viene proposto un **residuo suggerito indicativo** (un
-livello sotto l'inerente) che il presidio conferma o cambia. Hai l'automatismo
-richiesto, senza inventare un valore.
+### 3. Trattamento del rischio (ISO 27005)
+Strategia **Accetta / Mitiga / Trasferisci / Evita**; per la mitigazione: azioni
+con data prevista, livello **residuo** scelto dal presidio con **etichetta
+automatica dell'operazione** ("Residuo BASSO = inerente MEDIO ridotto tramite N
+azioni"), freccia di direzione e stato **da convalidare**. Residuo suggerito
+indicativo (un livello sotto l'inerente). Rendering pulito degli obblighi (non più
+lista grezza).
 
-Note di governance:
-- Trattamento e convalida del residuo sono riservati al **presidio competente**
-  (Legale→AI Act, CISO→NIS2, DPO→GDPR), coerente col fix di separazione dei
-  compiti. Verificato via POST: Funzione AI e presidio non competente → **403**.
-- Il gate "presentazione alla Direzione" **non** è stato bloccato sul residuo
-  convalidato (rispetta il principio "se non faccio nulla, accetto"). Se vuoi
-  renderlo vincolante, è una riga in più: dimmelo.
+### 4. Analisi Funzione AI — nuovi campi
+- **Unità del costo token**: Periodicità (mensile/annuale/una tantum) + Ambito
+  (per utente/team/complessivo), come due dimensioni distinte.
+- **Tipo di AI**: non agentica / agentica a supporto (human-in-the-loop) /
+  agentica autonoma.
+- **Infrastruttura**: API (cloud) / LLM locale (on-premise) / Ibrido.
+- Tipo di AI e Infrastruttura sono **passati all'AI** quando classifica il rischio.
 
-## File (9) + migrazione
-- `flusso/models.py` — enum `StrategiaTrattamento`, campi di trattamento +
-  modello `AzioneTrattamento`, proprietà del residuo (codice/label/direzione/
-  etichetta operazione/stato), `registra_trattamento()`, scala ordinale livelli
-- `flusso/forms.py` — `TrattamentoRischioForm` + formset azioni (`descrizione` + `data_prevista`)
-- `flusso/views.py` — vista `tratta_rischio` (gated), form/formset nel dettaglio
-- `flusso/urls.py` — rotta `…/rischio/<tipo>/tratta/`
-- `flusso/admin.py` — inline azioni + campi trattamento in admin
-- `flusso/ai_client.py` — (dal fix) normalizzazione obblighi
-- `templates/flusso/dettaglio.html` — blocco visualizzazione + form trattamento + JS (toggle strategia, "aggiungi azione")
-- `templates/flusso/dashboard.html` — (dal fix) card "Da validare" per i presìdi
-- `static/css/app.css` — stili trattamento (`.trk*`) + (dal fix) elenco misure
-- `flusso/migrations/0009_…py` — **nuovi campi DB** (tutti con default/null: sicura sui dati esistenti)
+### 5. Costo annualizzato + numero utenti + totale
+- **Costo token annualizzato** (mensile ×12, annuale ×1; una tantum non
+  annualizzato), con anteprima **live** nel form.
+- **Numero utenti/team** → **Costo token annuo TOTALE** (annualizzato × numero).
+  Per ambiti per-unità senza il numero, il totale resta non determinabile (niente
+  falsa precisione).
+
+### 6. Stima AI dell'importo token
+Se salvi l'analisi con l'importo token **vuoto** ma periodicità e ambito
+impostati, l'AI **propone l'importo** al salvataggio (marcato "Stima AI ·
+modificabile"). Tiene conto dell'infrastruttura: con **LLM locale** il costo token
+API è ~0. Se inserisci l'importo a mano, il flag "stima AI" si azzera.
+
+### 7. KPI aggiornati
+Nuovi indicatori nel cruscotto e nella lettura esecutiva dell'AI:
+- **Costo token annuo** del portafoglio (somma dei totali annualizzati).
+- Mix **infrastruttura** (API/locale/ibrido) e **autonomia** (agentico/assistivo).
+- **Governance del rischio**: rischi da validare, residui da convalidare, progetti
+  pronti per la Direzione.
+
+## File (12) + migrazioni (3)
+`models.py, views.py, forms.py, urls.py, admin.py, ai_client.py, servizi.py,
+kpi.py, templates/flusso/dettaglio.html, templates/flusso/dashboard.html,
+templates/flusso/kpi.html, static/css/app.css` + migrazioni **0009, 0010, 0011**.
+
+Le tre migrazioni aggiungono solo campi opzionali (blank/null/default): **sicure
+sui dati esistenti**. `modifiche_complete.patch` è il diff unificato per review.
 
 ## Deploy (dopo commit/push sul branch)
-La migrazione gira da sola: l'`entrypoint.sh` esegue `migrate` all'avvio del
-container. In alternativa, manuale: `python manage.py migrate`.
+Le migrazioni girano da sole (entrypoint.sh esegue `migrate`); in alternativa
+`python manage.py migrate`.
 ```
 cd /opt/Flusso-AI && sudo git fetch --depth 1 origin Ehocram-patch-1-completo && \
 sudo git reset --hard origin/Ehocram-patch-1-completo && \
 sudo docker compose up -d --build
 ```
 
+## Note di metodo (CISO-to-CISO)
+- **Rischio residuo** = giudizio del presidio + etichetta automatica dell'operazione,
+  non un calcolo aritmetico (sarebbe falsa precisione).
+- **Stima AI del costo** = punto di partenza human-in-the-loop, sempre modificabile,
+  mai presentata come dato certo. Tiene conto di API vs locale.
+- Il "Totale stimato" resta la **somma grezza** degli importi: non normalizzo
+  altri costi a un orizzonte annuo (non hanno periodicità). Se vuoi un *costo annuo
+  totale di progetto* (token annuo totale + altri costi annualizzati), aggiungo la
+  periodicità anche ad "altri costi": è una riga in più, dimmi tu.
+
 ## Nota onesta sui test
-I test coprono logica del residuo, autorizzazioni, salvataggio formset (POST) e
-presenza degli elementi HTML. **Non** ho potuto verificare l'aspetto grafico nel
-browser: quando apri la scheda, controlla l'allineamento del blocco trattamento,
-delle righe azione (formset) e della freccia di direzione. Se qualcosa stona nel
-CSS, lo sistemo in un attimo.
+Coprono logica, autorizzazioni, salvataggio, stima (con mock dell'AI), KPI e
+presenza degli elementi HTML. **Non** coprono l'aspetto grafico nel browser né
+l'anteprima live JS in esecuzione: aprendo la scheda, controlla il blocco costo
+(4 colonne: importo + periodicità + ambito + numero utenti), l'anteprima live, il
+blocco trattamento e i nuovi riquadri KPI. Se qualcosa stona nel CSS, lo sistemo.

@@ -13,21 +13,29 @@ class AnalisiAIForm(forms.ModelForm):
     class Meta:
         model = Richiesta
         fields = [
-            "analisi_fattibilita", "effort_ore", "data_inizio",
-            "data_consegna_prevista", "costo_token_ai", "altri_costi", "altri_costi_note",
+            "analisi_fattibilita", "ai_autonomia", "ai_deployment", "effort_ore", "data_inizio",
+            "data_consegna_prevista", "costo_token_ai", "costo_token_periodicita",
+            "costo_token_ambito", "numero_utenti", "altri_costi", "altri_costi_note",
         ]
         widgets = {
             "analisi_fattibilita": forms.Textarea(attrs={"rows": 4, "placeholder": "Valutazione di fattibilità, approccio, rischi, dipendenze…"}),
             "data_inizio": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "data_consegna_prevista": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "effort_ore": forms.NumberInput(attrs={"min": 0, "placeholder": "es. 120"}),
-            "costo_token_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
+            "costo_token_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ (vuoto = stima AI)"}),
+            "numero_utenti": forms.NumberInput(attrs={"min": 1, "placeholder": "n. utenti/team"}),
             "altri_costi": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
             "altri_costi_note": forms.TextInput(attrs={"placeholder": "es. licenze, infrastruttura on-prem"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        for nome in ("ai_autonomia", "ai_deployment", "costo_token_periodicita", "costo_token_ambito"):
+            if nome in self.fields:
+                self.fields[nome].choices = (
+                    [("", "— non specificato —")]
+                    + [c for c in self.fields[nome].choices if c[0]]
+                )
         for campo in self.fields.values():
             css = campo.widget.attrs.get("class", "")
             campo.widget.attrs["class"] = (css + " campo").strip()

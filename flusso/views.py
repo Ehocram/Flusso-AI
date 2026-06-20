@@ -298,7 +298,20 @@ def aggiorna_analisi(request, pk):
     form = AnalisiAIForm(request.POST, instance=richiesta)
     if form.is_valid():
         form.save()
-        messages.success(request, "Analisi della Funzione AI aggiornata.")
+        # Importo inserito a mano: non è (più) una stima AI.
+        if "costo_token_ai" in form.changed_data and richiesta.costo_token_ai is not None:
+            if richiesta.costo_token_ai_stimato:
+                richiesta.costo_token_ai_stimato = False
+                richiesta.save(update_fields=["costo_token_ai_stimato"])
+        # Importo mancante: prova a stimarlo con l'AI (una volta), se c'è abbastanza contesto.
+        if servizi.stima_costo_token_se_serve(richiesta, attore=request.user):
+            messages.success(
+                request,
+                f"Analisi aggiornata. Importo token proposto dall'AI: € {richiesta.costo_token_ai} "
+                "(modificabile).",
+            )
+        else:
+            messages.success(request, "Analisi della Funzione AI aggiornata.")
     else:
         messages.error(request, "Controlla i dati dell'analisi: alcuni valori non sono validi.")
     return redirect(richiesta)

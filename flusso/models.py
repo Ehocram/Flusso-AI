@@ -159,6 +159,38 @@ def livello_suggerito_residuo(tipo, code):
     return code
 
 
+class PeriodicitaCosto(models.TextChoices):
+    """Periodicità con cui va letto un costo (per dare senso alla cifra)."""
+
+    MENSILE = "MENSILE", "Mensile"
+    ANNUALE = "ANNUALE", "Annuale"
+    UNA_TANTUM = "UNA_TANTUM", "Una tantum"
+
+
+class AmbitoCosto(models.TextChoices):
+    """Ambito a cui si riferisce un costo."""
+
+    UTENTE = "UTENTE", "Per utente"
+    TEAM = "TEAM", "Per team"
+    COMPLESSIVO = "COMPLESSIVO", "Complessivo"
+
+
+class AutonomiaAI(models.TextChoices):
+    """Grado di autonomia della soluzione AI (rilevante per l'AI Act)."""
+
+    NON_AGENTICA = "NON_AGENTICA", "Non agentica"
+    AGENTICA_SUPPORTO = "AGENTICA_SUPPORTO", "Agentica — a supporto dell'utente (human-in-the-loop)"
+    AGENTICA_AUTONOMA = "AGENTICA_AUTONOMA", "Agentica — autonoma"
+
+
+class DeploymentAI(models.TextChoices):
+    """Infrastruttura prevista per i modelli (rilevante per GDPR/NIS2)."""
+
+    API = "API", "API (cloud)"
+    LOCALE = "LOCALE", "LLM locale (on-premise)"
+    IBRIDO = "IBRIDO", "Ibrido (API + locale)"
+
+
 class Richiesta(models.Model):
     """Esigenza/opportunita' AT proposta da una funzione aziendale."""
 
@@ -188,10 +220,32 @@ class Richiesta(models.Model):
 
     # --- Analisi della Funzione AI (compilata da AI Officer) -----------------
     analisi_fattibilita = models.TextField("Analisi di fattibilità", blank=True)
+    ai_autonomia = models.CharField(
+        "Tipo di AI", max_length=20, choices=AutonomiaAI.choices, blank=True,
+        help_text="Grado di autonomia: non agentica, agentica a supporto, agentica autonoma.",
+    )
+    ai_deployment = models.CharField(
+        "Infrastruttura prevista", max_length=10, choices=DeploymentAI.choices, blank=True,
+        help_text="API (cloud), LLM locale (on-premise) o ibrido. Impatta GDPR/NIS2.",
+    )
     effort_ore = models.PositiveIntegerField("Effort stimato (ore)", null=True, blank=True)
     data_inizio = models.DateField("Data inizio lavori", null=True, blank=True)
     data_consegna_prevista = models.DateField("Data prevista consegna", null=True, blank=True)
     costo_token_ai = models.DecimalField("Costi token AI (€)", max_digits=10, decimal_places=2, null=True, blank=True)
+    costo_token_periodicita = models.CharField(
+        "Periodicità costo token", max_length=12, choices=PeriodicitaCosto.choices, blank=True,
+    )
+    costo_token_ambito = models.CharField(
+        "Ambito costo token", max_length=12, choices=AmbitoCosto.choices, blank=True,
+    )
+    numero_utenti = models.PositiveIntegerField(
+        "Numero utenti/team", null=True, blank=True,
+        help_text="Numero di utenti (o di team) su cui scalare il costo per ottenere il totale.",
+    )
+    costo_token_ai_stimato = models.BooleanField(
+        default=False, editable=False,
+        help_text="True se l'importo token è stato proposto dall'AI (modificabile).",
+    )
     altri_costi = models.DecimalField("Altri costi (€)", max_digits=10, decimal_places=2, null=True, blank=True)
     altri_costi_note = models.CharField("Dettaglio altri costi", max_length=200, blank=True)
 
@@ -263,12 +317,57 @@ class Richiesta(models.Model):
         return (self.costo_token_ai or 0) + (self.altri_costi or 0)
 
     @property
+    def costo_token_annuo(self):
+        """Costo token ANNUALIZZATO (ricorrente), per confronti tra progetti.
+
+        Mensile ×12, Annuale ×1. Restituisce None se la periodicità manca o è
+        'una tantum' (un costo una tantum non è ricorrente: non va annualizzato).
+        Mantiene l'AMBITO (per utente/team/complessivo): per gli ambiti per-unità
+        è un valore unitario, non un totale d'azienda.
+        """
+        if self.costo_token_ai is None:
+            return None
+        fattore = {"MENSILE": 12, "ANNUALE": 1}.get(self.costo_token_periodicita)
+        if fattore is None:
+            return None
+        return self.costo_token_ai * fattore
+
+    @property
+    def costo_token_annuo_nota(self):
+        """Etichetta sintetica del calcolo annualizzato (None se non calcolabile)."""
+        if self.costo_token_annuo is None:
+            return None
+        period = self.get_costo_token_periodicita_display()
+        nota = f"{period} ×{12 if self.costo_token_periodicita == 'MENSILE' else 1}"
+        if self.costo_token_ambito:
+            nota += f" · {self.get_costo_token_ambito_display().lower()}"
+        return nota
+
+    @property
+    def costo_token_annuo_totale(self):
+        """Costo token annuo TOTALE. Per ambiti per-unità moltiplica per numero_utenti.
+
+        - Ambito 'per utente'/'per team': annualizzato × numero_utenti (None se manca
+          il numero, perché il totale non è determinabile senza la numerosità).
+        - Ambito 'complessivo' o non indicato: coincide con l'annualizzato.
+        - None se l'annualizzato non è calcolabile.
+        """
+        base = self.costo_token_annuo
+        if base is None:
+            return None
+        if self.costo_token_ambito in ("UTENTE", "TEAM"):
+            if not self.numero_utenti:
+                return None
+            return base * self.numero_utenti
+        return base
+
+    @property
     def ha_analisi(self) -> bool:
         """True se almeno un campo dell'analisi Funzione AI e' stato compilato."""
         return any([
-            self.analisi_fattibilita, self.effort_ore, self.data_inizio,
-            self.data_consegna_prevista, self.costo_token_ai is not None,
-            self.altri_costi is not None, self.altri_costi_note,
+            self.analisi_fattibilita, self.ai_autonomia, self.ai_deployment,
+            self.effort_ore, self.data_inizio, self.data_consegna_prevista,
+            self.costo_token_ai is not None, self.altri_costi is not None, self.altri_costi_note,
         ])
 
     # --- Rischio & conformità (tre dimensioni) ------------------------------

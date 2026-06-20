@@ -7,7 +7,7 @@ lettura KPI). Sono richiamate sia dalle view sia dall'import (seed_demo).
 
 import logging
 
-from .ai_client import classifica_rischio, stima_incrementi
+from .ai_client import classifica_rischio, stima_costo_token, stima_incrementi
 from .models import ConfigurazioneAI, TipoRischio
 
 log = logging.getLogger("flusso.audit")
@@ -83,3 +83,30 @@ def genera_tutto(richiesta, attore=None) -> dict:
     incr = stima_incrementi_se_serve(richiesta, attore=attore)
     risk = classifica_tutti_i_rischi(richiesta, attore=attore)
     return {"incrementi": incr, "rischi_ok": len(risk["ok"]), "rischi_errori": risk["errori"]}
+
+
+def stima_costo_token_se_serve(richiesta, attore=None) -> bool:
+    """Se l'importo token manca e c'e' abbastanza contesto, lo stima con l'AI (una volta).
+
+    Richiede periodicita' e ambito impostati (la struttura del costo) per una stima
+    sensata. L'importo resta sempre modificabile a mano. True se ha valorizzato.
+    """
+    if richiesta.costo_token_ai is not None:
+        return False
+    if not (richiesta.costo_token_periodicita and richiesta.costo_token_ambito):
+        return False
+    cfg = _config_pronta()
+    if cfg is None:
+        return False
+    try:
+        from decimal import Decimal
+        dati, errore = stima_costo_token(richiesta, cfg)
+        if errore or not dati:
+            return False
+        richiesta.costo_token_ai = Decimal(str(dati["costo"]))
+        richiesta.costo_token_ai_stimato = True
+        richiesta.save(update_fields=["costo_token_ai", "costo_token_ai_stimato"])
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("stima costo token richiesta=%s eccezione=%s", richiesta.codice, e)
+        return False

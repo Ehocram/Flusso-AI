@@ -46,6 +46,16 @@
         </div>
         <div class="form-grid">
           <div class="f-row">
+            <label for="{{ analisi_form.ai_autonomia.id_for_label }}">Tipo di AI</label>
+            {{ analisi_form.ai_autonomia }}
+            <span class="help">Agentica autonoma, agentica a supporto (human-in-the-loop) o non agentica.</span>
+          </div>
+          <div class="f-row">
+            <label for="{{ analisi_form.ai_deployment.id_for_label }}">Infrastruttura prevista</label>
+            {{ analisi_form.ai_deployment }}
+            <span class="help">API cloud, LLM locale on-premise o ibrido — impatta GDPR/NIS2.</span>
+          </div>
+          <div class="f-row">
             <label for="{{ analisi_form.effort_ore.id_for_label }}">Effort (ore)</label>
             {{ analisi_form.effort_ore }}
           </div>
@@ -58,16 +68,23 @@
             {{ analisi_form.data_consegna_prevista }}
           </div>
           <div class="f-row">
-            <label for="{{ analisi_form.costo_token_ai.id_for_label }}">Costi token AI (€)</label>
-            {{ analisi_form.costo_token_ai }}
-          </div>
-          <div class="f-row">
             <label for="{{ analisi_form.altri_costi.id_for_label }}">Altri costi (€)</label>
             {{ analisi_form.altri_costi }}
           </div>
-          <div class="f-row">
+          <div class="f-row full">
             <label for="{{ analisi_form.altri_costi_note.id_for_label }}">Dettaglio altri costi</label>
             {{ analisi_form.altri_costi_note }}
+          </div>
+          <div class="f-row full">
+            <label for="{{ analisi_form.costo_token_ai.id_for_label }}">Costi token AI (€){% if richiesta.costo_token_ai_stimato %} <span class="badge-ai"><i class="ti ti-robot"></i> Stima AI · modificabile</span>{% endif %}</label>
+            <div class="costo-token-row">
+              {{ analisi_form.costo_token_ai }}
+              {{ analisi_form.costo_token_periodicita }}
+              {{ analisi_form.costo_token_ambito }}
+              {{ analisi_form.numero_utenti }}
+            </div>
+            <span class="help">Importo (lascia vuoto = stima AI al salvataggio) · periodicità · ambito · numero utenti/team (per il totale).</span>
+            <div class="help" data-annuo style="margin-top:6px;">Costo token annualizzato: <b>—</b></div>
           </div>
         </div>
         <div style="margin-top:14px;">
@@ -81,10 +98,15 @@
       {# Sola lettura per gli altri ruoli #}
       {% if richiesta.analisi_fattibilita %}<p class="analisi-fatt">{{ richiesta.analisi_fattibilita }}</p>{% endif %}
       <div class="analisi-grid">
+        <div class="dato"><span class="lab">Tipo di AI</span><span class="val">{{ richiesta.get_ai_autonomia_display|default:"—" }}</span></div>
+        <div class="dato"><span class="lab">Infrastruttura</span><span class="val">{{ richiesta.get_ai_deployment_display|default:"—" }}</span></div>
         <div class="dato"><span class="lab">Effort</span><span class="val">{% if richiesta.effort_ore %}{{ richiesta.effort_ore }} h{% else %}—{% endif %}</span></div>
         <div class="dato"><span class="lab">Inizio lavori</span><span class="val">{{ richiesta.data_inizio|date:"d/m/Y"|default:"—" }}</span></div>
         <div class="dato"><span class="lab">Consegna prevista</span><span class="val">{{ richiesta.data_consegna_prevista|date:"d/m/Y"|default:"—" }}</span></div>
-        <div class="dato"><span class="lab">Costi token AI</span><span class="val">{% if richiesta.costo_token_ai is not None %}€ {{ richiesta.costo_token_ai|floatformat:2 }}{% else %}—{% endif %}</span></div>
+        <div class="dato"><span class="lab">Costi token AI{% if richiesta.costo_token_ai_stimato %} · stima AI{% endif %}</span><span class="val">{% if richiesta.costo_token_ai is not None %}€ {{ richiesta.costo_token_ai|floatformat:2 }}{% if richiesta.costo_token_periodicita %} · {{ richiesta.get_costo_token_periodicita_display }}{% endif %}{% if richiesta.costo_token_ambito %} · {{ richiesta.get_costo_token_ambito_display }}{% endif %}{% else %}—{% endif %}</span></div>
+        <div class="dato"><span class="lab">Numero utenti/team</span><span class="val">{{ richiesta.numero_utenti|default:"—" }}</span></div>
+        <div class="dato"><span class="lab">Costo token annualizzato</span><span class="val">{% if richiesta.costo_token_annuo is not None %}€ {{ richiesta.costo_token_annuo|floatformat:2 }}/anno{% if richiesta.costo_token_ambito %} · {{ richiesta.get_costo_token_ambito_display|lower }}{% endif %}{% elif richiesta.costo_token_ai is not None and richiesta.costo_token_periodicita == 'UNA_TANTUM' %}una tantum{% else %}—{% endif %}</span></div>
+        <div class="dato tot"><span class="lab">Costo token annuo totale</span><span class="val">{% if richiesta.costo_token_annuo_totale is not None %}€ {{ richiesta.costo_token_annuo_totale|floatformat:2 }}/anno{% else %}—{% endif %}</span></div>
         <div class="dato"><span class="lab">Altri costi</span><span class="val">{% if richiesta.altri_costi is not None %}€ {{ richiesta.altri_costi|floatformat:2 }}{% else %}—{% endif %}</span></div>
         <div class="dato tot"><span class="lab">Totale stimato</span><span class="val">{% if richiesta.costo_totale_stimato is not None %}€ {{ richiesta.costo_totale_stimato|floatformat:2 }}{% else %}—{% endif %}</span></div>
       </div>
@@ -330,6 +352,40 @@
       });
     }
   });
+})();
+
+(function(){
+  var cost = document.getElementById('id_costo_token_ai');
+  var per = document.getElementById('id_costo_token_periodicita');
+  var amb = document.getElementById('id_costo_token_ambito');
+  var num = document.getElementById('id_numero_utenti');
+  var box = document.querySelector('[data-annuo]');
+  if(!cost || !per || !box) return;
+  var out = box.querySelector('b');
+  function fmt(n){ return '€ ' + n.toLocaleString('it-IT', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+  function calc(){
+    var v = parseFloat((cost.value || '').replace(',', '.'));
+    if(isNaN(v)){ out.textContent = '—'; return; }
+    var p = per.value, annuo;
+    if(p === 'MENSILE'){ annuo = v * 12; }
+    else if(p === 'ANNUALE'){ annuo = v; }
+    else if(p === 'UNA_TANTUM'){ out.textContent = fmt(v) + ' una tantum (non ricorrente)'; return; }
+    else { out.textContent = 'indica la periodicità'; return; }
+    var ambVal = (amb && amb.value) ? amb.value : '';
+    var scope = ambVal ? ' · ' + amb.options[amb.selectedIndex].text.toLowerCase() : '';
+    var txt = fmt(annuo) + '/anno' + scope;
+    if((ambVal === 'UTENTE' || ambVal === 'TEAM') && num){
+      var n = parseInt(num.value, 10);
+      if(!isNaN(n) && n > 0){ txt += ' · totale ' + fmt(annuo * n) + '/anno'; }
+    }
+    out.textContent = txt;
+  }
+  cost.addEventListener('input', calc);
+  cost.addEventListener('change', calc);
+  per.addEventListener('change', calc);
+  if(amb) amb.addEventListener('change', calc);
+  if(num){ num.addEventListener('input', calc); }
+  calc();
 })();
 </script>
 {% endblock %}
