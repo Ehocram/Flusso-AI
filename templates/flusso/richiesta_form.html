@@ -38,21 +38,11 @@
         {{ form.descrizione }}
         {% if form.descrizione.errors %}<div class="err">{{ form.descrizione.errors|striptags }}</div>{% endif %}
       </div>
-      <div class="f-row full"><div class="metric-hint"><i class="ti ti-wallet"></i> Budget: indica il numero di utenti, il budget disponibile e l'eventuale extra budget che sei disposto a richiedere. Il sistema confronterà i costi stimati dalla Funzione AI con questi valori.</div></div>
-      <div class="f-row">
+      <div class="f-row full"><div class="metric-hint"><i class="ti ti-wallet"></i> Indica quanti utenti useranno il software: serve alla Funzione AI per stimare il costo. <b>Il budget lo deciderai più avanti</b>: dopo la stima del costo ti verrà chiesto se l'importo è <b>a budget</b> o <b>extra budget</b>.</div></div>
+      <div class="f-row full">
         <label for="{{ form.numero_utenti.id_for_label }}">Numero utenti previsti</label>
         {{ form.numero_utenti }}
-        <div class="help">Quanti utenti useranno il tool (usato per il conteggio del costo).</div>
-      </div>
-      <div class="f-row">
-        <label for="{{ form.budget_massimo.id_for_label }}">Budget massimo disponibile (€)</label>
-        {{ form.budget_massimo }}
-        <div class="help">Importo massimo a budget per il progetto.</div>
-      </div>
-      <div class="f-row full">
-        <label for="{{ form.extra_budget_massimo.id_for_label }}">Extra budget richiedibile (€)</label>
-        {{ form.extra_budget_massimo }}
-        <div class="help">Massimo extra budget che sei disposto a richiedere, in alternativa o in aggiunta al budget.</div>
+        <div class="help">Quanti utenti useranno il tool (usato dalla Funzione AI per il calcolo del costo).</div>
       </div>
       <div class="f-row full"><div class="metric-hint"><i class="ti ti-robot"></i> Se lasci vuoti «incremento qualitativo» ed «efficienza», li stima l'AI in base alla descrizione (sempre modificabili).</div></div>
       <div class="f-row full metric">
