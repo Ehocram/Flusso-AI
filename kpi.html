@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block titolo %}KPI · ISEO AI{% endblock %}
+
+{% block contenuto %}
+<div class="kpi">
+
+  <!-- HERO: control room -->
+  <section class="kpi-hero">
+    <div class="kpi-hero-glow" aria-hidden="true"></div>
+    <div class="kpi-hero-top">
+      <div>
+        <div class="kpi-eyebrow">Portafoglio AI · Indicatori</div>
+        <h1 class="kpi-h1">Cruscotto direzionale</h1>
+      </div>
+      <span class="kpi-pulse" aria-hidden="true"></span>
+    </div>
+
+    <div class="kpi-stats">
+      <div class="kpi-stat">
+        <span class="num" data-target="{{ k.tot }}">0</span>
+        <span class="lbl">Progetti totali</span>
+      </div>
+      <div class="kpi-stat">
+        <span class="num accent" data-target="{{ k.attivi }}">0</span>
+        <span class="lbl">Attivi · monitoraggio</span>
+      </div>
+      <div class="kpi-stat">
+        <span class="num" data-target="{{ k.in_pipeline }}">0</span>
+        <span class="lbl">In pipeline</span>
+      </div>
+      <div class="kpi-stat">
+        <span class="num" data-target="{{ k.sal_medio }}" data-suffix="%">0</span>
+        <span class="lbl">SAL medio attivi</span>
+      </div>
+      <div class="kpi-stat">
+        <span class="num" data-target="{{ k.aree_coinvolte }}" data-suffix="/7">0</span>
+        <span class="lbl">Aree coinvolte</span>
+      </div>
+    </div>
+
+    <!-- Signature: pipeline funnel (rispetta l'ordine reale del processo) -->
+    <div class="funnel">
+      {% for f in k.funnel %}
+      <div class="funnel-seg" style="flex: {{ f.n|add:1 }} 1 0;">
+        <div class="funnel-bar" style="background: {{ f.color }};"><span>{{ f.n }}</span></div>
+        <div class="funnel-cap">{{ f.label }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- ANALITICA -->
+  <section class="kpi-grid">
+    <div class="kpi-card">
+      <h3><i class="ti ti-chart-donut-3"></i> Pipeline per fase</h3>
+      <div class="donut-wrap">
+        <svg viewBox="0 0 120 120" class="donut" role="img" aria-label="Distribuzione per fase">
+          <circle cx="60" cy="60" r="52" class="ring-bg"/>
+          {% for s in k.donut %}
+          <circle cx="60" cy="60" r="52" fill="none" stroke="{{ s.color }}" stroke-width="15"
+                  stroke-dasharray="{{ s.dash }} {{ s.gap }}" stroke-dashoffset="{{ s.offset }}"
+                  transform="rotate(-90 60 60)"/>
+          {% endfor %}
+          <text x="60" y="57" class="ring-num">{{ k.tot }}</text>
+          <text x="60" y="73" class="ring-lbl">progetti</text>
+        </svg>
+        <ul class="legend">
+          {% for f in k.funnel %}
+          <li><span class="dot" style="background: {{ f.color }};"></span>
+            <span class="lg-lbl">{{ f.label }}</span>
+            <b>{{ f.n }}</b></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    <div class="kpi-card">
+      <h3><i class="ti ti-building-factory-2"></i> Progetti per area</h3>
+      <div class="bars">
+        {% for a in k.aree %}
+        <div class="bar-row">
+          <span class="bar-lbl">{{ a.label }}</span>
+          <div class="bar-track"><div class="bar-fill" style="width: {{ a.perc }}%;"></div></div>
+          <span class="bar-val">{{ a.n }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <!-- BUDGET PORTAFOGLIO APPROVATO (Direzione) -->
+  <section class="kpi-grid">
+    <div class="kpi-card">
+      <h3><i class="ti ti-wallet"></i> Budget · portafoglio approvato</h3>
+      <div class="mini-grid">
+        <div class="mini"><span class="mini-n">€ {{ k.costo_annuo_approvati|floatformat:0 }}</span><span class="mini-l">Costo annuo approvato</span></div>
+        <div class="mini"><span class="mini-n" style="color:var(--ok)">€ {{ k.costo_a_budget|floatformat:0 }}</span><span class="mini-l">A budget</span></div>
+        <div class="mini"><span class="mini-n {% if k.costo_extra_budget %}neg{% endif %}">€ {{ k.costo_extra_budget|floatformat:0 }}</span><span class="mini-l">Extra budget{% if k.progetti_extra_budget %} · {{ k.progetti_extra_budget }} prog.{% endif %}</span></div>
+        <div class="mini"><span class="mini-n">€ {{ k.saving_eco_approvati|floatformat:0 }}</span><span class="mini-l">Beneficio econ. (approvati)</span></div>
+      </div>
+      {% if k.costo_annuo_approvati %}
+      <div class="bgt-barra" style="margin-top:12px;">
+        <div class="bgt-fill bgt-ab" style="width: {% widthratio k.costo_a_budget k.costo_annuo_approvati 100 %}%;"></div>
+        <div class="bgt-fill bgt-ex" style="width: {% widthratio k.costo_extra_budget k.costo_annuo_approvati 100 %}%;"></div>
+      </div>
+      <div class="bgt-righe" style="margin-top:8px;">
+        <span class="bgt-ab-txt">A budget <b>€ {{ k.costo_a_budget|floatformat:2 }}</b></span>
+        <span class="bgt-ex-txt">Extra budget <b>€ {{ k.costo_extra_budget|floatformat:2 }}</b></span>
+      </div>
+      {% else %}
+      <p class="vuoto-min">Nessun progetto approvato con budget e costi valorizzati.</p>
+      {% endif %}
+    </div>
+
+    <div class="kpi-card">
+      <h3><i class="ti ti-cpu"></i> Infrastruttura & autonomia</h3>
+      <div class="bars">
+        {% for d in k.infra %}
+        <div class="bar-row"><span class="bar-lbl">{{ d.label }}</span><div class="bar-track"><div class="bar-fill" style="width: {% widthratio d.n k.tot 100 %}%;"></div></div><span class="bar-val">{{ d.n }}</span></div>
+        {% empty %}<p class="vuoto-min">Infrastruttura non ancora indicata.</p>{% endfor %}
+      </div>
+      <div class="bars" style="margin-top:10px;">
+        {% for d in k.autonomia %}
+        <div class="bar-row"><span class="bar-lbl">{{ d.label }}</span><div class="bar-track"><div class="bar-fill" style="width: {% widthratio d.n k.tot 100 %}%;"></div></div><span class="bar-val">{{ d.n }}</span></div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="kpi-grid">
+    <div class="kpi-card">
+      <h3><i class="ti ti-gauge"></i> Avanzamento &amp; metriche</h3>
+      <div class="metriche">
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 120 120" class="gauge" role="img" aria-label="SAL medio">
+            <circle cx="60" cy="60" r="52" class="ring-bg"/>
+            <circle cx="60" cy="60" r="52" fill="none" stroke="var(--ok)" stroke-width="15"
+                    stroke-linecap="round"
+                    stroke-dasharray="{{ k.gauge.dash }} {{ k.gauge.gap }}" stroke-dashoffset="0"
+                    transform="rotate(-90 60 60)"/>
+            <text x="60" y="58" class="ring-num">{{ k.sal_medio }}%</text>
+            <text x="60" y="74" class="ring-lbl">SAL medio</text>
+          </svg>
+        </div>
+        <div class="mini-grid">
+          <div class="mini"><span class="mini-n">{% if k.tasso_appr is not None %}{{ k.tasso_appr }}%{% else %}n/d{% endif %}</span><span class="mini-l">Tasso approvazione</span></div>
+          <div class="mini"><span class="mini-n">{% if k.lead is not None %}{{ k.lead }}<small> gg</small>{% else %}n/d{% endif %}</span><span class="mini-l">Lead time medio</span></div>
+          <div class="mini"><span class="mini-n">{{ k.effort }}<small> h</small></span><span class="mini-l">Effort stimato</span></div>
+          <div class="mini"><span class="mini-n">€ {{ k.investimento|floatformat:0 }}</span><span class="mini-l">Investimento stimato</span></div>
+          <div class="mini"><span class="mini-n">€ {{ k.saving_eco_tot|floatformat:0 }}</span><span class="mini-l">Beneficio economico</span></div>
+          <div class="mini"><span class="mini-n">{% if k.incr_qual_medio is not None %}{{ k.incr_qual_medio }}%{% else %}n/d{% endif %}</span><span class="mini-l">Incremento qualitativo</span></div>
+          <div class="mini"><span class="mini-n">{% if k.incr_eff_medio is not None %}{{ k.incr_eff_medio }}%{% else %}n/d{% endif %}</span><span class="mini-l">Incremento efficienza</span></div>
+          <div class="mini"><span class="mini-n {% if k.ritardo_tot %}neg{% endif %}">{{ k.ritardo_tot }}<small> gg</small></span><span class="mini-l">Ritardi{% if k.progetti_in_ritardo %} · {{ k.progetti_in_ritardo }} prog.{% endif %}</span></div>
+          <div class="mini"><span class="mini-n">€ {{ k.costo_annuo_token|floatformat:0 }}</span><span class="mini-l">Costo token annuo</span></div>
+          <div class="mini"><span class="mini-n {% if k.rischi_da_validare %}neg{% endif %}">{{ k.rischi_da_validare }}</span><span class="mini-l">Rischi da validare</span></div>
+          <div class="mini"><span class="mini-n {% if k.residui_da_convalidare %}neg{% endif %}">{{ k.residui_da_convalidare }}</span><span class="mini-l">Residui da convalidare</span></div>
+          <div class="mini"><span class="mini-n">{{ k.progetti_rischio_pronti }}</span><span class="mini-l">Pronti per la Direzione</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="kpi-card">
+      <h3><i class="ti ti-rocket"></i> Progetti attivi</h3>
+      {% if k.attivi_sal %}
+      <ul class="attivi">
+        {% for p in k.attivi_sal %}
+        <li>
+          <div class="att-top"><span class="att-id">{{ p.codice }}</span><span class="att-sal">{{ p.sal }}%</span></div>
+          <div class="att-tit">{{ p.titolo }}</div>
+          <div class="att-track"><div class="att-fill" style="width: {{ p.sal }}%;"></div></div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="vuoto-min">Nessun progetto ancora attivo.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- LETTURA ESECUTIVA AI -->
+  <section class="ai-panel">
+    <div class="ai-head">
+      <div class="ai-title"><i class="ti ti-sparkles"></i> Lettura esecutiva</div>
+      <div class="ai-meta">
+        {% if config.ultima_analisi_il %}
+          <span class="ai-badge">AI · {{ config.ultimo_modello }}</span>
+          <span class="ai-when">aggiornata il {{ config.ultima_analisi_il|date:"d/m/Y H:i" }}</span>
+        {% else %}
+          <span class="ai-badge ghost">Analisi AI</span>
+        {% endif %}
+        {% if user.is_ai_officer %}
+        <a href="{% url 'flusso:impostazioni_ai' %}" class="btn btn-sm"><i class="ti ti-settings"></i> Impostazioni</a>
+        <form method="post" action="{% url 'flusso:genera_analisi_kpi' %}">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm {% if config.ultima_analisi %}{% else %}btn-primario{% endif %}">
+            <i class="ti ti-refresh"></i> {% if config.ultima_analisi %}Rigenera{% else %}Genera analisi{% endif %}
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if config.ultima_analisi %}
+      <div class="ai-body">{{ config.ultima_analisi|linebreaks }}</div>
+      <p class="ai-disclaimer"><i class="ti ti-info-circle"></i> Sintesi generata da Claude sui KPI calcolati. I numeri provengono dai dati del processo; il testo è una lettura di supporto, da validare.</p>
+    {% else %}
+      <div class="ai-empty">
+        <i class="ti ti-message-2-cog"></i>
+        {% if not config.configurata %}
+          <p>Per attivare la lettura esecutiva, la Funzione AI deve impostare la <b>API key</b> e il <b>modello</b> nelle <b>Impostazioni AI</b> (oppure la variabile d'ambiente <code>ANTHROPIC_API_KEY</code>).</p>
+        {% elif not config.abilitato %}
+          <p>L'analisi AI è configurata ma non attiva. Abilitala nelle <b>Impostazioni AI</b>.</p>
+        {% else %}
+          <p>Tutto pronto.{% if user.is_ai_officer %} Premi <b>Genera analisi</b> per la prima lettura esecutiva.{% else %} La Funzione AI può generare la lettura esecutiva.{% endif %}</p>
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+</div>
+
+<script>
+(function () {
+  var rm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function easeOut(x){ return 1 - Math.pow(1 - x, 3); }
+  document.querySelectorAll('.kpi-stat .num[data-target]').forEach(function (el) {
+    var t = parseFloat(el.getAttribute('data-target')) || 0;
+    var suf = el.getAttribute('data-suffix') || '';
+    if (rm || t === 0) { el.textContent = t + suf; return; }
+    var dur = 950, start = null;
+    requestAnimationFrame(function tick(ts) {
+      if (!start) start = ts;
+      var p = Math.min((ts - start) / dur, 1);
+      el.textContent = Math.round(t * easeOut(p)) + suf;
+      if (p < 1) requestAnimationFrame(tick); else el.textContent = t + suf;
+    });
+  });
+})();
+</script>
+{% endblock %}
