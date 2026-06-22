@@ -191,6 +191,13 @@ class DeploymentAI(models.TextChoices):
     IBRIDO = "IBRIDO", "Ibrido (API + locale)"
 
 
+class EsitoBudget(models.TextChoices):
+    """Decisione dell'owner sull'importo stimato dalla Funzione AI."""
+
+    A_BUDGET = "A_BUDGET", "A budget"
+    EXTRA_BUDGET = "EXTRA_BUDGET", "Extra budget"
+
+
 class Richiesta(models.Model):
     """Esigenza/opportunita' AT proposta da una funzione aziendale."""
 
@@ -206,7 +213,7 @@ class Richiesta(models.Model):
     descrizione = models.TextField("Descrizione")
 
     saving_economico = models.DecimalField(
-        "Saving economico (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        "Beneficio economico atteso (€)", max_digits=12, decimal_places=2, null=True, blank=True,
     )
     incremento_qualitativo = models.DecimalField(
         "Incremento qualitativo (%)", max_digits=6, decimal_places=2, null=True, blank=True,
@@ -249,8 +256,22 @@ class Richiesta(models.Model):
     altri_costi = models.DecimalField("Altri costi (€)", max_digits=10, decimal_places=2, null=True, blank=True)
     altri_costi_note = models.CharField("Dettaglio altri costi", max_length=200, blank=True)
 
+    # --- Budget (compilato dall'owner) --------------------------------------
+    budget_massimo = models.DecimalField(
+        "Budget massimo disponibile (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Importo massimo a budget per il progetto.",
+    )
+    extra_budget_massimo = models.DecimalField(
+        "Extra budget richiedibile (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Importo massimo extra budget che l'owner è disposto a richiedere.",
+    )
+    esito_budget = models.CharField(
+        "Esito budget", max_length=12, choices=EsitoBudget.choices, blank=True,
+        help_text="Decisione dell'owner sull'importo stimato: a budget o extra budget.",
+    )
+
     # --- Note sui ritorni (compilabili dall'owner) --------------------------
-    saving_economico_note = models.CharField("Note saving economico", max_length=200, blank=True)
+    saving_economico_note = models.CharField("Note beneficio economico", max_length=200, blank=True)
     incremento_qualitativo_note = models.CharField("Note incremento qualitativo", max_length=200, blank=True)
     incremento_efficienza_note = models.CharField("Note incremento efficienza", max_length=200, blank=True)
     # Gli incrementi possono essere stimati una sola volta dall'AI (poi sempre
@@ -360,6 +381,116 @@ class Richiesta(models.Model):
                 return None
             return base * self.numero_utenti
         return base
+
+    @property
+    def costo_progetto_stimato(self):
+        """Costo di progetto per il confronto a budget.
+
+        Token (annualizzato se ricorrente, importo grezzo se una tantum/senza
+        periodicità), scalato per numero_utenti se l'ambito è per-unità, più gli
+        altri costi. None se il costo token è impostato ma non scalabile (manca il
+        numero utenti per gli ambiti per-unità).
+        """
+        parti = []
+        if self.costo_token_ai is not None:
+            base = self.costo_token_annuo
+            if base is None:  # una tantum o periodicità non indicata
+                base = self.costo_token_ai
+            if self.costo_token_ambito in ("UTENTE", "TEAM"):
+                if not self.numero_utenti:
+                    return None
+                base = base * self.numero_utenti
+            parti.append(base)
+        if self.altri_costi is not None:
+            parti.append(self.altri_costi)
+        if not parti:
+            return None
+        return sum(parti)
+
+    @property
+    def ripartizione_budget(self):
+        """Quanto del costo di progetto è a budget e quanto extra budget.
+
+        None se manca il budget o il costo. Ritorna un dict con costo, a_budget,
+        extra, budget, extra_richiesto e uno stato sintetico.
+        """
+        from decimal import Decimal as _D
+        costo = self.costo_progetto_stimato
+        if costo is None or self.budget_massimo is None:
+            return None
+        a_budget = min(costo, self.budget_massimo)
+        extra = costo - self.budget_massimo
+        if extra < 0:
+            extra = _D(0)
+        if extra == 0:
+            stato = "a_budget"
+        elif self.extra_budget_massimo is not None and extra <= self.extra_budget_massimo:
+            stato = "extra_ok"
+        elif self.extra_budget_massimo is not None:
+            stato = "extra_oltre"
+        else:
+            stato = "fuori_budget"
+        return {
+            "costo": costo, "a_budget": a_budget, "extra": extra,
+            "budget": self.budget_massimo, "extra_richiesto": self.extra_budget_massimo,
+            "stato": stato,
+        }
+
+    @property
+    def costo_a_budget(self):
+        rip = self.ripartizione_budget
+        return rip["a_budget"] if rip else None
+
+    @property
+    def costo_extra_budget(self):
+        rip = self.ripartizione_budget
+        return rip["extra"] if rip else None
+
+    @property
+    def budget_stato_label(self):
+        rip = self.ripartizione_budget
+        if not rip:
+            return ""
+        return {
+            "a_budget": "Interamente a budget",
+            "extra_ok": "Extra budget entro la richiesta",
+            "extra_oltre": "Extra budget OLTRE la richiesta",
+            "fuori_budget": "Fuori budget",
+        }.get(rip["stato"], "")
+
+    @property
+    def budget_stato_css(self):
+        rip = self.ripartizione_budget
+        if not rip:
+            return ""
+        return {"a_budget": "bg-ok", "extra_ok": "bg-warn",
+                "extra_oltre": "bg-bad", "fuori_budget": "bg-bad"}.get(rip["stato"], "")
+
+    @property
+    def esito_budget_css(self):
+        return {"A_BUDGET": "bg-ok", "EXTRA_BUDGET": "bg-warn"}.get(self.esito_budget, "")
+
+    @property
+    def contributo_budget(self):
+        """Quanto del costo di progetto va a budget e quanto extra, per i KPI.
+
+        Priorità alla decisione esplicita dell'owner (esito_budget): l'intero costo
+        finisce in un'unica voce. In assenza del flag (dati storici) ripiega sulla
+        ripartizione per importi, se l'owner aveva indicato un budget. Ritorna
+        (a_budget, extra) oppure None se il costo non è calcolabile.
+        """
+        from decimal import Decimal as _D
+        costo = self.costo_progetto_stimato
+        if costo is None:
+            return None
+        if self.esito_budget == "A_BUDGET":
+            return (costo, _D(0))
+        if self.esito_budget == "EXTRA_BUDGET":
+            return (_D(0), costo)
+        rip = self.ripartizione_budget
+        if rip:
+            return (rip["a_budget"], rip["extra"])
+        return None
 
     @property
     def ha_analisi(self) -> bool:

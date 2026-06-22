@@ -88,9 +88,48 @@
     </div>
   </section>
 
+  <!-- BUDGET PORTAFOGLIO APPROVATO (Direzione) -->
   <section class="kpi-grid">
     <div class="kpi-card">
-      <h3><i class="ti ti-gauge"></i> Avanzamento & metriche</h3>
+      <h3><i class="ti ti-wallet"></i> Budget · portafoglio approvato</h3>
+      <div class="mini-grid">
+        <div class="mini"><span class="mini-n">€ {{ k.costo_annuo_approvati|floatformat:0 }}</span><span class="mini-l">Costo annuo approvato</span></div>
+        <div class="mini"><span class="mini-n" style="color:var(--ok)">€ {{ k.costo_a_budget|floatformat:0 }}</span><span class="mini-l">A budget</span></div>
+        <div class="mini"><span class="mini-n {% if k.costo_extra_budget %}neg{% endif %}">€ {{ k.costo_extra_budget|floatformat:0 }}</span><span class="mini-l">Extra budget{% if k.progetti_extra_budget %} · {{ k.progetti_extra_budget }} prog.{% endif %}</span></div>
+        <div class="mini"><span class="mini-n">€ {{ k.saving_eco_approvati|floatformat:0 }}</span><span class="mini-l">Beneficio econ. (approvati)</span></div>
+      </div>
+      {% if k.costo_annuo_approvati %}
+      <div class="bgt-barra" style="margin-top:12px;">
+        <div class="bgt-fill bgt-ab" style="width: {% widthratio k.costo_a_budget k.costo_annuo_approvati 100 %}%;"></div>
+        <div class="bgt-fill bgt-ex" style="width: {% widthratio k.costo_extra_budget k.costo_annuo_approvati 100 %}%;"></div>
+      </div>
+      <div class="bgt-righe" style="margin-top:8px;">
+        <span class="bgt-ab-txt">A budget <b>€ {{ k.costo_a_budget|floatformat:2 }}</b></span>
+        <span class="bgt-ex-txt">Extra budget <b>€ {{ k.costo_extra_budget|floatformat:2 }}</b></span>
+      </div>
+      {% else %}
+      <p class="vuoto-min">Nessun progetto approvato con budget e costi valorizzati.</p>
+      {% endif %}
+    </div>
+
+    <div class="kpi-card">
+      <h3><i class="ti ti-cpu"></i> Infrastruttura & autonomia</h3>
+      <div class="bars">
+        {% for d in k.infra %}
+        <div class="bar-row"><span class="bar-lbl">{{ d.label }}</span><div class="bar-track"><div class="bar-fill" style="width: {% widthratio d.n k.tot 100 %}%;"></div></div><span class="bar-val">{{ d.n }}</span></div>
+        {% empty %}<p class="vuoto-min">Infrastruttura non ancora indicata.</p>{% endfor %}
+      </div>
+      <div class="bars" style="margin-top:10px;">
+        {% for d in k.autonomia %}
+        <div class="bar-row"><span class="bar-lbl">{{ d.label }}</span><div class="bar-track"><div class="bar-fill" style="width: {% widthratio d.n k.tot 100 %}%;"></div></div><span class="bar-val">{{ d.n }}</span></div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="kpi-grid">
+    <div class="kpi-card">
+      <h3><i class="ti ti-gauge"></i> Avanzamento &amp; metriche</h3>
       <div class="metriche">
         <div class="gauge-wrap">
           <svg viewBox="0 0 120 120" class="gauge" role="img" aria-label="SAL medio">
@@ -108,7 +147,7 @@
           <div class="mini"><span class="mini-n">{% if k.lead is not None %}{{ k.lead }}<small> gg</small>{% else %}n/d{% endif %}</span><span class="mini-l">Lead time medio</span></div>
           <div class="mini"><span class="mini-n">{{ k.effort }}<small> h</small></span><span class="mini-l">Effort stimato</span></div>
           <div class="mini"><span class="mini-n">€ {{ k.investimento|floatformat:0 }}</span><span class="mini-l">Investimento stimato</span></div>
-          <div class="mini"><span class="mini-n">€ {{ k.saving_eco_tot|floatformat:0 }}</span><span class="mini-l">Saving economico</span></div>
+          <div class="mini"><span class="mini-n">€ {{ k.saving_eco_tot|floatformat:0 }}</span><span class="mini-l">Beneficio economico</span></div>
           <div class="mini"><span class="mini-n">{% if k.incr_qual_medio is not None %}{{ k.incr_qual_medio }}%{% else %}n/d{% endif %}</span><span class="mini-l">Incremento qualitativo</span></div>
           <div class="mini"><span class="mini-n">{% if k.incr_eff_medio is not None %}{{ k.incr_eff_medio }}%{% else %}n/d{% endif %}</span><span class="mini-l">Incremento efficienza</span></div>
           <div class="mini"><span class="mini-n {% if k.ritardo_tot %}neg{% endif %}">{{ k.ritardo_tot }}<small> gg</small></span><span class="mini-l">Ritardi{% if k.progetti_in_ritardo %} · {{ k.progetti_in_ritardo }} prog.{% endif %}</span></div>

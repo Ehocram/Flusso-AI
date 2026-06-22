@@ -77,16 +77,40 @@
           </div>
           <div class="f-row full">
             <label for="{{ analisi_form.costo_token_ai.id_for_label }}">Costi token AI (€){% if richiesta.costo_token_ai_stimato %} <span class="badge-ai"><i class="ti ti-robot"></i> Stima AI · modificabile</span>{% endif %}</label>
-            <div class="costo-token-row">
+            <div class="costo-token-row ctr-3">
               {{ analisi_form.costo_token_ai }}
               {{ analisi_form.costo_token_periodicita }}
               {{ analisi_form.costo_token_ambito }}
-              {{ analisi_form.numero_utenti }}
             </div>
-            <span class="help">Importo (lascia vuoto = stima AI al salvataggio) · periodicità · ambito · numero utenti/team (per il totale).</span>
-            <div class="help" data-annuo style="margin-top:6px;">Costo token annualizzato: <b>—</b></div>
+            <span class="help">Importo (lascia vuoto = stima AI al salvataggio) · periodicità · ambito. Utenti previsti (dall'owner): <b>{{ richiesta.numero_utenti|default:"non indicato" }}</b> — usato per il totale.</span>
+            <div class="help" data-annuo data-utenti="{{ richiesta.numero_utenti|default:0 }}" style="margin-top:6px;">Costo token annualizzato: <b>—</b></div>
           </div>
         </div>
+        {% if richiesta.esito_budget %}
+        <div class="bgt {{ richiesta.esito_budget_css }}" style="margin-top:14px;">
+          <div class="bgt-head"><i class="ti ti-user-check"></i> Decisione dell'owner <span class="bgt-stato">{{ richiesta.get_esito_budget_display }}</span></div>
+          {% if richiesta.costo_progetto_stimato is not None %}<div class="t-mut" style="margin-top:4px;">Costo di progetto € {{ richiesta.costo_progetto_stimato|floatformat:2 }} — classificato {{ richiesta.get_esito_budget_display|lower }} dall'owner.</div>{% endif %}
+        </div>
+        {% endif %}
+        {% if richiesta.ripartizione_budget %}
+        <div class="bgt {{ richiesta.budget_stato_css }}" style="margin-top:14px;">
+          <div class="bgt-head"><i class="ti ti-wallet"></i> Verifica a budget (importi owner) <span class="bgt-stato">{{ richiesta.budget_stato_label }}</span></div>
+          <div class="bgt-barra">
+            {% if richiesta.ripartizione_budget.costo %}
+            <div class="bgt-fill bgt-ab" style="width: {% widthratio richiesta.ripartizione_budget.a_budget richiesta.ripartizione_budget.costo 100 %}%;"></div>
+            <div class="bgt-fill bgt-ex" style="width: {% widthratio richiesta.ripartizione_budget.extra richiesta.ripartizione_budget.costo 100 %}%;"></div>
+            {% endif %}
+          </div>
+          <div class="bgt-righe">
+            <span>Costo di progetto: <b>€ {{ richiesta.ripartizione_budget.costo|floatformat:2 }}</b></span>
+            <span class="bgt-ab-txt">A budget: <b>€ {{ richiesta.ripartizione_budget.a_budget|floatformat:2 }}</b></span>
+            <span class="bgt-ex-txt">Extra budget: <b>€ {{ richiesta.ripartizione_budget.extra|floatformat:2 }}</b></span>
+          </div>
+          <div class="t-mut" style="margin-top:4px;">Budget disponibile € {{ richiesta.budget_massimo|floatformat:2 }}{% if richiesta.extra_budget_massimo is not None %} · extra richiedibile € {{ richiesta.extra_budget_massimo|floatformat:2 }}{% endif %}.</div>
+        </div>
+        {% elif not richiesta.esito_budget and richiesta.costo_progetto_stimato is not None %}
+        <div class="t-mut" style="margin-top:12px;"><i class="ti ti-wallet"></i> In attesa della decisione di budget dell'owner (a budget / extra budget).</div>
+        {% endif %}
         <div style="margin-top:14px;">
           <button type="submit" class="btn btn-primario btn-sm"><i class="ti ti-device-floppy"></i> Salva analisi</button>
           {% if richiesta.costo_totale_stimato is not None %}
@@ -111,6 +135,29 @@
         <div class="dato tot"><span class="lab">Totale stimato</span><span class="val">{% if richiesta.costo_totale_stimato is not None %}€ {{ richiesta.costo_totale_stimato|floatformat:2 }}{% else %}—{% endif %}</span></div>
       </div>
       {% if richiesta.altri_costi_note %}<div class="t-mut" style="margin-top:8px;">Dettaglio altri costi: {{ richiesta.altri_costi_note }}</div>{% endif %}
+      {% if richiesta.esito_budget %}
+      <div class="bgt {{ richiesta.esito_budget_css }}" style="margin-top:12px;">
+        <div class="bgt-head"><i class="ti ti-user-check"></i> Decisione dell'owner <span class="bgt-stato">{{ richiesta.get_esito_budget_display }}</span></div>
+        {% if richiesta.costo_progetto_stimato is not None %}<div class="t-mut" style="margin-top:4px;">Costo di progetto € {{ richiesta.costo_progetto_stimato|floatformat:2 }} — classificato {{ richiesta.get_esito_budget_display|lower }} dall'owner.</div>{% endif %}
+      </div>
+      {% endif %}
+      {% if richiesta.ripartizione_budget %}
+      <div class="bgt {{ richiesta.budget_stato_css }}" style="margin-top:12px;">
+        <div class="bgt-head"><i class="ti ti-wallet"></i> Verifica a budget <span class="bgt-stato">{{ richiesta.budget_stato_label }}</span></div>
+        <div class="bgt-barra">
+          {% if richiesta.ripartizione_budget.costo %}
+          <div class="bgt-fill bgt-ab" style="width: {% widthratio richiesta.ripartizione_budget.a_budget richiesta.ripartizione_budget.costo 100 %}%;"></div>
+          <div class="bgt-fill bgt-ex" style="width: {% widthratio richiesta.ripartizione_budget.extra richiesta.ripartizione_budget.costo 100 %}%;"></div>
+          {% endif %}
+        </div>
+        <div class="bgt-righe">
+          <span>Costo di progetto: <b>€ {{ richiesta.ripartizione_budget.costo|floatformat:2 }}</b></span>
+          <span class="bgt-ab-txt">A budget: <b>€ {{ richiesta.ripartizione_budget.a_budget|floatformat:2 }}</b></span>
+          <span class="bgt-ex-txt">Extra budget: <b>€ {{ richiesta.ripartizione_budget.extra|floatformat:2 }}</b></span>
+        </div>
+        <div class="t-mut" style="margin-top:4px;">Budget disponibile € {{ richiesta.budget_massimo|floatformat:2 }}{% if richiesta.extra_budget_massimo is not None %} · extra richiedibile € {{ richiesta.extra_budget_massimo|floatformat:2 }}{% endif %} (indicati dall'owner).</div>
+      </div>
+      {% endif %}
       {% else %}
       <div class="vuoto" style="padding:10px 4px;">Analisi non ancora compilata dalla Funzione AI.</div>
       {% endif %}
@@ -273,7 +320,23 @@
   <aside>
     <div class="card">
       <h2><i class="ti ti-arrow-guide" style="vertical-align:-2px;color:var(--rosso)"></i> Azioni</h2>
-      {% if azioni %}
+      {% if mostra_decisione_budget %}
+      <p class="t-mut" style="margin:0 0 10px;">L'analisi della Funzione AI è completa. Indica se l'importo è <b>a budget</b> o <b>extra budget</b> per proseguire (l'AI genererà i rischi), oppure rifiuta il progetto.</p>
+      {% if richiesta.costo_progetto_stimato is not None %}
+      <div class="dec-costo">Costo di progetto stimato: <b>€ {{ richiesta.costo_progetto_stimato|floatformat:2 }}</b></div>
+      {% endif %}
+      <form method="post" action="{% url 'flusso:decidi_budget' richiesta.pk %}">
+        {% csrf_token %}
+        <label class="dec-opt"><input type="radio" name="esito_budget" value="A_BUDGET" required> A budget</label>
+        <label class="dec-opt"><input type="radio" name="esito_budget" value="EXTRA_BUDGET"> Extra budget</label>
+        <button type="submit" class="btn btn-positivo btn-sm" style="width:100%;justify-content:center;margin-top:10px;"><i class="ti ti-check"></i> Conferma e prosegui</button>
+      </form>
+      <form method="post" action="{% url 'flusso:esegui_azione' richiesta.pk %}" style="margin-top:14px;" onsubmit="return confirm('Rifiutare e archiviare definitivamente il progetto {{ richiesta.codice }}? Non proseguirà.');">
+        {% csrf_token %}
+        <textarea name="nota" rows="2" class="campo" placeholder="Motivazione del rifiuto (obbligatoria)…"></textarea>
+        <button type="submit" name="azione" value="rifiuta_progetto" class="btn btn-pericolo btn-sm" style="width:100%;justify-content:center;margin-top:8px;"><i class="ti ti-archive"></i> Rifiuta e archivia</button>
+      </form>
+      {% elif azioni %}
       <form method="post" action="{% url 'flusso:esegui_azione' richiesta.pk %}">
         {% csrf_token %}
         <div class="note-azione">
@@ -358,10 +421,10 @@
   var cost = document.getElementById('id_costo_token_ai');
   var per = document.getElementById('id_costo_token_periodicita');
   var amb = document.getElementById('id_costo_token_ambito');
-  var num = document.getElementById('id_numero_utenti');
   var box = document.querySelector('[data-annuo]');
   if(!cost || !per || !box) return;
   var out = box.querySelector('b');
+  var utenti = parseInt(box.getAttribute('data-utenti') || '0', 10);
   function fmt(n){ return '€ ' + n.toLocaleString('it-IT', {minimumFractionDigits:2, maximumFractionDigits:2}); }
   function calc(){
     var v = parseFloat((cost.value || '').replace(',', '.'));
@@ -374,9 +437,8 @@
     var ambVal = (amb && amb.value) ? amb.value : '';
     var scope = ambVal ? ' · ' + amb.options[amb.selectedIndex].text.toLowerCase() : '';
     var txt = fmt(annuo) + '/anno' + scope;
-    if((ambVal === 'UTENTE' || ambVal === 'TEAM') && num){
-      var n = parseInt(num.value, 10);
-      if(!isNaN(n) && n > 0){ txt += ' · totale ' + fmt(annuo * n) + '/anno'; }
+    if((ambVal === 'UTENTE' || ambVal === 'TEAM') && utenti > 0){
+      txt += ' · totale ' + fmt(annuo * utenti) + '/anno (' + utenti + ' utenti)';
     }
     out.textContent = txt;
   }
@@ -384,7 +446,6 @@
   cost.addEventListener('change', calc);
   per.addEventListener('change', calc);
   if(amb) amb.addEventListener('change', calc);
-  if(num){ num.addEventListener('input', calc); }
   calc();
 })();
 </script>

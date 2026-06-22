@@ -100,6 +100,22 @@ def calcola_kpi() -> dict:
         if all(cl.get(t) and cl[t].validato for t in ("AIACT", "NIS2", "GDPR")):
             progetti_rischio_pronti += 1
 
+    # --- Budget del portafoglio APPROVATO dalla Direzione --------------------
+    approvati_qs = qs.filter(stato__in=[Stato.APPROVATA, Stato.ATTIVO,
+                                        Stato.MONITORAGGIO, Stato.COMPLETATO])
+    costo_a_budget, costo_extra_budget = Decimal(0), Decimal(0)
+    progetti_extra_budget = 0
+    for r in approvati_qs:
+        contrib = r.contributo_budget
+        if contrib:
+            a_b, ex = contrib
+            costo_a_budget += a_b
+            costo_extra_budget += ex
+            if ex > 0:
+                progetti_extra_budget += 1
+    costo_annuo_approvati = costo_a_budget + costo_extra_budget
+    saving_eco_approvati = approvati_qs.aggregate(s=Sum("saving_economico"))["s"] or 0
+
     # Metriche di valore e di avanzamento temporale
     saving_eco_tot = qs.aggregate(s=Sum("saving_economico"))["s"] or 0
     _iq = qs.aggregate(a=Avg("incremento_qualitativo"))["a"]
@@ -164,6 +180,9 @@ def calcola_kpi() -> dict:
         "costo_annuo_token": costo_annuo_token, "infra": infra, "autonomia": autonomia,
         "rischi_da_validare": rischi_da_validare, "residui_da_convalidare": residui_da_convalidare,
         "progetti_rischio_pronti": progetti_rischio_pronti,
+        "costo_a_budget": costo_a_budget, "costo_extra_budget": costo_extra_budget,
+        "costo_annuo_approvati": costo_annuo_approvati, "saving_eco_approvati": saving_eco_approvati,
+        "progetti_extra_budget": progetti_extra_budget,
         "per_fase": per_fase, "aree": aree, "donut": donut, "donut_circ": circ,
         "funnel": funnel, "gauge": gauge, "attivi_sal": attivi_sal,
     }
@@ -192,7 +211,11 @@ def riassunto_per_ai(kpi: dict, includi_titoli: bool = False) -> str:
         f"Rischi da validare dai presìdi: {kpi['rischi_da_validare']}",
         f"Rischi residui da convalidare: {kpi['residui_da_convalidare']}",
         f"Progetti con le tre validazioni di rischio complete: {kpi['progetti_rischio_pronti']}",
-        f"Saving economico atteso (totale): € {kpi['saving_eco_tot']}",
+        f"Portafoglio APPROVATO dalla Direzione: costo annuo € {kpi['costo_annuo_approvati']}, "
+        f"di cui a budget € {kpi['costo_a_budget']} ed extra budget € {kpi['costo_extra_budget']} "
+        f"({kpi['progetti_extra_budget']} progetti fuori dal solo budget)",
+        f"Beneficio economico atteso (progetti approvati): € {kpi['saving_eco_approvati']}",
+        f"Beneficio economico atteso (totale): € {kpi['saving_eco_tot']}",
         f"Incremento qualitativo medio: {kpi['incr_qual_medio'] if kpi['incr_qual_medio'] is not None else 'n/d'}%",
         f"Incremento efficienza medio: {kpi['incr_eff_medio'] if kpi['incr_eff_medio'] is not None else 'n/d'}%",
         f"Progetti in ritardo: {kpi['progetti_in_ritardo']} (totale {kpi['ritardo_tot']} giorni di ritardo)",

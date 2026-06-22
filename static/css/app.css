@@ -261,11 +261,33 @@ h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -.01em; }
 .form-card { max-width: 760px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .form-grid .full { grid-column: 1 / -1; }
-.costo-token-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
-@media (max-width: 680px) { .costo-token-row { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 460px) { .costo-token-row { grid-template-columns: 1fr; } }
+.costo-token-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+@media (max-width: 560px) { .costo-token-row { grid-template-columns: 1fr; } }
 .badge-ai { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; color:var(--info); background:#e6f0fa; border-radius:var(--r-pill); padding:2px 8px; vertical-align:middle; }
 .badge-ai .ti { font-size:13px; }
+/* --- Verifica a budget --- */
+.bgt { padding:12px 14px; border:1px solid var(--bordo); border-left:3px solid var(--info); border-radius:11px; background:#fbfcfe; }
+.bgt.bg-ok { border-left-color:var(--ok); }
+.bgt.bg-warn { border-left-color:var(--attesa); }
+.bgt.bg-bad { border-left-color:var(--rosso); }
+.bgt-head { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:var(--testo-2); }
+.bgt-head .ti { color:var(--info); }
+.bgt-stato { margin-left:auto; font-size:12px; font-weight:700; padding:2px 10px; border-radius:var(--r-pill); }
+.bg-ok .bgt-stato { background:var(--verde-bg); color:var(--verde-fg); }
+.bg-warn .bgt-stato { background:var(--giallo-bg); color:var(--giallo-fg); }
+.bg-bad .bgt-stato { background:#fdebec; color:var(--rosso-scuro); }
+.bgt-barra { display:flex; height:10px; border-radius:6px; overflow:hidden; background:#eef0f2; margin:10px 0 8px; }
+.bgt-fill { height:100%; }
+.bgt-ab { background:var(--ok); }
+.bgt-ex { background:var(--rosso); }
+.bgt-righe { display:flex; flex-wrap:wrap; gap:16px; font-size:13px; color:var(--testo-2); }
+.bgt-ab-txt b { color:var(--verde-fg); }
+.bgt-ex-txt b { color:var(--rosso-scuro); }
+/* --- Pannello decisione budget (owner) --- */
+.dec-costo { font-size:14px; color:var(--inchiostro); background:#f5f7fa; border-radius:8px; padding:8px 10px; margin-bottom:10px; }
+.dec-opt { display:flex; align-items:center; gap:8px; padding:9px 11px; border:1px solid var(--bordo); border-radius:8px; margin-bottom:6px; font-size:14px; cursor:pointer; }
+.dec-opt:hover { border-color:var(--info); background:#fbfcfe; }
+.dec-opt input { margin:0; }
 .f-row label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
 .f-row .help { font-size: 12px; color: var(--testo-3); margin-top: 4px; }
 .f-row .err { color: var(--rosso); font-size: 12px; margin-top: 4px; }

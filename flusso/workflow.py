@@ -22,16 +22,18 @@ class Stato(models.TextChoices):
     BOZZA = "BOZZA", "Bozza"
     INVIATA = "INVIATA", "Inviata alla Funzione AI"
     IN_QUALIFICA = "IN_QUALIFICA", "In qualifica e analisi"
+    ATTESA_BUDGET = "ATTESA_BUDGET", "Attesa decisione budget (owner)"
     IN_APPROVAZIONE = "IN_APPROVAZIONE", "In approvazione"
     APPROVATA = "APPROVATA", "Approvata"
     RESPINTA = "RESPINTA", "Respinta"
+    ARCHIVIATA = "ARCHIVIATA", "Archiviata dall'owner"
     ATTIVO = "ATTIVO", "Progetto attivo"
     MONITORAGGIO = "MONITORAGGIO", "In monitoraggio (SAL)"
     COMPLETATO = "COMPLETATO", "Completato"
 
 
 # Stati finali: nessuna ulteriore transizione di workflow.
-STATI_TERMINALI = {Stato.RESPINTA, Stato.COMPLETATO}
+STATI_TERMINALI = {Stato.RESPINTA, Stato.ARCHIVIATA, Stato.COMPLETATO}
 
 # Stati in cui il progetto è operativo e il SAL è aggiornabile.
 STATI_OPERATIVI = {Stato.ATTIVO, Stato.MONITORAGGIO}
@@ -39,10 +41,10 @@ STATI_OPERATIVI = {Stato.ATTIVO, Stato.MONITORAGGIO}
 # Raggruppamento per la board (kanban) e i conteggi di dashboard.
 FASI = {
     "in_coda": [Stato.BOZZA, Stato.INVIATA],
-    "in_analisi": [Stato.IN_QUALIFICA],
+    "in_analisi": [Stato.IN_QUALIFICA, Stato.ATTESA_BUDGET],
     "in_approvazione": [Stato.IN_APPROVAZIONE],
     "approvati": [Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO],
-    "chiusi": [Stato.COMPLETATO, Stato.RESPINTA],
+    "chiusi": [Stato.COMPLETATO, Stato.RESPINTA, Stato.ARCHIVIATA],
 }
 
 
@@ -96,6 +98,35 @@ TRANSIZIONI: tuple[Transizione, ...] = (
         stile="pericolo",
         richiede_nota=True,
         descrizione="Esito negativo del filtro della Funzione AI.",
+    ),
+    Transizione(
+        azione="invia_a_budget",
+        label="Invia all'owner per la decisione di budget",
+        da=(Stato.IN_QUALIFICA,),
+        a=Stato.ATTESA_BUDGET,
+        ruoli=(Ruolo.AI_OFFICER,),
+        descrizione="Conclusa l'analisi dei costi, l'owner deve indicare se l'importo è a budget o extra budget.",
+    ),
+    Transizione(
+        azione="conferma_budget",
+        label="Conferma budget e prosegui",
+        da=(Stato.ATTESA_BUDGET,),
+        a=Stato.IN_QUALIFICA,
+        ruoli=(Ruolo.OWNER,),
+        solo_proponente=True,
+        stile="positivo",
+        descrizione="L'owner conferma se l'importo è a budget o extra budget: l'AI genera i rischi e il flusso prosegue.",
+    ),
+    Transizione(
+        azione="rifiuta_progetto",
+        label="Rifiuta e archivia",
+        da=(Stato.ATTESA_BUDGET,),
+        a=Stato.ARCHIVIATA,
+        ruoli=(Ruolo.OWNER,),
+        solo_proponente=True,
+        stile="pericolo",
+        richiede_nota=True,
+        descrizione="L'owner non procede con il progetto: archiviazione con motivazione.",
     ),
     Transizione(
         azione="presenta_approvazione",

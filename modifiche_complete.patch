@@ -127,7 +127,7 @@ index 02bfb2c..106f4b7 100644
 +               getattr(richiesta, "codice", "?"), costo, config.modello)
 +    return {"costo": costo, "modello": config.modello}, None
 diff --git a/flusso/forms.py b/flusso/forms.py
-index 8655e60..def9134 100644
+index 8655e60..d476d5a 100644
 --- a/flusso/forms.py
 +++ b/flusso/forms.py
 @@ -1,8 +1,10 @@
@@ -142,7 +142,7 @@ index 8655e60..def9134 100644
  
  
  class AnalisiAIForm(forms.ModelForm):
-@@ -11,21 +13,29 @@ class AnalisiAIForm(forms.ModelForm):
+@@ -11,21 +13,28 @@ class AnalisiAIForm(forms.ModelForm):
      class Meta:
          model = Richiesta
          fields = [
@@ -150,7 +150,7 @@ index 8655e60..def9134 100644
 -            "data_consegna_prevista", "costo_token_ai", "altri_costi", "altri_costi_note",
 +            "analisi_fattibilita", "ai_autonomia", "ai_deployment", "effort_ore", "data_inizio",
 +            "data_consegna_prevista", "costo_token_ai", "costo_token_periodicita",
-+            "costo_token_ambito", "numero_utenti", "altri_costi", "altri_costi_note",
++            "costo_token_ambito", "altri_costi", "altri_costi_note",
          ]
          widgets = {
              "analisi_fattibilita": forms.Textarea(attrs={"rows": 4, "placeholder": "Valutazione di fattibilità, approccio, rischi, dipendenze…"}),
@@ -159,7 +159,6 @@ index 8655e60..def9134 100644
              "effort_ore": forms.NumberInput(attrs={"min": 0, "placeholder": "es. 120"}),
 -            "costo_token_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
 +            "costo_token_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ (vuoto = stima AI)"}),
-+            "numero_utenti": forms.NumberInput(attrs={"min": 1, "placeholder": "n. utenti/team"}),
              "altri_costi": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
              "altri_costi_note": forms.TextInput(attrs={"placeholder": "es. licenze, infrastruttura on-prem"}),
          }
@@ -175,7 +174,27 @@ index 8655e60..def9134 100644
          for campo in self.fields.values():
              css = campo.widget.attrs.get("class", "")
              campo.widget.attrs["class"] = (css + " campo").strip()
-@@ -148,6 +158,11 @@ class ValidazioneRischioForm(forms.Form):
+@@ -42,6 +51,9 @@ class RichiestaForm(forms.ModelForm):
+             "tipo_soluzione",
+             "descrizione",
+             "referente_area",
++            "numero_utenti",
++            "budget_massimo",
++            "extra_budget_massimo",
+             "saving_economico",
+             "saving_economico_note",
+             "incremento_qualitativo",
+@@ -53,6 +65,9 @@ class RichiestaForm(forms.ModelForm):
+             "descrizione": forms.Textarea(attrs={"rows": 3}),
+             "titolo": forms.TextInput(attrs={"placeholder": "Es. Knowledge management"}),
+             "tipo_soluzione": forms.TextInput(attrs={"placeholder": "Es. Assistente AI interno"}),
++            "numero_utenti": forms.NumberInput(attrs={"min": 1, "placeholder": "n. utenti che useranno il tool"}),
++            "budget_massimo": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ a budget"}),
++            "extra_budget_massimo": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ extra budget"}),
+             "saving_economico": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
+             "incremento_qualitativo": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "% (vuoto = stima AI)"}),
+             "incremento_efficienza": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "% (vuoto = stima AI)"}),
+@@ -148,6 +163,11 @@ class ValidazioneRischioForm(forms.Form):
          required=False, label="Motivazione (opzionale)",
          widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Lascia vuoto per mantenere la motivazione dell'AI."}),
      )
@@ -187,7 +206,7 @@ index 8655e60..def9134 100644
      nota = forms.CharField(
          required=False, max_length=300, label="Nota del presidio",
          widget=forms.TextInput(attrs={"placeholder": "Es. confermato dopo verifica interna."}),
-@@ -159,3 +174,56 @@ class ValidazioneRischioForm(forms.Form):
+@@ -159,3 +179,56 @@ class ValidazioneRischioForm(forms.Form):
          for campo in self.fields.values():
              css = campo.widget.attrs.get("class", "")
              campo.widget.attrs["class"] = (css + " campo").strip()
@@ -245,7 +264,7 @@ index 8655e60..def9134 100644
 +    },
 +)
 diff --git a/flusso/kpi.py b/flusso/kpi.py
-index a54799f..0f9364d 100644
+index a54799f..a15aa27 100644
 --- a/flusso/kpi.py
 +++ b/flusso/kpi.py
 @@ -11,7 +11,8 @@ from decimal import Decimal
@@ -258,7 +277,7 @@ index a54799f..0f9364d 100644
  from .workflow import FASI, Stato
  
  _COLORI_FASE = {
-@@ -74,6 +75,31 @@ def calcola_kpi() -> dict:
+@@ -74,6 +75,47 @@ def calcola_kpi() -> dict:
                         for r in qs.only("costo_token_ai", "altri_costi"))
      effort = qs.aggregate(s=Sum("effort_ore"))["s"] or 0
  
@@ -287,32 +306,57 @@ index a54799f..0f9364d 100644
 +        if all(cl.get(t) and cl[t].validato for t in ("AIACT", "NIS2", "GDPR")):
 +            progetti_rischio_pronti += 1
 +
++    # --- Budget del portafoglio APPROVATO dalla Direzione --------------------
++    approvati_qs = qs.filter(stato__in=[Stato.APPROVATA, Stato.ATTIVO,
++                                        Stato.MONITORAGGIO, Stato.COMPLETATO])
++    costo_a_budget, costo_extra_budget = Decimal(0), Decimal(0)
++    progetti_extra_budget = 0
++    for r in approvati_qs:
++        contrib = r.contributo_budget
++        if contrib:
++            a_b, ex = contrib
++            costo_a_budget += a_b
++            costo_extra_budget += ex
++            if ex > 0:
++                progetti_extra_budget += 1
++    costo_annuo_approvati = costo_a_budget + costo_extra_budget
++    saving_eco_approvati = approvati_qs.aggregate(s=Sum("saving_economico"))["s"] or 0
++
      # Metriche di valore e di avanzamento temporale
      saving_eco_tot = qs.aggregate(s=Sum("saving_economico"))["s"] or 0
      _iq = qs.aggregate(a=Avg("incremento_qualitativo"))["a"]
-@@ -135,6 +161,9 @@ def calcola_kpi() -> dict:
+@@ -135,6 +177,12 @@ def calcola_kpi() -> dict:
          "saving_eco_tot": saving_eco_tot, "incr_qual_medio": incr_qual_medio,
          "incr_eff_medio": incr_eff_medio, "ritardo_tot": ritardo_tot,
          "progetti_in_ritardo": progetti_in_ritardo,
 +        "costo_annuo_token": costo_annuo_token, "infra": infra, "autonomia": autonomia,
 +        "rischi_da_validare": rischi_da_validare, "residui_da_convalidare": residui_da_convalidare,
 +        "progetti_rischio_pronti": progetti_rischio_pronti,
++        "costo_a_budget": costo_a_budget, "costo_extra_budget": costo_extra_budget,
++        "costo_annuo_approvati": costo_annuo_approvati, "saving_eco_approvati": saving_eco_approvati,
++        "progetti_extra_budget": progetti_extra_budget,
          "per_fase": per_fase, "aree": aree, "donut": donut, "donut_circ": circ,
          "funnel": funnel, "gauge": gauge, "attivi_sal": attivi_sal,
      }
-@@ -157,6 +186,12 @@ def riassunto_per_ai(kpi: dict, includi_titoli: bool = False) -> str:
+@@ -157,7 +205,17 @@ def riassunto_per_ai(kpi: dict, includi_titoli: bool = False) -> str:
          f"Lead time medio invio→approvazione: {lead}",
          f"Effort stimato totale: {kpi['effort']} ore",
          f"Investimento stimato: € {kpi['investimento']}",
+-        f"Saving economico atteso (totale): € {kpi['saving_eco_tot']}",
 +        f"Costo token annuo stimato del portafoglio: € {kpi['costo_annuo_token']}",
 +        "Infrastruttura prevista: " + (", ".join(f"{d['label']} {d['n']}" for d in kpi["infra"]) or "n/d"),
 +        "Tipo di AI (autonomia): " + (", ".join(f"{d['label']} {d['n']}" for d in kpi["autonomia"]) or "n/d"),
 +        f"Rischi da validare dai presìdi: {kpi['rischi_da_validare']}",
 +        f"Rischi residui da convalidare: {kpi['residui_da_convalidare']}",
 +        f"Progetti con le tre validazioni di rischio complete: {kpi['progetti_rischio_pronti']}",
-         f"Saving economico atteso (totale): € {kpi['saving_eco_tot']}",
++        f"Portafoglio APPROVATO dalla Direzione: costo annuo € {kpi['costo_annuo_approvati']}, "
++        f"di cui a budget € {kpi['costo_a_budget']} ed extra budget € {kpi['costo_extra_budget']} "
++        f"({kpi['progetti_extra_budget']} progetti fuori dal solo budget)",
++        f"Beneficio economico atteso (progetti approvati): € {kpi['saving_eco_approvati']}",
++        f"Beneficio economico atteso (totale): € {kpi['saving_eco_tot']}",
          f"Incremento qualitativo medio: {kpi['incr_qual_medio'] if kpi['incr_qual_medio'] is not None else 'n/d'}%",
          f"Incremento efficienza medio: {kpi['incr_eff_medio'] if kpi['incr_eff_medio'] is not None else 'n/d'}%",
+         f"Progetti in ritardo: {kpi['progetti_in_ritardo']} (totale {kpi['ritardo_tot']} giorni di ritardo)",
 diff --git a/flusso/migrations/0009_classificazionerischio_residuo_convalidato_and_more.py b/flusso/migrations/0009_classificazionerischio_residuo_convalidato_and_more.py
 new file mode 100644
 index 0000000..552eb21
@@ -450,8 +494,76 @@ index 0000000..9072dbe
 +            field=models.PositiveIntegerField(blank=True, help_text='Numero di utenti (o di team) su cui scalare il costo per ottenere il totale.', null=True, verbose_name='Numero utenti/team'),
 +        ),
 +    ]
+diff --git a/flusso/migrations/0012_richiesta_budget_massimo_and_more.py b/flusso/migrations/0012_richiesta_budget_massimo_and_more.py
+new file mode 100644
+index 0000000..47f6841
+--- /dev/null
++++ b/flusso/migrations/0012_richiesta_budget_massimo_and_more.py
+@@ -0,0 +1,23 @@
++# Generated by Django 5.2.15 on 2026-06-22 11:48
++
++from django.db import migrations, models
++
++
++class Migration(migrations.Migration):
++
++    dependencies = [
++        ('flusso', '0011_richiesta_costo_token_ai_stimato_and_more'),
++    ]
++
++    operations = [
++        migrations.AddField(
++            model_name='richiesta',
++            name='budget_massimo',
++            field=models.DecimalField(blank=True, decimal_places=2, help_text='Importo massimo a budget per il progetto.', max_digits=12, null=True, verbose_name='Budget massimo disponibile (€)'),
++        ),
++        migrations.AddField(
++            model_name='richiesta',
++            name='extra_budget_massimo',
++            field=models.DecimalField(blank=True, decimal_places=2, help_text="Importo massimo extra budget che l'owner è disposto a richiedere.", max_digits=12, null=True, verbose_name='Extra budget richiedibile (€)'),
++        ),
++    ]
+diff --git a/flusso/migrations/0013_richiesta_esito_budget_and_more.py b/flusso/migrations/0013_richiesta_esito_budget_and_more.py
+new file mode 100644
+index 0000000..62fd139
+--- /dev/null
++++ b/flusso/migrations/0013_richiesta_esito_budget_and_more.py
+@@ -0,0 +1,33 @@
++# Generated by Django 5.2.15 on 2026-06-22 12:26
++
++from django.db import migrations, models
++
++
++class Migration(migrations.Migration):
++
++    dependencies = [
++        ('flusso', '0012_richiesta_budget_massimo_and_more'),
++    ]
++
++    operations = [
++        migrations.AddField(
++            model_name='richiesta',
++            name='esito_budget',
++            field=models.CharField(blank=True, choices=[('A_BUDGET', 'A budget'), ('EXTRA_BUDGET', 'Extra budget')], help_text="Decisione dell'owner sull'importo stimato: a budget o extra budget.", max_length=12, verbose_name='Esito budget'),
++        ),
++        migrations.AlterField(
++            model_name='richiesta',
++            name='saving_economico',
++            field=models.DecimalField(blank=True, decimal_places=2, max_digits=12, null=True, verbose_name='Beneficio economico atteso (€)'),
++        ),
++        migrations.AlterField(
++            model_name='richiesta',
++            name='saving_economico_note',
++            field=models.CharField(blank=True, max_length=200, verbose_name='Note beneficio economico'),
++        ),
++        migrations.AlterField(
++            model_name='richiesta',
++            name='stato',
++            field=models.CharField(choices=[('BOZZA', 'Bozza'), ('INVIATA', 'Inviata alla Funzione AI'), ('IN_QUALIFICA', 'In qualifica e analisi'), ('ATTESA_BUDGET', 'Attesa decisione budget (owner)'), ('IN_APPROVAZIONE', 'In approvazione'), ('APPROVATA', 'Approvata'), ('RESPINTA', 'Respinta'), ('ARCHIVIATA', "Archiviata dall'owner"), ('ATTIVO', 'Progetto attivo'), ('MONITORAGGIO', 'In monitoraggio (SAL)'), ('COMPLETATO', 'Completato')], db_index=True, default='BOZZA', max_length=24),
++        ),
++    ]
 diff --git a/flusso/models.py b/flusso/models.py
-index 69d2848..762be06 100644
+index 69d2848..eb6ac43 100644
 --- a/flusso/models.py
 +++ b/flusso/models.py
 @@ -38,6 +38,15 @@ class StatoRischio(models.TextChoices):
@@ -513,7 +625,7 @@ index 69d2848..762be06 100644
  
  _CSS_AIACT = {"VIETATO": "rk-vietato", "ALTO": "rk-alto", "LIMITATO": "rk-limitato", "MINIMO": "rk-minimo"}
  _CSS_LIVELLO = {"ALTO": "rk-vietato", "MEDIO": "rk-alto", "BASSO": "rk-minimo", "NA": "rk-nd"}
-@@ -85,6 +130,67 @@ def categoria_css(tipo, code) -> str:
+@@ -85,6 +130,74 @@ def categoria_css(tipo, code) -> str:
      return tabella.get(code, "rk-nd")
  
  
@@ -578,10 +690,26 @@ index 69d2848..762be06 100644
 +    IBRIDO = "IBRIDO", "Ibrido (API + locale)"
 +
 +
++class EsitoBudget(models.TextChoices):
++    """Decisione dell'owner sull'importo stimato dalla Funzione AI."""
++
++    A_BUDGET = "A_BUDGET", "A budget"
++    EXTRA_BUDGET = "EXTRA_BUDGET", "Extra budget"
++
++
  class Richiesta(models.Model):
      """Esigenza/opportunita' AT proposta da una funzione aziendale."""
  
-@@ -114,10 +220,32 @@ class Richiesta(models.Model):
+@@ -100,7 +213,7 @@ class Richiesta(models.Model):
+     descrizione = models.TextField("Descrizione")
+ 
+     saving_economico = models.DecimalField(
+-        "Saving economico (€)", max_digits=12, decimal_places=2, null=True, blank=True,
++        "Beneficio economico atteso (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+     )
+     incremento_qualitativo = models.DecimalField(
+         "Incremento qualitativo (%)", max_digits=6, decimal_places=2, null=True, blank=True,
+@@ -114,15 +227,51 @@ class Richiesta(models.Model):
  
      # --- Analisi della Funzione AI (compilata da AI Officer) -----------------
      analisi_fattibilita = models.TextField("Analisi di fattibilità", blank=True)
@@ -614,7 +742,27 @@ index 69d2848..762be06 100644
      altri_costi = models.DecimalField("Altri costi (€)", max_digits=10, decimal_places=2, null=True, blank=True)
      altri_costi_note = models.CharField("Dettaglio altri costi", max_length=200, blank=True)
  
-@@ -188,13 +316,58 @@ class Richiesta(models.Model):
++    # --- Budget (compilato dall'owner) --------------------------------------
++    budget_massimo = models.DecimalField(
++        "Budget massimo disponibile (€)", max_digits=12, decimal_places=2, null=True, blank=True,
++        help_text="Importo massimo a budget per il progetto.",
++    )
++    extra_budget_massimo = models.DecimalField(
++        "Extra budget richiedibile (€)", max_digits=12, decimal_places=2, null=True, blank=True,
++        help_text="Importo massimo extra budget che l'owner è disposto a richiedere.",
++    )
++    esito_budget = models.CharField(
++        "Esito budget", max_length=12, choices=EsitoBudget.choices, blank=True,
++        help_text="Decisione dell'owner sull'importo stimato: a budget o extra budget.",
++    )
++
+     # --- Note sui ritorni (compilabili dall'owner) --------------------------
+-    saving_economico_note = models.CharField("Note saving economico", max_length=200, blank=True)
++    saving_economico_note = models.CharField("Note beneficio economico", max_length=200, blank=True)
+     incremento_qualitativo_note = models.CharField("Note incremento qualitativo", max_length=200, blank=True)
+     incremento_efficienza_note = models.CharField("Note incremento efficienza", max_length=200, blank=True)
+     # Gli incrementi possono essere stimati una sola volta dall'AI (poi sempre
+@@ -188,13 +337,168 @@ class Richiesta(models.Model):
              return None
          return (self.costo_token_ai or 0) + (self.altri_costi or 0)
  
@@ -663,6 +811,116 @@ index 69d2848..762be06 100644
 +            return base * self.numero_utenti
 +        return base
 +
++    @property
++    def costo_progetto_stimato(self):
++        """Costo di progetto per il confronto a budget.
++
++        Token (annualizzato se ricorrente, importo grezzo se una tantum/senza
++        periodicità), scalato per numero_utenti se l'ambito è per-unità, più gli
++        altri costi. None se il costo token è impostato ma non scalabile (manca il
++        numero utenti per gli ambiti per-unità).
++        """
++        parti = []
++        if self.costo_token_ai is not None:
++            base = self.costo_token_annuo
++            if base is None:  # una tantum o periodicità non indicata
++                base = self.costo_token_ai
++            if self.costo_token_ambito in ("UTENTE", "TEAM"):
++                if not self.numero_utenti:
++                    return None
++                base = base * self.numero_utenti
++            parti.append(base)
++        if self.altri_costi is not None:
++            parti.append(self.altri_costi)
++        if not parti:
++            return None
++        return sum(parti)
++
++    @property
++    def ripartizione_budget(self):
++        """Quanto del costo di progetto è a budget e quanto extra budget.
++
++        None se manca il budget o il costo. Ritorna un dict con costo, a_budget,
++        extra, budget, extra_richiesto e uno stato sintetico.
++        """
++        from decimal import Decimal as _D
++        costo = self.costo_progetto_stimato
++        if costo is None or self.budget_massimo is None:
++            return None
++        a_budget = min(costo, self.budget_massimo)
++        extra = costo - self.budget_massimo
++        if extra < 0:
++            extra = _D(0)
++        if extra == 0:
++            stato = "a_budget"
++        elif self.extra_budget_massimo is not None and extra <= self.extra_budget_massimo:
++            stato = "extra_ok"
++        elif self.extra_budget_massimo is not None:
++            stato = "extra_oltre"
++        else:
++            stato = "fuori_budget"
++        return {
++            "costo": costo, "a_budget": a_budget, "extra": extra,
++            "budget": self.budget_massimo, "extra_richiesto": self.extra_budget_massimo,
++            "stato": stato,
++        }
++
++    @property
++    def costo_a_budget(self):
++        rip = self.ripartizione_budget
++        return rip["a_budget"] if rip else None
++
++    @property
++    def costo_extra_budget(self):
++        rip = self.ripartizione_budget
++        return rip["extra"] if rip else None
++
++    @property
++    def budget_stato_label(self):
++        rip = self.ripartizione_budget
++        if not rip:
++            return ""
++        return {
++            "a_budget": "Interamente a budget",
++            "extra_ok": "Extra budget entro la richiesta",
++            "extra_oltre": "Extra budget OLTRE la richiesta",
++            "fuori_budget": "Fuori budget",
++        }.get(rip["stato"], "")
++
++    @property
++    def budget_stato_css(self):
++        rip = self.ripartizione_budget
++        if not rip:
++            return ""
++        return {"a_budget": "bg-ok", "extra_ok": "bg-warn",
++                "extra_oltre": "bg-bad", "fuori_budget": "bg-bad"}.get(rip["stato"], "")
++
++    @property
++    def esito_budget_css(self):
++        return {"A_BUDGET": "bg-ok", "EXTRA_BUDGET": "bg-warn"}.get(self.esito_budget, "")
++
++    @property
++    def contributo_budget(self):
++        """Quanto del costo di progetto va a budget e quanto extra, per i KPI.
++
++        Priorità alla decisione esplicita dell'owner (esito_budget): l'intero costo
++        finisce in un'unica voce. In assenza del flag (dati storici) ripiega sulla
++        ripartizione per importi, se l'owner aveva indicato un budget. Ritorna
++        (a_budget, extra) oppure None se il costo non è calcolabile.
++        """
++        from decimal import Decimal as _D
++        costo = self.costo_progetto_stimato
++        if costo is None:
++            return None
++        if self.esito_budget == "A_BUDGET":
++            return (costo, _D(0))
++        if self.esito_budget == "EXTRA_BUDGET":
++            return (_D(0), costo)
++        rip = self.ripartizione_budget
++        if rip:
++            return (rip["a_budget"], rip["extra"])
++        return None
++
      @property
      def ha_analisi(self) -> bool:
          """True se almeno un campo dell'analisi Funzione AI e' stato compilato."""
@@ -676,7 +934,7 @@ index 69d2848..762be06 100644
          ])
  
      # --- Rischio & conformità (tre dimensioni) ------------------------------
-@@ -457,6 +630,28 @@ class ClassificazioneRischio(models.Model):
+@@ -457,6 +761,28 @@ class ClassificazioneRischio(models.Model):
      )
      validato_il = models.DateTimeField(null=True, blank=True)
      nota_validatore = models.TextField(blank=True)
@@ -705,7 +963,7 @@ index 69d2848..762be06 100644
      aggiornata_il = models.DateTimeField(auto_now=True)
  
      class Meta:
-@@ -504,6 +699,74 @@ class ClassificazioneRischio(models.Model):
+@@ -504,6 +830,74 @@ class ClassificazioneRischio(models.Model):
      def ruolo_validatore(self) -> str:
          return RUOLO_VALIDATORE.get(self.tipo, "")
  
@@ -780,7 +1038,7 @@ index 69d2848..762be06 100644
      @transaction.atomic
      def applica_ai(self, categoria, motivazione="", riferimenti="", obblighi="", modello="", attore=None):
          """Registra la proposta dell'AI; non sovrascrive una decisione già presa dal presidio."""
-@@ -529,8 +792,12 @@ class ClassificazioneRischio(models.Model):
+@@ -529,8 +923,12 @@ class ClassificazioneRischio(models.Model):
          return self
  
      @transaction.atomic
@@ -795,7 +1053,7 @@ index 69d2848..762be06 100644
          categoria = str(categoria)
          modificato = bool(self.ai_categoria) and categoria != self.ai_categoria
          if not self.ai_categoria and categoria != self.categoria:
-@@ -538,6 +805,8 @@ class ClassificazioneRischio(models.Model):
+@@ -538,6 +936,8 @@ class ClassificazioneRischio(models.Model):
          self.categoria = categoria
          if motivazione is not None and motivazione.strip():
              self.motivazione = motivazione.strip()
@@ -804,7 +1062,7 @@ index 69d2848..762be06 100644
          self.nota_validatore = nota or ""
          self.stato = StatoRischio.MODIFICATO if modificato else StatoRischio.VALIDATO
          self.validato_da = attore
-@@ -554,10 +823,49 @@ class ClassificazioneRischio(models.Model):
+@@ -554,10 +954,49 @@ class ClassificazioneRischio(models.Model):
                     verbo, self.tipo, categoria, getattr(attore, "username", "?"))
          return self
  
@@ -832,7 +1090,10 @@ index 69d2848..762be06 100644
 +                   self.residuo_convalidato, getattr(attore, "username", "?"))
 +        return self
 +
-+
+ 
+-# =============================================================================
+-# Configurazione AI (singleton) per la lettura esecutiva dei KPI
+-# =============================================================================
 +class AzioneTrattamento(models.Model):
 +    """Azione di mitigazione pianificata per una classificazione di rischio."""
 +
@@ -843,10 +1104,7 @@ index 69d2848..762be06 100644
 +    data_prevista = models.DateField(null=True, blank=True, verbose_name="Data prevista di applicazione")
 +    ordine = models.PositiveIntegerField(default=0)
 +    creata_il = models.DateTimeField(default=timezone.now, editable=False)
- 
--# =============================================================================
--# Configurazione AI (singleton) per la lettura esecutiva dei KPI
--# =============================================================================
++
 +    class Meta:
 +        verbose_name = "Azione di trattamento"
 +        verbose_name_plural = "Azioni di trattamento"
@@ -857,7 +1115,7 @@ index 69d2848..762be06 100644
  
  MODELLI_CLAUDE = [
      ("claude-sonnet-4-6", "Claude Sonnet 4.6 — consigliato (qualità/costo)"),
-@@ -590,7 +898,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
+@@ -590,7 +1029,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
  - "categoria": uno tra "VIETATO", "ALTO", "LIMITATO", "MINIMO"
  - "motivazione": 1-3 frasi in italiano che spiegano la classificazione riferendosi al caso d'uso
  - "riferimenti": articolo o allegato pertinente (es. "Allegato III, punto 4" oppure "Art. 50")
@@ -866,7 +1124,7 @@ index 69d2848..762be06 100644
  
  La classificazione è preliminare e dovrà essere validata dalla Funzione Legale."""
  
-@@ -608,7 +916,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
+@@ -608,7 +1047,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
  - "categoria": uno tra "ALTO", "MEDIO", "BASSO", "NA"
  - "motivazione": 1-3 frasi in italiano riferite al caso d'uso
  - "riferimenti": riferimento pertinente (es. "Art. 21 — misure di gestione del rischio" o "Art. 23 — notifica incidenti")
@@ -875,7 +1133,7 @@ index 69d2848..762be06 100644
  
  La classificazione è preliminare e dovrà essere validata dal CISO."""
  
-@@ -626,7 +934,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
+@@ -626,7 +1065,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
  - "categoria": uno tra "ALTO", "MEDIO", "BASSO", "NA"
  - "motivazione": 1-3 frasi in italiano riferite al caso d'uso
  - "riferimenti": riferimento pertinente (es. "Art. 35 — DPIA", "Art. 9 — categorie particolari", "Art. 6 — base giuridica")
@@ -929,17 +1187,21 @@ index 3668cc9..c1ba84e 100644
 +        log.warning("stima costo token richiesta=%s eccezione=%s", richiesta.codice, e)
 +        return False
 diff --git a/flusso/urls.py b/flusso/urls.py
-index 4985d60..09b845c 100644
+index 4985d60..aeb64aa 100644
 --- a/flusso/urls.py
 +++ b/flusso/urls.py
-@@ -22,4 +22,5 @@ urlpatterns = [
+@@ -19,7 +19,9 @@ urlpatterns = [
+     path("richieste/<int:pk>/elimina/", views.elimina, name="elimina"),
+     path("richieste/<int:pk>/azione/", views.esegui_azione, name="esegui_azione"),
+     path("richieste/<int:pk>/analisi/", views.aggiorna_analisi, name="aggiorna_analisi"),
++    path("richieste/<int:pk>/budget/", views.decidi_budget, name="decidi_budget"),
      path("richieste/<int:pk>/sal/", views.aggiorna_sal, name="aggiorna_sal"),
      path("richieste/<int:pk>/rischio/analizza/", views.analizza_rischio, name="analizza_rischio"),
      path("richieste/<int:pk>/rischio/<str:tipo>/valida/", views.valida_rischio, name="valida_rischio"),
 +    path("richieste/<int:pk>/rischio/<str:tipo>/tratta/", views.tratta_rischio, name="tratta_rischio"),
  ]
 diff --git a/flusso/views.py b/flusso/views.py
-index 462f4f0..9343c19 100644
+index 462f4f0..957b306 100644
 --- a/flusso/views.py
 +++ b/flusso/views.py
 @@ -21,9 +21,12 @@ from django.views.decorators.http import require_POST
@@ -952,7 +1214,7 @@ index 462f4f0..9343c19 100644
  from .kpi import calcola_kpi
 -from .models import ConfigurazioneAI, PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta, TipoRischio
 +from .models import (ClassificazioneRischio, ConfigurazioneAI, DIMENSIONE_PER_RUOLO,
-+                     PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
++                     EsitoBudget, PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
 +                     StatoRischio, TipoRischio)
  from .notifiche import notifica_transizione
  from .workflow import FASI, STATI_OPERATIVI, STATI_TERMINALI, Stato, azioni_disponibili, puo_eseguire, transizione
@@ -1001,7 +1263,7 @@ index 462f4f0..9343c19 100644
      })
  
  
-@@ -134,10 +157,18 @@ def dettaglio(request, pk):
+@@ -134,13 +157,28 @@ def dettaglio(request, pk):
      rischi = []
      for c in richiesta.lista_rischi():
          form = None
@@ -1022,7 +1284,108 @@ index 462f4f0..9343c19 100644
      blocco_approvazione = richiesta.stato == Stato.IN_QUALIFICA and not richiesta.rischi_tutti_validati
      if blocco_approvazione:
          azioni = [a for a in azioni if a.azione != "presenta_approvazione"]
-@@ -267,7 +298,20 @@ def aggiorna_analisi(request, pk):
++    # La decisione di budget dell'owner ha un pannello dedicato: fuori dai bottoni generici.
++    mostra_decisione_budget = (
++        richiesta.stato == Stato.ATTESA_BUDGET
++        and request.user.is_owner
++        and richiesta.proponente_id == request.user.id
++    )
++    azioni = [a for a in azioni if a.azione not in ("conferma_budget", "rifiuta_progetto")]
+ 
+     return render(request, "flusso/dettaglio.html", {
+         "richiesta": richiesta, "azioni": azioni, "timeline": timeline,
+@@ -148,6 +186,7 @@ def dettaglio(request, pk):
+         "sal_form": sal_form, "analisi_form": analisi_form,
+         "rischi": rischi, "puo_analizza_rischio": request.user.is_ai_officer,
+         "blocco_approvazione": blocco_approvazione,
++        "mostra_decisione_budget": mostra_decisione_budget,
+         "rischi_mancanti": richiesta.rischi_mancanti_label,
+     })
+ 
+@@ -227,8 +266,23 @@ def esegui_azione(request, pk):
+         messages.error(request, f"L'azione «{t.label}» richiede una nota.")
+         return redirect(richiesta)
+ 
+-    # GATE: niente passaggio alla Direzione senza le tre validazioni di rischio.
++    # GATE: l'invio all'owner per la decisione di budget richiede il costo stimato.
++    if azione == "invia_a_budget" and richiesta.costo_progetto_stimato is None:
++        messages.error(
++            request,
++            "Completa prima il costo del progetto (token e/o altri costi, con periodicità, "
++            "ambito e numero utenti dove serve) prima di inviarlo all'owner per il budget.",
++        )
++        return redirect(richiesta)
++
++    # GATE: niente passaggio alla Direzione senza decisione di budget + tre validazioni.
+     if azione == "presenta_approvazione":
++        if not richiesta.esito_budget:
++            messages.error(
++                request,
++                "Prima dell'approvazione l'owner deve indicare se l'importo è a budget o extra budget.",
++            )
++            return redirect(richiesta)
+         richiesta.assicura_classificazioni()
+         if not richiesta.rischi_tutti_validati:
+             messages.error(
+@@ -241,20 +295,44 @@ def esegui_azione(request, pk):
+     evento = richiesta.applica(azione, attore=request.user, nota=nota)
+     notifica_transizione(request, richiesta, evento)
+     messages.success(request, f"{evento.etichetta}: {richiesta.stato_label}.")
++    return redirect(richiesta)
+ 
+-    # Alla presa in carico, se l'AI è attiva, classifica le tre dimensioni di rischio
+-    # (best-effort: non blocca mai il flusso).
+-    if azione == "prendi_in_carico":
+-        esito = servizi.classifica_tutti_i_rischi(richiesta, attore=request.user)
+-        if esito["ok"]:
+-            dims = ", ".join(_NOMI_RISCHIO[x] for x in esito["ok"])
+-            messages.info(
+-                request,
+-                f"Rischio stimato dall'AI per: {dims}. "
+-                "Da validare da Legale (AI Act), CISO (NIS2) e DPO (GDPR).",
+-            )
+-        elif "_" not in esito["errori"]:
+-            messages.warning(request, "Classificazione del rischio non riuscita per alcune dimensioni.")
++
++@login_required
++@require_POST
++def decidi_budget(request, pk):
++    """L'owner indica se l'importo stimato è a budget o extra budget.
++
++    Decisione obbligatoria a valle dell'analisi della Funzione AI: alla conferma
++    l'AI genera i rischi (AI Act/NIS2/GDPR) e il flusso prosegue come di consueto.
++    In alternativa l'owner rifiuta il progetto (azione 'rifiuta_progetto') e la
++    pratica viene archiviata con motivazione.
++    """
++    richiesta = get_object_or_404(Richiesta, pk=pk)
++    if not puo_eseguire(richiesta, request.user, "conferma_budget"):
++        return HttpResponseForbidden("Azione non consentita.")
++    esito = request.POST.get("esito_budget", "")
++    if esito not in EsitoBudget.values:
++        messages.error(request, "Indica se l'importo è a budget oppure extra budget.")
++        return redirect(richiesta)
++    richiesta.esito_budget = esito
++    richiesta.save(update_fields=["esito_budget"])
++    evento = richiesta.applica("conferma_budget", attore=request.user)
++    notifica_transizione(request, richiesta, evento)
++    # Alla conferma del budget l'AI genera le tre dimensioni di rischio (best-effort).
++    risk_msg = ""
++    res = servizi.classifica_tutti_i_rischi(richiesta, attore=request.user)
++    if res["ok"]:
++        dims = ", ".join(_NOMI_RISCHIO[x] for x in res["ok"])
++        risk_msg = (f" Rischio stimato dall'AI per: {dims}. "
++                    "Da validare da Legale (AI Act), CISO (NIS2) e DPO (GDPR).")
++    elif "_" not in res["errori"]:
++        risk_msg = " Nota: classificazione del rischio non riuscita per alcune dimensioni."
++    messages.success(
++        request,
++        f"Budget confermato come «{richiesta.get_esito_budget_display()}». "
++        f"{richiesta.stato_label}.{risk_msg}",
++    )
+     return redirect(richiesta)
+ 
+ 
+@@ -267,7 +345,21 @@ def aggiorna_analisi(request, pk):
      form = AnalisiAIForm(request.POST, instance=richiesta)
      if form.is_valid():
          form.save()
@@ -1033,18 +1396,19 @@ index 462f4f0..9343c19 100644
 +                richiesta.costo_token_ai_stimato = False
 +                richiesta.save(update_fields=["costo_token_ai_stimato"])
 +        # Importo mancante: prova a stimarlo con l'AI (una volta), se c'è abbastanza contesto.
-+        if servizi.stima_costo_token_se_serve(richiesta, attore=request.user):
-+            messages.success(
-+                request,
-+                f"Analisi aggiornata. Importo token proposto dall'AI: € {richiesta.costo_token_ai} "
-+                "(modificabile).",
-+            )
-+        else:
-+            messages.success(request, "Analisi della Funzione AI aggiornata.")
++        stimato = servizi.stima_costo_token_se_serve(richiesta, attore=request.user)
++        msg = ("Analisi aggiornata. Importo token proposto dall'AI: "
++               f"€ {richiesta.costo_token_ai} (modificabile)." if stimato
++               else "Analisi della Funzione AI aggiornata.")
++        rip = richiesta.ripartizione_budget
++        if rip:
++            msg += (f" Costo € {rip['costo']:.2f}: a budget € {rip['a_budget']:.2f}, "
++                    f"extra budget € {rip['extra']:.2f} ({richiesta.budget_stato_label}).")
++        messages.success(request, msg)
      else:
          messages.error(request, "Controlla i dati dell'analisi: alcuni valori non sono validi.")
      return redirect(richiesta)
-@@ -445,9 +489,41 @@ def valida_rischio(request, pk, tipo):
+@@ -445,9 +537,41 @@ def valida_rischio(request, pk, tipo):
          classificazione.valida(
              form.cleaned_data["categoria"], attore=request.user,
              nota=form.cleaned_data["nota"], motivazione=form.cleaned_data["motivazione"],
@@ -1086,23 +1450,118 @@ index 462f4f0..9343c19 100644
 +    else:
 +        messages.error(request, "Trattamento non valido: controlla le azioni e il livello residuo.")
 +    return redirect(richiesta)
+diff --git a/flusso/workflow.py b/flusso/workflow.py
+index 4c6a160..867ae27 100644
+--- a/flusso/workflow.py
++++ b/flusso/workflow.py
+@@ -22,16 +22,18 @@ class Stato(models.TextChoices):
+     BOZZA = "BOZZA", "Bozza"
+     INVIATA = "INVIATA", "Inviata alla Funzione AI"
+     IN_QUALIFICA = "IN_QUALIFICA", "In qualifica e analisi"
++    ATTESA_BUDGET = "ATTESA_BUDGET", "Attesa decisione budget (owner)"
+     IN_APPROVAZIONE = "IN_APPROVAZIONE", "In approvazione"
+     APPROVATA = "APPROVATA", "Approvata"
+     RESPINTA = "RESPINTA", "Respinta"
++    ARCHIVIATA = "ARCHIVIATA", "Archiviata dall'owner"
+     ATTIVO = "ATTIVO", "Progetto attivo"
+     MONITORAGGIO = "MONITORAGGIO", "In monitoraggio (SAL)"
+     COMPLETATO = "COMPLETATO", "Completato"
+ 
+ 
+ # Stati finali: nessuna ulteriore transizione di workflow.
+-STATI_TERMINALI = {Stato.RESPINTA, Stato.COMPLETATO}
++STATI_TERMINALI = {Stato.RESPINTA, Stato.ARCHIVIATA, Stato.COMPLETATO}
+ 
+ # Stati in cui il progetto è operativo e il SAL è aggiornabile.
+ STATI_OPERATIVI = {Stato.ATTIVO, Stato.MONITORAGGIO}
+@@ -39,10 +41,10 @@ STATI_OPERATIVI = {Stato.ATTIVO, Stato.MONITORAGGIO}
+ # Raggruppamento per la board (kanban) e i conteggi di dashboard.
+ FASI = {
+     "in_coda": [Stato.BOZZA, Stato.INVIATA],
+-    "in_analisi": [Stato.IN_QUALIFICA],
++    "in_analisi": [Stato.IN_QUALIFICA, Stato.ATTESA_BUDGET],
+     "in_approvazione": [Stato.IN_APPROVAZIONE],
+     "approvati": [Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO],
+-    "chiusi": [Stato.COMPLETATO, Stato.RESPINTA],
++    "chiusi": [Stato.COMPLETATO, Stato.RESPINTA, Stato.ARCHIVIATA],
+ }
+ 
+ 
+@@ -97,6 +99,35 @@ TRANSIZIONI: tuple[Transizione, ...] = (
+         richiede_nota=True,
+         descrizione="Esito negativo del filtro della Funzione AI.",
+     ),
++    Transizione(
++        azione="invia_a_budget",
++        label="Invia all'owner per la decisione di budget",
++        da=(Stato.IN_QUALIFICA,),
++        a=Stato.ATTESA_BUDGET,
++        ruoli=(Ruolo.AI_OFFICER,),
++        descrizione="Conclusa l'analisi dei costi, l'owner deve indicare se l'importo è a budget o extra budget.",
++    ),
++    Transizione(
++        azione="conferma_budget",
++        label="Conferma budget e prosegui",
++        da=(Stato.ATTESA_BUDGET,),
++        a=Stato.IN_QUALIFICA,
++        ruoli=(Ruolo.OWNER,),
++        solo_proponente=True,
++        stile="positivo",
++        descrizione="L'owner conferma se l'importo è a budget o extra budget: l'AI genera i rischi e il flusso prosegue.",
++    ),
++    Transizione(
++        azione="rifiuta_progetto",
++        label="Rifiuta e archivia",
++        da=(Stato.ATTESA_BUDGET,),
++        a=Stato.ARCHIVIATA,
++        ruoli=(Ruolo.OWNER,),
++        solo_proponente=True,
++        stile="pericolo",
++        richiede_nota=True,
++        descrizione="L'owner non procede con il progetto: archiviazione con motivazione.",
++    ),
+     Transizione(
+         azione="presenta_approvazione",
+         label="Presenta per l'approvazione",
 diff --git a/static/css/app.css b/static/css/app.css
-index 98ea3e4..f8a6631 100644
+index 98ea3e4..0f9af9f 100644
 --- a/static/css/app.css
 +++ b/static/css/app.css
-@@ -261,6 +261,11 @@ h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -.01em; }
+@@ -261,6 +261,33 @@ h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -.01em; }
  .form-card { max-width: 760px; }
  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
  .form-grid .full { grid-column: 1 / -1; }
-+.costo-token-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
-+@media (max-width: 680px) { .costo-token-row { grid-template-columns: 1fr 1fr; } }
-+@media (max-width: 460px) { .costo-token-row { grid-template-columns: 1fr; } }
++.costo-token-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
++@media (max-width: 560px) { .costo-token-row { grid-template-columns: 1fr; } }
 +.badge-ai { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; color:var(--info); background:#e6f0fa; border-radius:var(--r-pill); padding:2px 8px; vertical-align:middle; }
 +.badge-ai .ti { font-size:13px; }
++/* --- Verifica a budget --- */
++.bgt { padding:12px 14px; border:1px solid var(--bordo); border-left:3px solid var(--info); border-radius:11px; background:#fbfcfe; }
++.bgt.bg-ok { border-left-color:var(--ok); }
++.bgt.bg-warn { border-left-color:var(--attesa); }
++.bgt.bg-bad { border-left-color:var(--rosso); }
++.bgt-head { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:var(--testo-2); }
++.bgt-head .ti { color:var(--info); }
++.bgt-stato { margin-left:auto; font-size:12px; font-weight:700; padding:2px 10px; border-radius:var(--r-pill); }
++.bg-ok .bgt-stato { background:var(--verde-bg); color:var(--verde-fg); }
++.bg-warn .bgt-stato { background:var(--giallo-bg); color:var(--giallo-fg); }
++.bg-bad .bgt-stato { background:#fdebec; color:var(--rosso-scuro); }
++.bgt-barra { display:flex; height:10px; border-radius:6px; overflow:hidden; background:#eef0f2; margin:10px 0 8px; }
++.bgt-fill { height:100%; }
++.bgt-ab { background:var(--ok); }
++.bgt-ex { background:var(--rosso); }
++.bgt-righe { display:flex; flex-wrap:wrap; gap:16px; font-size:13px; color:var(--testo-2); }
++.bgt-ab-txt b { color:var(--verde-fg); }
++.bgt-ex-txt b { color:var(--rosso-scuro); }
++/* --- Pannello decisione budget (owner) --- */
++.dec-costo { font-size:14px; color:var(--inchiostro); background:#f5f7fa; border-radius:8px; padding:8px 10px; margin-bottom:10px; }
++.dec-opt { display:flex; align-items:center; gap:8px; padding:9px 11px; border:1px solid var(--bordo); border-radius:8px; margin-bottom:6px; font-size:14px; cursor:pointer; }
++.dec-opt:hover { border-color:var(--info); background:#fbfcfe; }
++.dec-opt input { margin:0; }
  .f-row label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
  .f-row .help { font-size: 12px; color: var(--testo-3); margin-top: 4px; }
  .f-row .err { color: var(--rosso); font-size: 12px; margin-top: 4px; }
-@@ -533,6 +538,44 @@ body.auth { background: #080a10; overflow-x: hidden; }
+@@ -533,6 +560,44 @@ body.auth { background: #080a10; overflow-x: hidden; }
  .rischio-mot { font-size:13.5px; color:var(--testo-2); margin:12px 0 10px; white-space:pre-line; }
  .rischio-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
  @media (max-width:560px){ .rischio-grid { grid-template-columns:1fr; } }
@@ -1147,6 +1606,19 @@ index 98ea3e4..f8a6631 100644
  .rischio-legale { margin-top:16px; padding-top:14px; border-top:1px dashed var(--bordo-2); }
  .rischio-legale-tit { font-size:13px; font-weight:700; color:var(--testo-2); margin-bottom:10px; display:flex; align-items:center; gap:7px; }
  .rischio-legale-tit .ti { color:var(--rosso); }
+diff --git a/templates/flusso/_scheda.html b/templates/flusso/_scheda.html
+index ccf388d..1df1ae4 100644
+--- a/templates/flusso/_scheda.html
++++ b/templates/flusso/_scheda.html
+@@ -33,7 +33,7 @@
+ 
+   <div class="savings savings-3">
+     <div class="sav">
+-      <span class="lab">Saving economico</span>
++      <span class="lab">Beneficio economico atteso</span>
+       <span class="val {% if r.saving_economico_fmt is None %}tbd{% endif %}">{{ r.saving_economico_fmt|default:"—" }}</span>
+       {% if r.saving_economico_note %}<span class="sav-note">{{ r.saving_economico_note }}</span>{% endif %}
+     </div>
 diff --git a/templates/flusso/dashboard.html b/templates/flusso/dashboard.html
 index 1b27c7d..f4fe33f 100644
 --- a/templates/flusso/dashboard.html
@@ -1181,7 +1653,7 @@ index 1b27c7d..f4fe33f 100644
    <div class="card">
      <h2><i class="ti ti-checklist" style="vertical-align:-2px;color:var(--rosso)"></i> Da gestire <span class="sub">— richiedono un'azione del tuo ruolo</span></h2>
 diff --git a/templates/flusso/dettaglio.html b/templates/flusso/dettaglio.html
-index ea8a524..871c54c 100644
+index ea8a524..9818079 100644
 --- a/templates/flusso/dettaglio.html
 +++ b/templates/flusso/dettaglio.html
 @@ -45,6 +45,16 @@
@@ -1201,7 +1673,7 @@ index ea8a524..871c54c 100644
            <div class="f-row">
              <label for="{{ analisi_form.effort_ore.id_for_label }}">Effort (ore)</label>
              {{ analisi_form.effort_ore }}
-@@ -57,18 +67,25 @@
+@@ -57,19 +67,50 @@
              <label for="{{ analisi_form.data_consegna_prevista.id_for_label }}">Consegna prevista</label>
              {{ analisi_form.data_consegna_prevista }}
            </div>
@@ -1220,19 +1692,44 @@ index ea8a524..871c54c 100644
            </div>
 +          <div class="f-row full">
 +            <label for="{{ analisi_form.costo_token_ai.id_for_label }}">Costi token AI (€){% if richiesta.costo_token_ai_stimato %} <span class="badge-ai"><i class="ti ti-robot"></i> Stima AI · modificabile</span>{% endif %}</label>
-+            <div class="costo-token-row">
++            <div class="costo-token-row ctr-3">
 +              {{ analisi_form.costo_token_ai }}
 +              {{ analisi_form.costo_token_periodicita }}
 +              {{ analisi_form.costo_token_ambito }}
-+              {{ analisi_form.numero_utenti }}
 +            </div>
-+            <span class="help">Importo (lascia vuoto = stima AI al salvataggio) · periodicità · ambito · numero utenti/team (per il totale).</span>
-+            <div class="help" data-annuo style="margin-top:6px;">Costo token annualizzato: <b>—</b></div>
++            <span class="help">Importo (lascia vuoto = stima AI al salvataggio) · periodicità · ambito. Utenti previsti (dall'owner): <b>{{ richiesta.numero_utenti|default:"non indicato" }}</b> — usato per il totale.</span>
++            <div class="help" data-annuo data-utenti="{{ richiesta.numero_utenti|default:0 }}" style="margin-top:6px;">Costo token annualizzato: <b>—</b></div>
 +          </div>
++        </div>
++        {% if richiesta.esito_budget %}
++        <div class="bgt {{ richiesta.esito_budget_css }}" style="margin-top:14px;">
++          <div class="bgt-head"><i class="ti ti-user-check"></i> Decisione dell'owner <span class="bgt-stato">{{ richiesta.get_esito_budget_display }}</span></div>
++          {% if richiesta.costo_progetto_stimato is not None %}<div class="t-mut" style="margin-top:4px;">Costo di progetto € {{ richiesta.costo_progetto_stimato|floatformat:2 }} — classificato {{ richiesta.get_esito_budget_display|lower }} dall'owner.</div>{% endif %}
          </div>
++        {% endif %}
++        {% if richiesta.ripartizione_budget %}
++        <div class="bgt {{ richiesta.budget_stato_css }}" style="margin-top:14px;">
++          <div class="bgt-head"><i class="ti ti-wallet"></i> Verifica a budget (importi owner) <span class="bgt-stato">{{ richiesta.budget_stato_label }}</span></div>
++          <div class="bgt-barra">
++            {% if richiesta.ripartizione_budget.costo %}
++            <div class="bgt-fill bgt-ab" style="width: {% widthratio richiesta.ripartizione_budget.a_budget richiesta.ripartizione_budget.costo 100 %}%;"></div>
++            <div class="bgt-fill bgt-ex" style="width: {% widthratio richiesta.ripartizione_budget.extra richiesta.ripartizione_budget.costo 100 %}%;"></div>
++            {% endif %}
++          </div>
++          <div class="bgt-righe">
++            <span>Costo di progetto: <b>€ {{ richiesta.ripartizione_budget.costo|floatformat:2 }}</b></span>
++            <span class="bgt-ab-txt">A budget: <b>€ {{ richiesta.ripartizione_budget.a_budget|floatformat:2 }}</b></span>
++            <span class="bgt-ex-txt">Extra budget: <b>€ {{ richiesta.ripartizione_budget.extra|floatformat:2 }}</b></span>
++          </div>
++          <div class="t-mut" style="margin-top:4px;">Budget disponibile € {{ richiesta.budget_massimo|floatformat:2 }}{% if richiesta.extra_budget_massimo is not None %} · extra richiedibile € {{ richiesta.extra_budget_massimo|floatformat:2 }}{% endif %}.</div>
++        </div>
++        {% elif not richiesta.esito_budget and richiesta.costo_progetto_stimato is not None %}
++        <div class="t-mut" style="margin-top:12px;"><i class="ti ti-wallet"></i> In attesa della decisione di budget dell'owner (a budget / extra budget).</div>
++        {% endif %}
          <div style="margin-top:14px;">
            <button type="submit" class="btn btn-primario btn-sm"><i class="ti ti-device-floppy"></i> Salva analisi</button>
-@@ -81,10 +98,15 @@
+           {% if richiesta.costo_totale_stimato is not None %}
+@@ -81,20 +122,48 @@
        {# Sola lettura per gli altri ruoli #}
        {% if richiesta.analisi_fattibilita %}<p class="analisi-fatt">{{ richiesta.analisi_fattibilita }}</p>{% endif %}
        <div class="analisi-grid">
@@ -1249,7 +1746,32 @@ index ea8a524..871c54c 100644
          <div class="dato"><span class="lab">Altri costi</span><span class="val">{% if richiesta.altri_costi is not None %}€ {{ richiesta.altri_costi|floatformat:2 }}{% else %}—{% endif %}</span></div>
          <div class="dato tot"><span class="lab">Totale stimato</span><span class="val">{% if richiesta.costo_totale_stimato is not None %}€ {{ richiesta.costo_totale_stimato|floatformat:2 }}{% else %}—{% endif %}</span></div>
        </div>
-@@ -94,7 +116,7 @@
+       {% if richiesta.altri_costi_note %}<div class="t-mut" style="margin-top:8px;">Dettaglio altri costi: {{ richiesta.altri_costi_note }}</div>{% endif %}
++      {% if richiesta.esito_budget %}
++      <div class="bgt {{ richiesta.esito_budget_css }}" style="margin-top:12px;">
++        <div class="bgt-head"><i class="ti ti-user-check"></i> Decisione dell'owner <span class="bgt-stato">{{ richiesta.get_esito_budget_display }}</span></div>
++        {% if richiesta.costo_progetto_stimato is not None %}<div class="t-mut" style="margin-top:4px;">Costo di progetto € {{ richiesta.costo_progetto_stimato|floatformat:2 }} — classificato {{ richiesta.get_esito_budget_display|lower }} dall'owner.</div>{% endif %}
++      </div>
++      {% endif %}
++      {% if richiesta.ripartizione_budget %}
++      <div class="bgt {{ richiesta.budget_stato_css }}" style="margin-top:12px;">
++        <div class="bgt-head"><i class="ti ti-wallet"></i> Verifica a budget <span class="bgt-stato">{{ richiesta.budget_stato_label }}</span></div>
++        <div class="bgt-barra">
++          {% if richiesta.ripartizione_budget.costo %}
++          <div class="bgt-fill bgt-ab" style="width: {% widthratio richiesta.ripartizione_budget.a_budget richiesta.ripartizione_budget.costo 100 %}%;"></div>
++          <div class="bgt-fill bgt-ex" style="width: {% widthratio richiesta.ripartizione_budget.extra richiesta.ripartizione_budget.costo 100 %}%;"></div>
++          {% endif %}
++        </div>
++        <div class="bgt-righe">
++          <span>Costo di progetto: <b>€ {{ richiesta.ripartizione_budget.costo|floatformat:2 }}</b></span>
++          <span class="bgt-ab-txt">A budget: <b>€ {{ richiesta.ripartizione_budget.a_budget|floatformat:2 }}</b></span>
++          <span class="bgt-ex-txt">Extra budget: <b>€ {{ richiesta.ripartizione_budget.extra|floatformat:2 }}</b></span>
++        </div>
++        <div class="t-mut" style="margin-top:4px;">Budget disponibile € {{ richiesta.budget_massimo|floatformat:2 }}{% if richiesta.extra_budget_massimo is not None %} · extra richiedibile € {{ richiesta.extra_budget_massimo|floatformat:2 }}{% endif %} (indicati dall'owner).</div>
++      </div>
++      {% endif %}
+       {% else %}
+       <div class="vuoto" style="padding:10px 4px;">Analisi non ancora compilata dalla Funzione AI.</div>
        {% endif %}
      </div>
  
@@ -1258,7 +1780,7 @@ index ea8a524..871c54c 100644
        <div class="rischio-cardhead">
          <h2><i class="ti ti-scale" style="vertical-align:-2px;color:var(--rosso)"></i> Rischio &amp; Conformità
            <span class="sub">classificazione preliminare · da validare dai presìdi</span></h2>
-@@ -125,14 +147,44 @@
+@@ -125,14 +194,44 @@
          {% if d.c.motivazione %}<p class="rischio-mot">{{ d.c.motivazione }}</p>{% endif %}
          <div class="rischio-grid">
            {% if d.c.riferimenti %}<div class="dato"><span class="lab">Riferimenti</span><span class="val">{{ d.c.riferimenti }}</span></div>{% endif %}
@@ -1304,7 +1826,7 @@ index ea8a524..871c54c 100644
          {% if d.form %}
          <form method="post" action="{% url 'flusso:valida_rischio' richiesta.pk d.c.tipo %}" class="rk-valida">
            {% csrf_token %}
-@@ -141,10 +193,53 @@
+@@ -141,10 +240,53 @@
              <div class="f-row"><label for="{{ d.form.nota.id_for_label }}">Nota</label>{{ d.form.nota }}</div>
            </div>
            <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.form.motivazione.id_for_label }}">Motivazione (opzionale)</label>{{ d.form.motivazione }}</div>
@@ -1358,7 +1880,32 @@ index ea8a524..871c54c 100644
        </div>
        {% endfor %}
  
-@@ -226,4 +321,71 @@
+@@ -178,7 +320,23 @@
+   <aside>
+     <div class="card">
+       <h2><i class="ti ti-arrow-guide" style="vertical-align:-2px;color:var(--rosso)"></i> Azioni</h2>
+-      {% if azioni %}
++      {% if mostra_decisione_budget %}
++      <p class="t-mut" style="margin:0 0 10px;">L'analisi della Funzione AI è completa. Indica se l'importo è <b>a budget</b> o <b>extra budget</b> per proseguire (l'AI genererà i rischi), oppure rifiuta il progetto.</p>
++      {% if richiesta.costo_progetto_stimato is not None %}
++      <div class="dec-costo">Costo di progetto stimato: <b>€ {{ richiesta.costo_progetto_stimato|floatformat:2 }}</b></div>
++      {% endif %}
++      <form method="post" action="{% url 'flusso:decidi_budget' richiesta.pk %}">
++        {% csrf_token %}
++        <label class="dec-opt"><input type="radio" name="esito_budget" value="A_BUDGET" required> A budget</label>
++        <label class="dec-opt"><input type="radio" name="esito_budget" value="EXTRA_BUDGET"> Extra budget</label>
++        <button type="submit" class="btn btn-positivo btn-sm" style="width:100%;justify-content:center;margin-top:10px;"><i class="ti ti-check"></i> Conferma e prosegui</button>
++      </form>
++      <form method="post" action="{% url 'flusso:esegui_azione' richiesta.pk %}" style="margin-top:14px;" onsubmit="return confirm('Rifiutare e archiviare definitivamente il progetto {{ richiesta.codice }}? Non proseguirà.');">
++        {% csrf_token %}
++        <textarea name="nota" rows="2" class="campo" placeholder="Motivazione del rifiuto (obbligatoria)…"></textarea>
++        <button type="submit" name="azione" value="rifiuta_progetto" class="btn btn-pericolo btn-sm" style="width:100%;justify-content:center;margin-top:8px;"><i class="ti ti-archive"></i> Rifiuta e archivia</button>
++      </form>
++      {% elif azioni %}
+       <form method="post" action="{% url 'flusso:esegui_azione' richiesta.pk %}">
+         {% csrf_token %}
+         <div class="note-azione">
+@@ -226,4 +384,69 @@
      </div>
    </aside>
  </div>
@@ -1399,10 +1946,10 @@ index ea8a524..871c54c 100644
 +  var cost = document.getElementById('id_costo_token_ai');
 +  var per = document.getElementById('id_costo_token_periodicita');
 +  var amb = document.getElementById('id_costo_token_ambito');
-+  var num = document.getElementById('id_numero_utenti');
 +  var box = document.querySelector('[data-annuo]');
 +  if(!cost || !per || !box) return;
 +  var out = box.querySelector('b');
++  var utenti = parseInt(box.getAttribute('data-utenti') || '0', 10);
 +  function fmt(n){ return '€ ' + n.toLocaleString('it-IT', {minimumFractionDigits:2, maximumFractionDigits:2}); }
 +  function calc(){
 +    var v = parseFloat((cost.value || '').replace(',', '.'));
@@ -1415,9 +1962,8 @@ index ea8a524..871c54c 100644
 +    var ambVal = (amb && amb.value) ? amb.value : '';
 +    var scope = ambVal ? ' · ' + amb.options[amb.selectedIndex].text.toLowerCase() : '';
 +    var txt = fmt(annuo) + '/anno' + scope;
-+    if((ambVal === 'UTENTE' || ambVal === 'TEAM') && num){
-+      var n = parseInt(num.value, 10);
-+      if(!isNaN(n) && n > 0){ txt += ' · totale ' + fmt(annuo * n) + '/anno'; }
++    if((ambVal === 'UTENTE' || ambVal === 'TEAM') && utenti > 0){
++      txt += ' · totale ' + fmt(annuo * utenti) + '/anno (' + utenti + ' utenti)';
 +    }
 +    out.textContent = txt;
 +  }
@@ -1425,16 +1971,70 @@ index ea8a524..871c54c 100644
 +  cost.addEventListener('change', calc);
 +  per.addEventListener('change', calc);
 +  if(amb) amb.addEventListener('change', calc);
-+  if(num){ num.addEventListener('input', calc); }
 +  calc();
 +})();
 +</script>
  {% endblock %}
 diff --git a/templates/flusso/kpi.html b/templates/flusso/kpi.html
-index a17d73d..64aa3ad 100644
+index a17d73d..ddea320 100644
 --- a/templates/flusso/kpi.html
 +++ b/templates/flusso/kpi.html
-@@ -112,6 +112,10 @@
+@@ -88,9 +88,48 @@
+     </div>
+   </section>
+ 
++  <!-- BUDGET PORTAFOGLIO APPROVATO (Direzione) -->
+   <section class="kpi-grid">
+     <div class="kpi-card">
+-      <h3><i class="ti ti-gauge"></i> Avanzamento & metriche</h3>
++      <h3><i class="ti ti-wallet"></i> Budget · portafoglio approvato</h3>
++      <div class="mini-grid">
++        <div class="mini"><span class="mini-n">€ {{ k.costo_annuo_approvati|floatformat:0 }}</span><span class="mini-l">Costo annuo approvato</span></div>
++        <div class="mini"><span class="mini-n" style="color:var(--ok)">€ {{ k.costo_a_budget|floatformat:0 }}</span><span class="mini-l">A budget</span></div>
++        <div class="mini"><span class="mini-n {% if k.costo_extra_budget %}neg{% endif %}">€ {{ k.costo_extra_budget|floatformat:0 }}</span><span class="mini-l">Extra budget{% if k.progetti_extra_budget %} · {{ k.progetti_extra_budget }} prog.{% endif %}</span></div>
++        <div class="mini"><span class="mini-n">€ {{ k.saving_eco_approvati|floatformat:0 }}</span><span class="mini-l">Beneficio econ. (approvati)</span></div>
++      </div>
++      {% if k.costo_annuo_approvati %}
++      <div class="bgt-barra" style="margin-top:12px;">
++        <div class="bgt-fill bgt-ab" style="width: {% widthratio k.costo_a_budget k.costo_annuo_approvati 100 %}%;"></div>
++        <div class="bgt-fill bgt-ex" style="width: {% widthratio k.costo_extra_budget k.costo_annuo_approvati 100 %}%;"></div>
++      </div>
++      <div class="bgt-righe" style="margin-top:8px;">
++        <span class="bgt-ab-txt">A budget <b>€ {{ k.costo_a_budget|floatformat:2 }}</b></span>
++        <span class="bgt-ex-txt">Extra budget <b>€ {{ k.costo_extra_budget|floatformat:2 }}</b></span>
++      </div>
++      {% else %}
++      <p class="vuoto-min">Nessun progetto approvato con budget e costi valorizzati.</p>
++      {% endif %}
++    </div>
++
++    <div class="kpi-card">
++      <h3><i class="ti ti-cpu"></i> Infrastruttura & autonomia</h3>
++      <div class="bars">
++        {% for d in k.infra %}
++        <div class="bar-row"><span class="bar-lbl">{{ d.label }}</span><div class="bar-track"><div class="bar-fill" style="width: {% widthratio d.n k.tot 100 %}%;"></div></div><span class="bar-val">{{ d.n }}</span></div>
++        {% empty %}<p class="vuoto-min">Infrastruttura non ancora indicata.</p>{% endfor %}
++      </div>
++      <div class="bars" style="margin-top:10px;">
++        {% for d in k.autonomia %}
++        <div class="bar-row"><span class="bar-lbl">{{ d.label }}</span><div class="bar-track"><div class="bar-fill" style="width: {% widthratio d.n k.tot 100 %}%;"></div></div><span class="bar-val">{{ d.n }}</span></div>
++        {% endfor %}
++      </div>
++    </div>
++  </section>
++
++  <section class="kpi-grid">
++    <div class="kpi-card">
++      <h3><i class="ti ti-gauge"></i> Avanzamento &amp; metriche</h3>
+       <div class="metriche">
+         <div class="gauge-wrap">
+           <svg viewBox="0 0 120 120" class="gauge" role="img" aria-label="SAL medio">
+@@ -108,10 +147,14 @@
+           <div class="mini"><span class="mini-n">{% if k.lead is not None %}{{ k.lead }}<small> gg</small>{% else %}n/d{% endif %}</span><span class="mini-l">Lead time medio</span></div>
+           <div class="mini"><span class="mini-n">{{ k.effort }}<small> h</small></span><span class="mini-l">Effort stimato</span></div>
+           <div class="mini"><span class="mini-n">€ {{ k.investimento|floatformat:0 }}</span><span class="mini-l">Investimento stimato</span></div>
+-          <div class="mini"><span class="mini-n">€ {{ k.saving_eco_tot|floatformat:0 }}</span><span class="mini-l">Saving economico</span></div>
++          <div class="mini"><span class="mini-n">€ {{ k.saving_eco_tot|floatformat:0 }}</span><span class="mini-l">Beneficio economico</span></div>
            <div class="mini"><span class="mini-n">{% if k.incr_qual_medio is not None %}{{ k.incr_qual_medio }}%{% else %}n/d{% endif %}</span><span class="mini-l">Incremento qualitativo</span></div>
            <div class="mini"><span class="mini-n">{% if k.incr_eff_medio is not None %}{{ k.incr_eff_medio }}%{% else %}n/d{% endif %}</span><span class="mini-l">Incremento efficienza</span></div>
            <div class="mini"><span class="mini-n {% if k.ritardo_tot %}neg{% endif %}">{{ k.ritardo_tot }}<small> gg</small></span><span class="mini-l">Ritardi{% if k.progetti_in_ritardo %} · {{ k.progetti_in_ritardo }} prog.{% endif %}</span></div>
@@ -1445,3 +2045,34 @@ index a17d73d..64aa3ad 100644
          </div>
        </div>
      </div>
+diff --git a/templates/flusso/richiesta_form.html b/templates/flusso/richiesta_form.html
+index e954728..172c940 100644
+--- a/templates/flusso/richiesta_form.html
++++ b/templates/flusso/richiesta_form.html
+@@ -38,9 +38,25 @@
+         {{ form.descrizione }}
+         {% if form.descrizione.errors %}<div class="err">{{ form.descrizione.errors|striptags }}</div>{% endif %}
+       </div>
++      <div class="f-row full"><div class="metric-hint"><i class="ti ti-wallet"></i> Budget: indica il numero di utenti, il budget disponibile e l'eventuale extra budget che sei disposto a richiedere. Il sistema confronterà i costi stimati dalla Funzione AI con questi valori.</div></div>
++      <div class="f-row">
++        <label for="{{ form.numero_utenti.id_for_label }}">Numero utenti previsti</label>
++        {{ form.numero_utenti }}
++        <div class="help">Quanti utenti useranno il tool (usato per il conteggio del costo).</div>
++      </div>
++      <div class="f-row">
++        <label for="{{ form.budget_massimo.id_for_label }}">Budget massimo disponibile (€)</label>
++        {{ form.budget_massimo }}
++        <div class="help">Importo massimo a budget per il progetto.</div>
++      </div>
++      <div class="f-row full">
++        <label for="{{ form.extra_budget_massimo.id_for_label }}">Extra budget richiedibile (€)</label>
++        {{ form.extra_budget_massimo }}
++        <div class="help">Massimo extra budget che sei disposto a richiedere, in alternativa o in aggiunta al budget.</div>
++      </div>
+       <div class="f-row full"><div class="metric-hint"><i class="ti ti-robot"></i> Se lasci vuoti «incremento qualitativo» ed «efficienza», li stima l'AI in base alla descrizione (sempre modificabili).</div></div>
+       <div class="f-row full metric">
+-        <label for="{{ form.saving_economico.id_for_label }}">Saving economico (€)</label>
++        <label for="{{ form.saving_economico.id_for_label }}">Beneficio economico atteso (€)</label>
+         <div class="metric-row">{{ form.saving_economico }}{{ form.saving_economico_note }}</div>
+       </div>
+       <div class="f-row full metric">

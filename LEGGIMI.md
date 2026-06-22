@@ -1,87 +1,66 @@
-# Gestione Flusso — Aggiornamento unico (Rischio & Conformità + Analisi + KPI)
+# Gestione Flusso — Aggiornamento completo (workflow decisione budget + rifiuto/archiviazione + KPI)
 
-Pacchetto **completo** con tutte le modifiche di questa sessione. File interi: con
-`git reset --hard` ottieni lo stato finale coerente in un solo aggiornamento.
-**Testato end-to-end**: 7 suite di test (oltre 130 verifiche), check di sistema
-pulito, nessuna regressione.
+Pacchetto **unico** con tutte le modifiche. File interi: con `git reset --hard`
+ottieni lo stato finale coerente in un solo aggiornamento. **Testato end-to-end**:
+9 suite (oltre 180 verifiche), check di sistema pulito, nessuna regressione.
+Migrazioni **0009 → 0013** incluse (solo campi opzionali/choices → sicure sui dati esistenti).
 
-## Contenuto (in ordine cronologico)
+## Il nuovo flusso di budget (novità principale di questa release)
 
-### 1. Sicurezza — separazione dei compiti
-La validazione del rischio è ora **strettamente legata al ruolo** (Legale→AI Act,
-CISO→NIS2, DPO→GDPR): nessun bypass da superuser. La Funzione AI non può più
-validare al posto dei presìdi (verificato: POST → 403).
+Prima il budget si dichiarava all'intake. Ora è una **decisione dell'owner a valle
+del costo**, più realistica: l'owner spesso non conosce il costo prima dell'analisi.
 
-### 2. Dashboard presìdi
-CISO/DPO/Legale vedono in cima alla dashboard la card "Da validare —
-<dimensione>" coi rischi della propria dimensione, linkati alla scheda.
+1. **Owner** crea la richiesta **senza budget/extra** — indica il **numero utenti**
+   del software richiesto e tutto il resto.
+2. **Funzione AI** prende in carico e fa l'analisi: scrive il **costo** (importo
+   token con l'aiuto dell'AI, altri costi a mano).
+3. **Funzione AI** → «Invia all'owner per la decisione di budget» (nuovo stato
+   **Attesa decisione budget**). Gate: serve il costo di progetto calcolato.
+4. **Owner** **deve obbligatoriamente** indicare se l'importo è **a budget** o
+   **extra budget**. Alla conferma, **l'AI genera i rischi** (AI Act → Legale,
+   NIS2 → CISO, GDPR → DPO) e il flusso prosegue **come prima** (validazione presìdi,
+   presentazione alla Direzione, approvazione).
+5. **In alternativa, l'owner rifiuta** il progetto con un **campo note per la
+   motivazione**: la pratica passa allo stato **Archiviata** e non prosegue (nuova
+   funzione). La motivazione resta nell'audit trail.
 
-### 3. Trattamento del rischio (ISO 27005)
-Strategia **Accetta / Mitiga / Trasferisci / Evita**; per la mitigazione: azioni
-con data prevista, livello **residuo** scelto dal presidio con **etichetta
-automatica dell'operazione** ("Residuo BASSO = inerente MEDIO ridotto tramite N
-azioni"), freccia di direzione e stato **da convalidare**. Residuo suggerito
-indicativo (un livello sotto l'inerente). Rendering pulito degli obblighi (non più
-lista grezza).
+Spostamenti rispetto a prima:
+- I **rischi non si generano più alla presa in carico**, ma **alla conferma del
+  budget** dell'owner.
+- **Presenta per l'approvazione** ora è bloccato finché l'owner non ha deciso il
+  budget (oltre alle tre validazioni di rischio già richieste).
 
-### 4. Analisi Funzione AI — nuovi campi
-- **Unità del costo token**: Periodicità (mensile/annuale/una tantum) + Ambito
-  (per utente/team/complessivo), come due dimensioni distinte.
-- **Tipo di AI**: non agentica / agentica a supporto (human-in-the-loop) /
-  agentica autonoma.
-- **Infrastruttura**: API (cloud) / LLM locale (on-premise) / Ibrido.
-- Tipo di AI e Infrastruttura sono **passati all'AI** quando classifica il rischio.
+## KPI (solo progetti approvati)
+- «A budget» ed «extra budget» del portafoglio ora derivano dalla **decisione
+  dell'owner** (`esito_budget`): l'intero costo del progetto finisce nella voce
+  scelta. Per i dati storici senza flag, ripiego automatico sulla ripartizione per
+  importi (se l'owner aveva indicato un budget).
+- I progetti **archiviati** sono esclusi dai KPI (come i respinti): contano solo
+  gli approvati (APPROVATA/ATTIVO/MONITORAGGIO/COMPLETATO).
 
-### 5. Costo annualizzato + numero utenti + totale
-- **Costo token annualizzato** (mensile ×12, annuale ×1; una tantum non
-  annualizzato), con anteprima **live** nel form.
-- **Numero utenti/team** → **Costo token annuo TOTALE** (annualizzato × numero).
-  Per ambiti per-unità senza il numero, il totale resta non determinabile (niente
-  falsa precisione).
+## Contenuto cumulativo del pacchetto
+Oltre al workflow di budget, include tutto il lavoro recente: numero utenti +
+costo annuo totale, stima AI dell'importo token, verifica a/extra budget, KPI
+Direzione, e la rinomina etichetta «Saving economico» → «Beneficio economico atteso»
+(solo etichette visibili; campo a DB invariato).
 
-### 6. Stima AI dell'importo token
-Se salvi l'analisi con l'importo token **vuoto** ma periodicità e ambito
-impostati, l'AI **propone l'importo** al salvataggio (marcato "Stima AI ·
-modificabile"). Tiene conto dell'infrastruttura: con **LLM locale** il costo token
-API è ~0. Se inserisci l'importo a mano, il flag "stima AI" si azzera.
-
-### 7. KPI aggiornati
-Nuovi indicatori nel cruscotto e nella lettura esecutiva dell'AI:
-- **Costo token annuo** del portafoglio (somma dei totali annualizzati).
-- Mix **infrastruttura** (API/locale/ibrido) e **autonomia** (agentico/assistivo).
-- **Governance del rischio**: rischi da validare, residui da convalidare, progetti
-  pronti per la Direzione.
-
-## File (12) + migrazioni (3)
+## File (15) + migrazioni (5)
 `models.py, views.py, forms.py, urls.py, admin.py, ai_client.py, servizi.py,
-kpi.py, templates/flusso/dettaglio.html, templates/flusso/dashboard.html,
-templates/flusso/kpi.html, static/css/app.css` + migrazioni **0009, 0010, 0011**.
-
-Le tre migrazioni aggiungono solo campi opzionali (blank/null/default): **sicure
-sui dati esistenti**. `modifiche_complete.patch` è il diff unificato per review.
+kpi.py, workflow.py, templates/flusso/{dettaglio,dashboard,kpi,richiesta_form,
+_scheda}.html, static/css/app.css` + migrazioni **0009–0013**.
 
 ## Deploy (dopo commit/push sul branch)
-Le migrazioni girano da sole (entrypoint.sh esegue `migrate`); in alternativa
-`python manage.py migrate`.
 ```
 cd /opt/Flusso-AI && sudo git fetch --depth 1 origin Ehocram-patch-1-completo && \
 sudo git reset --hard origin/Ehocram-patch-1-completo && \
 sudo docker compose up -d --build
 ```
-
-## Note di metodo (CISO-to-CISO)
-- **Rischio residuo** = giudizio del presidio + etichetta automatica dell'operazione,
-  non un calcolo aritmetico (sarebbe falsa precisione).
-- **Stima AI del costo** = punto di partenza human-in-the-loop, sempre modificabile,
-  mai presentata come dato certo. Tiene conto di API vs locale.
-- Il "Totale stimato" resta la **somma grezza** degli importi: non normalizzo
-  altri costi a un orizzonte annuo (non hanno periodicità). Se vuoi un *costo annuo
-  totale di progetto* (token annuo totale + altri costi annualizzati), aggiungo la
-  periodicità anche ad "altri costi": è una riga in più, dimmi tu.
+Le migrazioni girano da sole (entrypoint.sh esegue `migrate`).
 
 ## Nota onesta sui test
-Coprono logica, autorizzazioni, salvataggio, stima (con mock dell'AI), KPI e
-presenza degli elementi HTML. **Non** coprono l'aspetto grafico nel browser né
-l'anteprima live JS in esecuzione: aprendo la scheda, controlla il blocco costo
-(4 colonne: importo + periodicità + ambito + numero utenti), l'anteprima live, il
-blocco trattamento e i nuovi riquadri KPI. Se qualcosa stona nel CSS, lo sistemo.
+Le 9 suite coprono la macchina a stati (rischi generati post-budget, decisione
+obbligatoria, autorizzazioni owner/AI officer, gate, rifiuto/archiviazione), i KPI
+flag-based e la presenza degli elementi HTML del pannello. **Non** coprono la resa
+grafica nel browser. Dopo il deploy verifica il pannello «decisione budget» lato
+owner (radio a budget/extra budget + rifiuta con motivazione), e che il badge
+«Decisione dell'owner» compaia nell'analisi. Se il CSS stona, lo sistemo.

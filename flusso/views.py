@@ -25,7 +25,7 @@ from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, ImpostazioniAIForm,
                     SalForm, TrattamentoRischioForm, ValidazioneRischioForm)
 from .kpi import calcola_kpi
 from .models import (ClassificazioneRischio, ConfigurazioneAI, DIMENSIONE_PER_RUOLO,
-                     PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
+                     EsitoBudget, PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
                      StatoRischio, TipoRischio)
 from .notifiche import notifica_transizione
 from .workflow import FASI, STATI_OPERATIVI, STATI_TERMINALI, Stato, azioni_disponibili, puo_eseguire, transizione
@@ -172,6 +172,13 @@ def dettaglio(request, pk):
     blocco_approvazione = richiesta.stato == Stato.IN_QUALIFICA and not richiesta.rischi_tutti_validati
     if blocco_approvazione:
         azioni = [a for a in azioni if a.azione != "presenta_approvazione"]
+    # La decisione di budget dell'owner ha un pannello dedicato: fuori dai bottoni generici.
+    mostra_decisione_budget = (
+        richiesta.stato == Stato.ATTESA_BUDGET
+        and request.user.is_owner
+        and richiesta.proponente_id == request.user.id
+    )
+    azioni = [a for a in azioni if a.azione not in ("conferma_budget", "rifiuta_progetto")]
 
     return render(request, "flusso/dettaglio.html", {
         "richiesta": richiesta, "azioni": azioni, "timeline": timeline,
@@ -179,6 +186,7 @@ def dettaglio(request, pk):
         "sal_form": sal_form, "analisi_form": analisi_form,
         "rischi": rischi, "puo_analizza_rischio": request.user.is_ai_officer,
         "blocco_approvazione": blocco_approvazione,
+        "mostra_decisione_budget": mostra_decisione_budget,
         "rischi_mancanti": richiesta.rischi_mancanti_label,
     })
 
@@ -258,8 +266,23 @@ def esegui_azione(request, pk):
         messages.error(request, f"L'azione «{t.label}» richiede una nota.")
         return redirect(richiesta)
 
-    # GATE: niente passaggio alla Direzione senza le tre validazioni di rischio.
+    # GATE: l'invio all'owner per la decisione di budget richiede il costo stimato.
+    if azione == "invia_a_budget" and richiesta.costo_progetto_stimato is None:
+        messages.error(
+            request,
+            "Completa prima il costo del progetto (token e/o altri costi, con periodicità, "
+            "ambito e numero utenti dove serve) prima di inviarlo all'owner per il budget.",
+        )
+        return redirect(richiesta)
+
+    # GATE: niente passaggio alla Direzione senza decisione di budget + tre validazioni.
     if azione == "presenta_approvazione":
+        if not richiesta.esito_budget:
+            messages.error(
+                request,
+                "Prima dell'approvazione l'owner deve indicare se l'importo è a budget o extra budget.",
+            )
+            return redirect(richiesta)
         richiesta.assicura_classificazioni()
         if not richiesta.rischi_tutti_validati:
             messages.error(
@@ -272,20 +295,44 @@ def esegui_azione(request, pk):
     evento = richiesta.applica(azione, attore=request.user, nota=nota)
     notifica_transizione(request, richiesta, evento)
     messages.success(request, f"{evento.etichetta}: {richiesta.stato_label}.")
+    return redirect(richiesta)
 
-    # Alla presa in carico, se l'AI è attiva, classifica le tre dimensioni di rischio
-    # (best-effort: non blocca mai il flusso).
-    if azione == "prendi_in_carico":
-        esito = servizi.classifica_tutti_i_rischi(richiesta, attore=request.user)
-        if esito["ok"]:
-            dims = ", ".join(_NOMI_RISCHIO[x] for x in esito["ok"])
-            messages.info(
-                request,
-                f"Rischio stimato dall'AI per: {dims}. "
-                "Da validare da Legale (AI Act), CISO (NIS2) e DPO (GDPR).",
-            )
-        elif "_" not in esito["errori"]:
-            messages.warning(request, "Classificazione del rischio non riuscita per alcune dimensioni.")
+
+@login_required
+@require_POST
+def decidi_budget(request, pk):
+    """L'owner indica se l'importo stimato è a budget o extra budget.
+
+    Decisione obbligatoria a valle dell'analisi della Funzione AI: alla conferma
+    l'AI genera i rischi (AI Act/NIS2/GDPR) e il flusso prosegue come di consueto.
+    In alternativa l'owner rifiuta il progetto (azione 'rifiuta_progetto') e la
+    pratica viene archiviata con motivazione.
+    """
+    richiesta = get_object_or_404(Richiesta, pk=pk)
+    if not puo_eseguire(richiesta, request.user, "conferma_budget"):
+        return HttpResponseForbidden("Azione non consentita.")
+    esito = request.POST.get("esito_budget", "")
+    if esito not in EsitoBudget.values:
+        messages.error(request, "Indica se l'importo è a budget oppure extra budget.")
+        return redirect(richiesta)
+    richiesta.esito_budget = esito
+    richiesta.save(update_fields=["esito_budget"])
+    evento = richiesta.applica("conferma_budget", attore=request.user)
+    notifica_transizione(request, richiesta, evento)
+    # Alla conferma del budget l'AI genera le tre dimensioni di rischio (best-effort).
+    risk_msg = ""
+    res = servizi.classifica_tutti_i_rischi(richiesta, attore=request.user)
+    if res["ok"]:
+        dims = ", ".join(_NOMI_RISCHIO[x] for x in res["ok"])
+        risk_msg = (f" Rischio stimato dall'AI per: {dims}. "
+                    "Da validare da Legale (AI Act), CISO (NIS2) e DPO (GDPR).")
+    elif "_" not in res["errori"]:
+        risk_msg = " Nota: classificazione del rischio non riuscita per alcune dimensioni."
+    messages.success(
+        request,
+        f"Budget confermato come «{richiesta.get_esito_budget_display()}». "
+        f"{richiesta.stato_label}.{risk_msg}",
+    )
     return redirect(richiesta)
 
 
@@ -304,14 +351,15 @@ def aggiorna_analisi(request, pk):
                 richiesta.costo_token_ai_stimato = False
                 richiesta.save(update_fields=["costo_token_ai_stimato"])
         # Importo mancante: prova a stimarlo con l'AI (una volta), se c'è abbastanza contesto.
-        if servizi.stima_costo_token_se_serve(richiesta, attore=request.user):
-            messages.success(
-                request,
-                f"Analisi aggiornata. Importo token proposto dall'AI: € {richiesta.costo_token_ai} "
-                "(modificabile).",
-            )
-        else:
-            messages.success(request, "Analisi della Funzione AI aggiornata.")
+        stimato = servizi.stima_costo_token_se_serve(richiesta, attore=request.user)
+        msg = ("Analisi aggiornata. Importo token proposto dall'AI: "
+               f"€ {richiesta.costo_token_ai} (modificabile)." if stimato
+               else "Analisi della Funzione AI aggiornata.")
+        rip = richiesta.ripartizione_budget
+        if rip:
+            msg += (f" Costo € {rip['costo']:.2f}: a budget € {rip['a_budget']:.2f}, "
+                    f"extra budget € {rip['extra']:.2f} ({richiesta.budget_stato_label}).")
+        messages.success(request, msg)
     else:
         messages.error(request, "Controlla i dati dell'analisi: alcuni valori non sono validi.")
     return redirect(richiesta)
