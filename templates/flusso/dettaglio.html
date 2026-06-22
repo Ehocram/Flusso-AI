@@ -291,7 +291,7 @@
       {% endfor %}
 
       {% if puo_analizza_rischio %}
-      <form method="post" action="{% url 'flusso:analizza_rischio' richiesta.pk %}" style="margin-top:14px;">
+      <form method="post" action="{% url 'flusso:analizza_rischio' richiesta.pk %}" style="margin-top:14px;" data-ai-wait="Calcolo AI dei rischi in corso…">
         {% csrf_token %}
         <button type="submit" class="btn btn-sm"><i class="ti ti-robot"></i> Analizza le tre dimensioni con l'AI</button>
         <span class="t-mut" style="margin-left:8px;">La descrizione del progetto viene inviata a Claude.</span>
@@ -325,7 +325,7 @@
       {% if richiesta.costo_progetto_stimato is not None %}
       <div class="dec-costo">Costo di progetto stimato: <b>€ {{ richiesta.costo_progetto_stimato|floatformat:2 }}</b></div>
       {% endif %}
-      <form method="post" action="{% url 'flusso:decidi_budget' richiesta.pk %}">
+      <form method="post" action="{% url 'flusso:decidi_budget' richiesta.pk %}" data-ai-wait="Calcolo AI dei rischi in corso…">
         {% csrf_token %}
         <label class="dec-opt"><input type="radio" name="esito_budget" value="A_BUDGET" required> A budget</label>
         <label class="dec-opt"><input type="radio" name="esito_budget" value="EXTRA_BUDGET"> Extra budget</label>
@@ -383,6 +383,14 @@
       </div>
     </div>
   </aside>
+</div>
+
+<div id="ai-wait" class="ai-wait" hidden role="alertdialog" aria-live="assertive">
+  <div class="ai-wait-box">
+    <div class="ai-spinner" aria-hidden="true"></div>
+    <div class="ai-wait-txt">Calcolo AI dei rischi in corso…</div>
+    <div class="ai-wait-sub">Attendi qualche secondo, non chiudere né ricaricare la pagina.</div>
+  </div>
 </div>
 
 <script>
@@ -447,6 +455,22 @@
   per.addEventListener('change', calc);
   if(amb) amb.addEventListener('change', calc);
   calc();
+})();
+
+(function(){
+  var ov = document.getElementById('ai-wait');
+  if(!ov) return;
+  var txt = ov.querySelector('.ai-wait-txt');
+  document.querySelectorAll('form[data-ai-wait]').forEach(function(f){
+    f.addEventListener('submit', function(e){
+      if(e.defaultPrevented) return;                              // una conferma ha annullato l'invio
+      if(f.dataset.aiSubmitting){ e.preventDefault(); return; }   // evita il doppio invio
+      f.dataset.aiSubmitting = '1';
+      var msg = f.getAttribute('data-ai-wait');
+      if(msg && txt) txt.textContent = msg;
+      ov.hidden = false;
+    });
+  });
 })();
 </script>
 {% endblock %}
