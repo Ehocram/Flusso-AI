@@ -332,10 +332,15 @@ class Richiesta(models.Model):
 
     @property
     def costo_totale_stimato(self):
-        """Somma dei costi stimati (token AI + altri). None se non valorizzati."""
-        if self.costo_token_ai is None and self.altri_costi is None:
-            return None
-        return (self.costo_token_ai or 0) + (self.altri_costi or 0)
+        """Costo totale di progetto: alias di costo_progetto_stimato (token AI
+        annualizzato e scalato per numero utenti + altri costi).
+
+        In precedenza sommava il costo token GREZZO (importo mensile per utente)
+        senza annualizzare né moltiplicare per gli utenti, producendo totali
+        errati (es. € 5.035 invece di € 9.200). Ora delega all'unica logica
+        corretta, così pannello di dettaglio e KPI restano coerenti.
+        """
+        return self.costo_progetto_stimato
 
     @property
     def costo_token_annuo(self):
