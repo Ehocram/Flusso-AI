@@ -18,6 +18,15 @@ API_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 TIMEOUT = 60
 
+# Istruzione di formato comune alle chiamate che attendono JSON. I tag <json></json>
+# isolano la risposta finale anche quando il modello antepone del ragionamento
+# (alcuni modelli non rispettano "solo JSON" e non supportano il prefill assistant).
+_ISTRUZIONE_JSON = (
+    "Se ti serve, ragiona pure brevemente prima. La risposta FINALE deve essere un "
+    "oggetto JSON valido racchiuso ESATTAMENTE tra i tag <json> e </json>, e quel "
+    "blocco deve contenere SOLO il JSON (niente backtick, niente commenti, niente testo)."
+)
+
 
 def prova_connessione(chiave: str, modello: str) -> tuple[bool, str]:
     """Verifica chiave + modello + raggiungibilità con una chiamata minima.
@@ -130,9 +139,20 @@ RISCHIO_TIMEOUT = 45
 
 
 def _estrai_json(testo: str):
-    """Estrae il primo oggetto JSON da una risposta del modello (robusto ai backtick)."""
+    """Estrae un oggetto JSON dalla risposta del modello.
+
+    Ordine: prima il contenuto tra i tag <json>...</json> (formato richiesto nei
+    prompt, robusto a un eventuale ragionamento iniziale del modello); poi i
+    fallback su backtick, parsing diretto e prima graffa.
+    """
     import re
     t = (testo or "").strip()
+    m = re.search(r"<json>\s*(.*?)\s*</json>", t, re.S | re.I)
+    if m:
+        try:
+            return json.loads(m.group(1))
+        except Exception:
+            t = m.group(1).strip()  # tag presente ma con rumore: continua coi fallback sul contenuto
     if t.startswith("```"):
         t = re.sub(r"^```[a-zA-Z]*\n?", "", t)
         t = re.sub(r"\n?```$", "", t).strip()
@@ -164,27 +184,18 @@ def _descrizione_progetto(richiesta) -> str:
     return "\n".join(righe)
 
 
-def _chiama_modello(config, system, contenuto, max_tokens, timeout, prefill=None):
-    """Chiamata POST a Claude. Ritorna (data_dict, None) o (None, errore).
-
-    Se 'prefill' e' valorizzato, viene usato come inizio della risposta
-    dell'assistant: il modello CONTINUA da quel testo invece di partire da capo.
-    Serve a forzare un output solo-JSON (prefill '{'), evitando che i modelli
-    'ragionanti' antepongano testo discorsivo e saturino max_tokens prima del JSON.
-    """
+def _chiama_modello(config, system, contenuto, max_tokens, timeout):
+    """Chiamata POST a Claude. Ritorna (data_dict, None) o (None, errore)."""
     chiave = config.chiave_effettiva()
     if not chiave:
         return None, "API key non configurata."
     if not config.modello:
         return None, "Nessun modello selezionato."
-    messaggi = [{"role": "user", "content": contenuto}]
-    if prefill:
-        messaggi.append({"role": "assistant", "content": prefill})
     payload = {
         "model": config.modello,
         "max_tokens": max_tokens,
         "system": system,
-        "messages": messaggi,
+        "messages": [{"role": "user", "content": contenuto}],
     }
     req = urllib.request.Request(
         API_URL, data=json.dumps(payload).encode("utf-8"), method="POST",
@@ -213,15 +224,6 @@ def _testo_risposta(data) -> str:
     return "\n".join(p for p in parti if p).strip()
 
 
-def _json_da_risposta(data, prefill: str = ""):
-    """Estrae il JSON dalla risposta del modello, ricucendo l'eventuale prefill.
-
-    Con prefill '{' la risposta dell'assistant e' la PROSECUZIONE del JSON (es.
-    '"costo": 4200}'): rianteponendo il prefill si ricostruisce l'oggetto completo.
-    """
-    return _estrai_json((prefill or "") + _testo_risposta(data))
-
-
 def classifica_rischio(richiesta, config, tipo) -> tuple[dict | None, str | None]:
     """Classificazione PRELIMINARE di UNA dimensione di rischio (AI Act, NIS2, GDPR).
 
@@ -235,12 +237,13 @@ def classifica_rischio(richiesta, config, tipo) -> tuple[dict | None, str | None
     if not valide:
         return None, f"Tipo di rischio sconosciuto: {tipo}."
     system = config.prompt_rischio_effettivo(tipo)
-    contenuto = ("Classifica il rischio del seguente progetto e rispondi solo con il JSON richiesto.\n\n"
-                 + _descrizione_progetto(richiesta))
-    data, errore = _chiama_modello(config, system, contenuto, 800, RISCHIO_TIMEOUT, prefill="{")
+    contenuto = ("Classifica il rischio del seguente progetto.\n\n"
+                 + _descrizione_progetto(richiesta)
+                 + "\n\n" + _ISTRUZIONE_JSON)
+    data, errore = _chiama_modello(config, system, contenuto, 1500, RISCHIO_TIMEOUT)
     if errore:
         return None, errore
-    obj = _json_da_risposta(data, "{")
+    obj = _estrai_json(_testo_risposta(data))
     if not isinstance(obj, dict):
         return None, "Risposta del modello non interpretabile come JSON."
     categoria = str(obj.get("categoria", "")).strip().upper()
@@ -270,8 +273,7 @@ PROMPT_INCREMENTI = (
     "di QUALITA' che il progetto puo' portare al processo interessato. Usa valori interi 0-100; "
     "se un incremento non e' plausibile usa 0. Non essere ottimista: sono stime preliminari, "
     "modificabili dall'owner.\n"
-    "Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e senza "
-    'backtick, con ESATTAMENTE queste chiavi: {"efficienza": <numero 0-100>, "qualita": <numero 0-100>}'
+    'Il JSON deve avere ESATTAMENTE queste chiavi: {"efficienza": <numero 0-100>, "qualita": <numero 0-100>}'
 )
 
 
@@ -281,12 +283,13 @@ def stima_incrementi(richiesta, config) -> tuple[dict | None, str | None]:
     Ritorna ({'efficienza': float|None, 'qualita': float|None, 'modello': str}, None)
     oppure (None, errore).
     """
-    contenuto = ("Stima gli incrementi del seguente progetto e rispondi solo con il JSON richiesto.\n\n"
-                 + _descrizione_progetto(richiesta))
-    data, errore = _chiama_modello(config, PROMPT_INCREMENTI, contenuto, 400, RISCHIO_TIMEOUT, prefill="{")
+    contenuto = ("Stima gli incrementi del seguente progetto.\n\n"
+                 + _descrizione_progetto(richiesta)
+                 + "\n\n" + _ISTRUZIONE_JSON)
+    data, errore = _chiama_modello(config, PROMPT_INCREMENTI, contenuto, 1500, RISCHIO_TIMEOUT)
     if errore:
         return None, errore
-    obj = _json_da_risposta(data, "{")
+    obj = _estrai_json(_testo_risposta(data))
     if not isinstance(obj, dict):
         return None, "Risposta del modello non interpretabile come JSON."
 
@@ -316,8 +319,7 @@ PROMPT_COSTO_TOKEN = (
     "- Riferisci l'importo alla PERIODICITA' e all'AMBITO indicati: se l'ambito e' 'per utente' o "
     "'per team', stima il costo per UN SINGOLO utente/team; se 'complessivo' o assente, il costo totale.\n"
     "- E' una stima PRELIMINARE, sara' rivista da una persona: non essere ottimista.\n"
-    "Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e senza backtick, "
-    'con ESATTAMENTE questa chiave: {"costo": <numero in euro, maggiore o uguale a 0>}'
+    'Il JSON deve avere ESATTAMENTE questa chiave: {"costo": <numero in euro, maggiore o uguale a 0>}'
 )
 
 
@@ -331,12 +333,13 @@ def stima_costo_token(richiesta, config) -> tuple[dict | None, str | None]:
         contesto.append(f"Periodicita' per la stima: {richiesta.get_costo_token_periodicita_display()}")
     if richiesta.costo_token_ambito:
         contesto.append(f"Ambito per la stima: {richiesta.get_costo_token_ambito_display()}")
-    contenuto = ("Stima il costo di consumo token del seguente progetto e rispondi solo con il JSON richiesto.\n\n"
-                 + "\n".join(contesto))
-    data, errore = _chiama_modello(config, PROMPT_COSTO_TOKEN, contenuto, 400, RISCHIO_TIMEOUT, prefill="{")
+    contenuto = ("Stima il costo di consumo token del seguente progetto.\n\n"
+                 + "\n".join(contesto)
+                 + "\n\n" + _ISTRUZIONE_JSON)
+    data, errore = _chiama_modello(config, PROMPT_COSTO_TOKEN, contenuto, 1500, RISCHIO_TIMEOUT)
     if errore:
         return None, errore
-    obj = _json_da_risposta(data, "{")
+    obj = _estrai_json(_testo_risposta(data))
     if not isinstance(obj, dict):
         return None, "Risposta del modello non interpretabile come JSON."
     try:
