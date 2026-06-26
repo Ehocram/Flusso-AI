@@ -164,18 +164,27 @@ def _descrizione_progetto(richiesta) -> str:
     return "\n".join(righe)
 
 
-def _chiama_modello(config, system, contenuto, max_tokens, timeout):
-    """Chiamata POST a Claude. Ritorna (data_dict, None) o (None, errore)."""
+def _chiama_modello(config, system, contenuto, max_tokens, timeout, prefill=None):
+    """Chiamata POST a Claude. Ritorna (data_dict, None) o (None, errore).
+
+    Se 'prefill' e' valorizzato, viene usato come inizio della risposta
+    dell'assistant: il modello CONTINUA da quel testo invece di partire da capo.
+    Serve a forzare un output solo-JSON (prefill '{'), evitando che i modelli
+    'ragionanti' antepongano testo discorsivo e saturino max_tokens prima del JSON.
+    """
     chiave = config.chiave_effettiva()
     if not chiave:
         return None, "API key non configurata."
     if not config.modello:
         return None, "Nessun modello selezionato."
+    messaggi = [{"role": "user", "content": contenuto}]
+    if prefill:
+        messaggi.append({"role": "assistant", "content": prefill})
     payload = {
         "model": config.modello,
         "max_tokens": max_tokens,
         "system": system,
-        "messages": [{"role": "user", "content": contenuto}],
+        "messages": messaggi,
     }
     req = urllib.request.Request(
         API_URL, data=json.dumps(payload).encode("utf-8"), method="POST",
@@ -204,6 +213,15 @@ def _testo_risposta(data) -> str:
     return "\n".join(p for p in parti if p).strip()
 
 
+def _json_da_risposta(data, prefill: str = ""):
+    """Estrae il JSON dalla risposta del modello, ricucendo l'eventuale prefill.
+
+    Con prefill '{' la risposta dell'assistant e' la PROSECUZIONE del JSON (es.
+    '"costo": 4200}'): rianteponendo il prefill si ricostruisce l'oggetto completo.
+    """
+    return _estrai_json((prefill or "") + _testo_risposta(data))
+
+
 def classifica_rischio(richiesta, config, tipo) -> tuple[dict | None, str | None]:
     """Classificazione PRELIMINARE di UNA dimensione di rischio (AI Act, NIS2, GDPR).
 
@@ -219,10 +237,10 @@ def classifica_rischio(richiesta, config, tipo) -> tuple[dict | None, str | None
     system = config.prompt_rischio_effettivo(tipo)
     contenuto = ("Classifica il rischio del seguente progetto e rispondi solo con il JSON richiesto.\n\n"
                  + _descrizione_progetto(richiesta))
-    data, errore = _chiama_modello(config, system, contenuto, 800, RISCHIO_TIMEOUT)
+    data, errore = _chiama_modello(config, system, contenuto, 800, RISCHIO_TIMEOUT, prefill="{")
     if errore:
         return None, errore
-    obj = _estrai_json(_testo_risposta(data))
+    obj = _json_da_risposta(data, "{")
     if not isinstance(obj, dict):
         return None, "Risposta del modello non interpretabile come JSON."
     categoria = str(obj.get("categoria", "")).strip().upper()
@@ -265,10 +283,10 @@ def stima_incrementi(richiesta, config) -> tuple[dict | None, str | None]:
     """
     contenuto = ("Stima gli incrementi del seguente progetto e rispondi solo con il JSON richiesto.\n\n"
                  + _descrizione_progetto(richiesta))
-    data, errore = _chiama_modello(config, PROMPT_INCREMENTI, contenuto, 200, RISCHIO_TIMEOUT)
+    data, errore = _chiama_modello(config, PROMPT_INCREMENTI, contenuto, 400, RISCHIO_TIMEOUT, prefill="{")
     if errore:
         return None, errore
-    obj = _estrai_json(_testo_risposta(data))
+    obj = _json_da_risposta(data, "{")
     if not isinstance(obj, dict):
         return None, "Risposta del modello non interpretabile come JSON."
 
@@ -315,10 +333,10 @@ def stima_costo_token(richiesta, config) -> tuple[dict | None, str | None]:
         contesto.append(f"Ambito per la stima: {richiesta.get_costo_token_ambito_display()}")
     contenuto = ("Stima il costo di consumo token del seguente progetto e rispondi solo con il JSON richiesto.\n\n"
                  + "\n".join(contesto))
-    data, errore = _chiama_modello(config, PROMPT_COSTO_TOKEN, contenuto, 200, RISCHIO_TIMEOUT)
+    data, errore = _chiama_modello(config, PROMPT_COSTO_TOKEN, contenuto, 400, RISCHIO_TIMEOUT, prefill="{")
     if errore:
         return None, errore
-    obj = _estrai_json(_testo_risposta(data))
+    obj = _json_da_risposta(data, "{")
     if not isinstance(obj, dict):
         return None, "Risposta del modello non interpretabile come JSON."
     try:
