@@ -6,6 +6,7 @@ lettura KPI). Sono richiamate sia dalle view sia dall'import (seed_demo).
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from .ai_client import classifica_rischio, stima_costo_token, stima_incrementi
 from .models import ConfigurazioneAI, TipoRischio
@@ -33,21 +34,36 @@ def classifica_tutti_i_rischi(richiesta, attore=None) -> dict:
         return esito
     richiesta.assicura_classificazioni()
     classi = {c.tipo: c for c in richiesta.classificazioni.all()}
-    for tipo, _ in TipoRischio.choices:
-        c = classi.get(tipo)
-        if c is None:
+    tipi = [t for t, _ in TipoRischio.choices if classi.get(t) is not None]
+
+    # Le chiamate AI (sola rete, nessun accesso al DB) girano in PARALLELO: tre chiamate
+    # sequenziali da ~20-25s l'una sommavano oltre il timeout della richiesta web
+    # (gunicorn/proxy) -> 500. In parallelo il tempo totale e' ~quello della singola
+    # chiamata. I risultati vengono poi applicati al DB in modo SEQUENZIALE.
+    risultati = {}
+    with ThreadPoolExecutor(max_workers=len(tipi) or 1) as ex:
+        futuri = {ex.submit(classifica_rischio, richiesta, cfg, t): t for t in tipi}
+        for fut in futuri:
+            tipo = futuri[fut]
+            try:
+                risultati[tipo] = fut.result()
+            except Exception as e:  # noqa: BLE001
+                log.warning("classifica richiesta=%s tipo=%s eccezione=%s", richiesta.codice, tipo, e)
+                risultati[tipo] = (None, f"errore imprevisto: {e}")
+
+    for tipo in tipi:
+        dati, errore = risultati.get(tipo, (None, "nessun risultato"))
+        if errore:
+            esito["errori"][tipo] = errore
             continue
         try:
-            dati, errore = classifica_rischio(richiesta, cfg, tipo)
-            if errore:
-                esito["errori"][tipo] = errore
-            else:
-                c.applica_ai(dati["categoria"], motivazione=dati["motivazione"],
-                             riferimenti=dati["riferimenti"], obblighi=dati["obblighi"],
-                             modello=dati["modello"], attore=attore)
-                esito["ok"].append(tipo)
+            classi[tipo].applica_ai(
+                dati["categoria"], motivazione=dati["motivazione"],
+                riferimenti=dati["riferimenti"], obblighi=dati["obblighi"],
+                modello=dati["modello"], attore=attore)
+            esito["ok"].append(tipo)
         except Exception as e:  # noqa: BLE001
-            log.warning("classifica richiesta=%s tipo=%s eccezione=%s", richiesta.codice, tipo, e)
+            log.warning("applica_ai richiesta=%s tipo=%s eccezione=%s", richiesta.codice, tipo, e)
             esito["errori"][tipo] = f"errore imprevisto: {e}"
     return esito
 
