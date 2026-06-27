@@ -203,7 +203,7 @@
         {% endif %}
         <div class="t-mut" style="margin-top:8px;">
           {% if d.c.ai_il %}<i class="ti ti-robot" style="vertical-align:-2px;"></i> Stima AI{% if d.c.ai_modello %} ({{ d.c.ai_modello }}){% endif %} del {{ d.c.ai_il|date:"d/m/Y H:i" }}{% endif %}
-          {% if d.c.validato %} · <i class="ti ti-gavel" style="vertical-align:-2px;"></i> {{ d.c.validato_da.get_full_name|default:d.c.validato_da.username }} il {{ d.c.validato_il|date:"d/m/Y H:i" }}{% endif %}
+          {% if d.c.validato %} · <i class="ti ti-gavel" style="vertical-align:-2px;"></i> {% if d.c.validato_da %}{{ d.c.validato_da.get_full_name|default:d.c.validato_da.username }}{% else %}sistema{% endif %} il {{ d.c.validato_il|date:"d/m/Y H:i" }}{% endif %}
         </div>
         {% if d.c.nota_validatore %}<div class="t-nota" style="margin-top:6px;">Nota {{ d.c.validatore_label }}: {{ d.c.nota_validatore }}</div>{% endif %}
 
@@ -228,7 +228,7 @@
           </ul>
           {% endif %}
           {% if d.c.trattamento_note %}<div class="t-nota" style="margin-top:6px;">Note: {{ d.c.trattamento_note }}</div>{% endif %}
-          {% if d.c.trattato_il %}<div class="t-mut" style="margin-top:6px;"><i class="ti ti-gavel" style="vertical-align:-2px;"></i> {{ d.c.trattato_da.get_full_name|default:d.c.trattato_da.username }} il {{ d.c.trattato_il|date:"d/m/Y H:i" }}</div>{% endif %}
+          {% if d.c.trattato_il %}<div class="t-mut" style="margin-top:6px;"><i class="ti ti-gavel" style="vertical-align:-2px;"></i> {% if d.c.trattato_da %}{{ d.c.trattato_da.get_full_name|default:d.c.trattato_da.username }}{% else %}sistema{% endif %} il {{ d.c.trattato_il|date:"d/m/Y H:i" }}</div>{% endif %}
         </div>
         {% endif %}
 
@@ -307,7 +307,7 @@
           <div class="t-az">{{ ev.etichetta }}
             {% if not ev.is_sal %}<span class="t-mut">· {{ ev.stato_da_label }} → {{ ev.stato_a_label }}</span>{% endif %}
           </div>
-          <div class="t-mut">{{ ev.creata_il|date:"d/m/Y H:i" }} · {{ ev.attore.get_full_name|default:ev.attore.username|default:"sistema" }}</div>
+          <div class="t-mut">{{ ev.creata_il|date:"d/m/Y H:i" }} · {% if ev.attore %}{{ ev.attore.get_full_name|default:ev.attore.username }}{% else %}sistema{% endif %}</div>
           {% if ev.nota %}<div class="t-nota">{{ ev.nota }}</div>{% endif %}
         </li>
         {% empty %}
