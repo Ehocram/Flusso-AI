@@ -21,8 +21,8 @@ from django.views.decorators.http import require_POST
 
 from . import servizi
 from .ai_client import genera_analisi, prova_connessione
-from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, ImpostazioniAIForm, RichiestaForm,
-                    SalForm, TrattamentoRischioForm, ValidazioneRischioForm)
+from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, ImpostazioniAIForm, PianificazioneForm,
+                    RichiestaForm, SalForm, TrattamentoRischioForm, ValidazioneRischioForm)
 from .kpi import calcola_kpi
 from .models import (ClassificazioneRischio, ConfigurazioneAI, DIMENSIONE_PER_RUOLO,
                      EsitoBudget, PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
@@ -293,6 +293,11 @@ def esegui_azione(request, pk):
             return redirect(richiesta)
 
     evento = richiesta.applica(azione, attore=request.user, nota=nota)
+    if azione == "approva":
+        try:
+            servizi.pianifica_su_approvazione(richiesta)
+        except Exception:
+            pass  # le date sono utili ai KPI ma non devono bloccare l'approvazione
     notifica_transizione(request, richiesta, evento)
     messages.success(request, f"{evento.etichetta}: {richiesta.stato_label}.")
     return redirect(richiesta)
@@ -363,6 +368,56 @@ def aggiorna_analisi(request, pk):
     else:
         messages.error(request, "Controlla i dati dell'analisi: alcuni valori non sono validi.")
     return redirect(richiesta)
+
+
+@login_required
+@require_POST
+def compila_analisi_ai(request, pk):
+    """Bottone «AI»: l'AI precompila l'intera analisi; l'AI Officer poi verifica, modifica e salva."""
+    richiesta = get_object_or_404(Richiesta, pk=pk)
+    if not request.user.is_ai_officer:
+        return HttpResponseForbidden("Solo la Funzione AI puo' usare la compilazione automatica.")
+    ok, errore = servizi.compila_analisi_con_ai(richiesta, attore=request.user)
+    if ok:
+        messages.success(
+            request,
+            "Analisi precompilata dall'AI. Verifica i campi, modificali se serve e salva con «Salva analisi».",
+        )
+    else:
+        messages.error(request, f"Compilazione AI non riuscita: {errore}")
+    return redirect(richiesta)
+
+
+@login_required
+def schedulazione(request):
+    """Pianificazione dei soli progetti approvati (date utili ai KPI, modificabili a mano)."""
+    if not request.user.is_gestore:
+        return HttpResponseForbidden("Pagina riservata.")
+    qs = (Richiesta.objects
+          .filter(stato__in=[Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO, Stato.COMPLETATO])
+          .select_related("proponente")
+          .order_by("data_inizio", "creata_il"))
+    puo_modificare = request.user.is_ai_officer
+    righe = [{"r": r, "form": PianificazioneForm(instance=r) if puo_modificare else None} for r in qs]
+    return render(request, "flusso/schedulazione.html", {
+        "righe": righe, "puo_modificare": puo_modificare, "totale": qs.count(),
+    })
+
+
+@login_required
+@require_POST
+def salva_pianificazione(request, pk):
+    """Salvataggio manuale delle date di un progetto dalla schedulazione."""
+    richiesta = get_object_or_404(Richiesta, pk=pk)
+    if not request.user.is_ai_officer:
+        return HttpResponseForbidden("Solo la Funzione AI puo' modificare la pianificazione.")
+    form = PianificazioneForm(request.POST, instance=richiesta)
+    if form.is_valid():
+        form.save()
+        messages.success(request, f"Date aggiornate per {richiesta.codice}.")
+    else:
+        messages.error(request, "Date non valide: controlla inizio e consegna.")
+    return redirect("flusso:schedulazione")
 
 
 @login_required

@@ -38,6 +38,11 @@
       <h2><i class="ti ti-clipboard-data" style="vertical-align:-2px;color:var(--rosso)"></i> Analisi Funzione AI</h2>
       {% if analisi_form %}
       {# Modificabile dall'AI Officer #}
+      <form method="post" action="{% url 'flusso:compila_analisi_ai' richiesta.pk %}" class="analisi-ai-form" data-ai-wait="Compilazione AI dell'analisi in corso…">
+        {% csrf_token %}
+        <button type="submit" class="btn-ai-tondo" title="Compila l'intera analisi con l'AI (fattibilità, tipo, infrastruttura, effort, costi, benefici), poi verifica e salva.">AI</button>
+        <span class="ai-tondo-hint">Premi <b>AI</b> per far precompilare l'intera analisi. Poi verifica i campi, modificali se serve e salva con «Salva analisi».</span>
+      </form>
       <form method="post" action="{% url 'flusso:aggiorna_analisi' richiesta.pk %}" class="analisi-form">
         {% csrf_token %}
         <div class="f-row">
@@ -58,14 +63,6 @@
           <div class="f-row">
             <label for="{{ analisi_form.effort_ore.id_for_label }}">Effort (ore)</label>
             {{ analisi_form.effort_ore }}
-          </div>
-          <div class="f-row">
-            <label for="{{ analisi_form.data_inizio.id_for_label }}">Inizio lavori</label>
-            {{ analisi_form.data_inizio }}
-          </div>
-          <div class="f-row">
-            <label for="{{ analisi_form.data_consegna_prevista.id_for_label }}">Consegna prevista</label>
-            {{ analisi_form.data_consegna_prevista }}
           </div>
           <div class="f-row">
             <label for="{{ analisi_form.altri_costi.id_for_label }}">Altri costi (€)</label>

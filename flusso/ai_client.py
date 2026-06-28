@@ -350,3 +350,43 @@ def stima_costo_token(richiesta, config) -> tuple[dict | None, str | None]:
     audit.info("costo_token_ai richiesta=%s costo=%s modello=%s",
                getattr(richiesta, "codice", "?"), costo, config.modello)
     return {"costo": costo, "modello": config.modello}, None
+
+
+PROMPT_ANALISI_COMPLETA = (
+    "Sei la Funzione AI di ISEO. Ricevi una richiesta di caso d'uso AI (funzione aziendale, "
+    "titolo, descrizione, eventuale numero utenti) e produci un'ANALISI DI FATTIBILITA' completa, "
+    "scritta come la scriverebbe l'AI Officer, piu' la stima dei parametri di progetto.\n"
+    "Scrivi in ITALIANO, professionale e sintetico. Sii prudente e realistico: e' una stima "
+    "preliminare che sara' rivista da una persona, non essere ottimista.\n"
+    "Il JSON deve avere ESATTAMENTE queste chiavi:\n"
+    '  "fattibilita": stringa di 3-6 frasi (valutazione di fattibilita, approccio tecnico, rischi e dipendenze principali),\n'
+    '  "autonomia": uno tra "NON_AGENTICA", "AGENTICA_SUPPORTO", "AGENTICA_AUTONOMA",\n'
+    '  "deployment": uno tra "API" (cloud), "LOCALE" (on-premise), "IBRIDO",\n'
+    '  "effort_ore": intero (ore-uomo di sviluppo stimate),\n'
+    '  "costo_token_mensile_per_utente": numero in euro (consumo token al mese per utente; 0 se non applicabile),\n'
+    '  "efficienza": intero 0-100 (incremento di efficienza atteso, %),\n'
+    '  "qualita": intero 0-100 (incremento qualitativo atteso, %),\n'
+    '  "beneficio_euro": numero in euro (beneficio economico annuo atteso; 0 se prevalentemente qualitativo),\n'
+    '  "beneficio_nota": stringa breve (max 1 frase) sul beneficio economico.'
+)
+
+
+def genera_analisi_completa(richiesta, config):
+    """Genera l'intera analisi (fattibilita + parametri) in una sola chiamata.
+
+    Ritorna (dati, None) con un dict pronto per Richiesta.applica_analisi_ai, oppure
+    (None, errore). I valori restano una proposta: l'AI Officer li verifica e modifica.
+    """
+    contesto = [_descrizione_progetto(richiesta)]
+    if richiesta.numero_utenti:
+        contesto.append(f"Numero utenti previsti: {richiesta.numero_utenti}")
+    contenuto = ("Analizza la seguente richiesta e compila l'analisi completa.\n\n"
+                 + "\n".join(contesto) + "\n\n" + _ISTRUZIONE_JSON)
+    data, errore = _chiama_modello(config, PROMPT_ANALISI_COMPLETA, contenuto, 2000, RISCHIO_TIMEOUT)
+    if errore:
+        return None, errore
+    obj = _estrai_json(_testo_risposta(data))
+    if not isinstance(obj, dict):
+        return None, "Risposta del modello non interpretabile come JSON."
+    audit.info("analisi_ai richiesta=%s modello=%s", getattr(richiesta, "codice", "?"), config.modello)
+    return obj, None

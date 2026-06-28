@@ -668,3 +668,29 @@ body.auth { background: #080a10; overflow-x: hidden; }
 .ai-wait-txt { font-weight: 700; font-size: 16px; color: var(--inchiostro); }
 .ai-wait-sub { margin-top: 7px; font-size: 13px; color: var(--testo-2); }
 @media (prefers-reduced-motion: reduce) { .ai-spinner { animation-duration: 1.6s; } }
+
+/* ===== Bottone tondo «AI» (precompila l'intera analisi) ===== */
+.analisi-ai-form { display: flex; align-items: center; gap: 12px; margin: 4px 0 14px; }
+.btn-ai-tondo { flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%; border: none;
+  background: var(--rosso); color: #fff; font-weight: 800; font-size: 15px; letter-spacing: .5px;
+  cursor: pointer; box-shadow: 0 4px 14px rgba(214,40,40,.35); transition: transform .12s, box-shadow .12s; }
+.btn-ai-tondo:hover { transform: translateY(-1px) scale(1.04); box-shadow: 0 7px 20px rgba(214,40,40,.45); }
+.btn-ai-tondo:active { transform: scale(.97); }
+.ai-tondo-hint { font-size: 12.5px; color: var(--testo-2); line-height: 1.35; }
+
+/* ===== Pagina schedulazione ===== */
+.ph-side { display: flex; align-items: center; }
+.pill { background: #fbe9e9; color: var(--rosso); border-radius: 999px; padding: 5px 13px; font-weight: 700; font-size: 13px; }
+.sched-list { display: flex; flex-direction: column; gap: 10px; }
+.sched-row { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  background: var(--bianco); border: 1px solid var(--bordo); border-radius: var(--r-card); padding: 14px 16px; }
+.sched-main { min-width: 0; }
+.sched-title { color: var(--inchiostro); text-decoration: none; font-size: 15px; }
+.sched-title:hover { text-decoration: underline; }
+.sched-meta { font-size: 12.5px; color: var(--testo-2); margin-top: 4px; }
+.stato-pill { display: inline-block; background: #eef1f6; color: var(--inchiostro); border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
+.sched-form { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; flex-wrap: wrap; }
+.sched-lbl { font-size: 12px; color: var(--testo-2); display: flex; flex-direction: column; gap: 3px; }
+.sched-date { display: flex; gap: 16px; font-size: 13px; color: var(--inchiostro); flex: 0 0 auto; }
+.vuoto-box { background: var(--bianco); border: 1px dashed var(--bordo); border-radius: var(--r-card); padding: 28px; text-align: center; color: var(--testo-2); }
+@media (max-width: 720px) { .sched-row { flex-direction: column; align-items: stretch; } }

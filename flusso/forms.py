@@ -13,14 +13,12 @@ class AnalisiAIForm(forms.ModelForm):
     class Meta:
         model = Richiesta
         fields = [
-            "analisi_fattibilita", "ai_autonomia", "ai_deployment", "effort_ore", "data_inizio",
-            "data_consegna_prevista", "costo_token_ai", "costo_token_periodicita",
+            "analisi_fattibilita", "ai_autonomia", "ai_deployment", "effort_ore",
+            "costo_token_ai", "costo_token_periodicita",
             "costo_token_ambito", "altri_costi", "altri_costi_note",
         ]
         widgets = {
             "analisi_fattibilita": forms.Textarea(attrs={"rows": 4, "placeholder": "Valutazione di fattibilità, approccio, rischi, dipendenze…"}),
-            "data_inizio": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
-            "data_consegna_prevista": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "effort_ore": forms.NumberInput(attrs={"min": 0, "placeholder": "es. 120"}),
             "costo_token_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ (vuoto = stima AI)"}),
             "altri_costi": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
@@ -228,3 +226,23 @@ AzioneTrattamentoFormSet = inlineformset_factory(
         "data_prevista": forms.DateInput(attrs={"type": "date", "class": "campo"}, format="%Y-%m-%d"),
     },
 )
+
+
+class PianificazioneForm(forms.ModelForm):
+    """Date di pianificazione del progetto, modificabili a mano nella schedulazione."""
+
+    class Meta:
+        model = Richiesta
+        fields = ["data_inizio", "data_consegna_prevista"]
+        widgets = {
+            "data_inizio": forms.DateInput(attrs={"type": "date", "class": "campo"}, format="%Y-%m-%d"),
+            "data_consegna_prevista": forms.DateInput(attrs={"type": "date", "class": "campo"}, format="%Y-%m-%d"),
+        }
+
+    def clean(self):
+        dati = super().clean()
+        inizio = dati.get("data_inizio")
+        fine = dati.get("data_consegna_prevista")
+        if inizio and fine and fine < inizio:
+            self.add_error("data_consegna_prevista", "La consegna non può precedere l'inizio.")
+        return dati

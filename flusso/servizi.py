@@ -8,7 +8,8 @@ lettura KPI). Sono richiamate sia dalle view sia dall'import (seed_demo).
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-from .ai_client import classifica_rischio, stima_costo_token, stima_incrementi
+from .ai_client import (classifica_rischio, genera_analisi_completa, stima_costo_token,
+                        stima_incrementi)
 from .models import ConfigurazioneAI, TipoRischio
 
 log = logging.getLogger("flusso.audit")
@@ -126,3 +127,60 @@ def stima_costo_token_se_serve(richiesta, attore=None) -> bool:
     except Exception as e:  # noqa: BLE001
         log.warning("stima costo token richiesta=%s eccezione=%s", richiesta.codice, e)
         return False
+
+
+def compila_analisi_con_ai(richiesta, attore=None):
+    """Precompila l'intera analisi (fattibilita + parametri) con l'AI.
+
+    Ritorna (True, None) se i campi sono stati proposti, (False, errore) altrimenti.
+    I valori restano modificabili dall'AI Officer.
+    """
+    cfg = _config_pronta()
+    if cfg is None:
+        return False, "Analisi AI non disponibile (abilitazione o API key)."
+    dati, errore = genera_analisi_completa(richiesta, cfg)
+    if errore:
+        return False, errore
+    campi = richiesta.applica_analisi_ai(dati)
+    if not campi:
+        return False, "L'AI non ha restituito valori utilizzabili."
+    return True, None
+
+
+def _prossimo_giorno_lavorativo(d):
+    from datetime import timedelta
+    while d.weekday() >= 5:  # 5=sabato, 6=domenica
+        d += timedelta(days=1)
+    return d
+
+
+def _aggiungi_giorni_lavorativi(d, giorni):
+    from datetime import timedelta
+    avanti = 0
+    while avanti < giorni:
+        d += timedelta(days=1)
+        if d.weekday() < 5:
+            avanti += 1
+    return d
+
+
+def pianifica_su_approvazione(richiesta, forza=False):
+    """All'approvazione propone data inizio e consegna prevista (utili ai KPI).
+
+    Calcolo deterministico a partire dall'effort stimato dall'AI: inizio = primo
+    giorno lavorativo da oggi; durata in giorni lavorativi ~ effort/6 (ore produttive
+    al giorno), minimo una settimana. Non sovrascrive date gia' impostate a mano,
+    salvo forza=True. Tutto resta modificabile dalla pagina di schedulazione.
+    Ritorna True se ha impostato le date.
+    """
+    from datetime import date
+    if not forza and (richiesta.data_inizio or richiesta.data_consegna_prevista):
+        return False
+    inizio = _prossimo_giorno_lavorativo(date.today())
+    ore = richiesta.effort_ore or 0
+    giorni_lav = max(5, -(-ore // 6)) if ore > 0 else 10  # ceil(ore/6), min 5 gg; default 2 settimane
+    fine = _aggiungi_giorni_lavorativi(inizio, giorni_lav)
+    richiesta.data_inizio = inizio
+    richiesta.data_consegna_prevista = fine
+    richiesta.save(update_fields=["data_inizio", "data_consegna_prevista"])
+    return True
