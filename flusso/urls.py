@@ -21,6 +21,7 @@ urlpatterns = [
     path("schedulazione/", views.schedulazione, name="schedulazione"),
     path("richieste/<int:pk>/analisi/", views.aggiorna_analisi, name="aggiorna_analisi"),
     path("richieste/<int:pk>/analisi/ai/", views.compila_analisi_ai, name="compila_analisi_ai"),
+    path("richieste/<int:pk>/beneficio/", views.aggiorna_beneficio, name="aggiorna_beneficio"),
     path("richieste/<int:pk>/pianificazione/", views.salva_pianificazione, name="salva_pianificazione"),
     path("richieste/<int:pk>/budget/", views.decidi_budget, name="decidi_budget"),
     path("richieste/<int:pk>/sal/", views.aggiorna_sal, name="aggiorna_sal"),

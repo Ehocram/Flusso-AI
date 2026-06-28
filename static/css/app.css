@@ -694,3 +694,10 @@ body.auth { background: #080a10; overflow-x: hidden; }
 .sched-date { display: flex; gap: 16px; font-size: 13px; color: var(--inchiostro); flex: 0 0 auto; }
 .vuoto-box { background: var(--bianco); border: 1px dashed var(--bordo); border-radius: var(--r-card); padding: 28px; text-align: center; color: var(--testo-2); }
 @media (max-width: 720px) { .sched-row { flex-direction: column; align-items: stretch; } }
+
+/* ===== Modifica beneficio e incrementi + avviso blocco ===== */
+.benef-form { padding: 16px 18px; }
+.benef-head { font-weight: 700; font-size: 14px; margin-bottom: 12px; }
+.benef-sub { font-weight: 400; font-size: 12.5px; color: var(--testo-2); }
+.lock-note { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 10px 14px;
+  background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 10px; font-size: 13px; }

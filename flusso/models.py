@@ -16,7 +16,8 @@ from django.db import models, transaction
 from django.urls import reverse
 from django.utils import timezone
 
-from .workflow import STATI_OPERATIVI, STATI_TERMINALI, Stato, transizione
+from .workflow import (STATI_MODIFICA_BLOCCATA, STATI_OPERATIVI, STATI_TERMINALI, Stato,
+                       transizione)
 
 audit = logging.getLogger("flusso.audit")
 
@@ -386,6 +387,11 @@ class Richiesta(models.Model):
     @property
     def is_operativa(self) -> bool:
         return self.stato in STATI_OPERATIVI
+
+    @property
+    def modifica_bloccata(self) -> bool:
+        """True quando la scheda è in approvazione o approvata: nessuna modifica consentita."""
+        return self.stato in STATI_MODIFICA_BLOCCATA
 
     @property
     def is_bozza(self) -> bool:

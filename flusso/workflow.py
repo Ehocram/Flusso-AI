@@ -38,6 +38,11 @@ STATI_TERMINALI = {Stato.RESPINTA, Stato.ARCHIVIATA, Stato.COMPLETATO}
 # Stati in cui il progetto è operativo e il SAL è aggiornabile.
 STATI_OPERATIVI = {Stato.ATTIVO, Stato.MONITORAGGIO}
 
+# Stati in cui la scheda è congelata: in approvazione alla Direzione e oltre.
+# Nessuna modifica consentita, a nessun ruolo.
+STATI_MODIFICA_BLOCCATA = {Stato.IN_APPROVAZIONE, Stato.APPROVATA, Stato.ATTIVO,
+                           Stato.MONITORAGGIO, Stato.COMPLETATO}
+
 # Raggruppamento per la board (kanban) e i conteggi di dashboard.
 FASI = {
     "in_coda": [Stato.BOZZA, Stato.INVIATA],

@@ -21,8 +21,9 @@ from django.views.decorators.http import require_POST
 
 from . import servizi
 from .ai_client import genera_analisi, prova_connessione
-from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, ImpostazioniAIForm, PianificazioneForm,
-                    RichiestaForm, SalForm, TrattamentoRischioForm, ValidazioneRischioForm)
+from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, BeneficioForm, ImpostazioniAIForm,
+                    PianificazioneForm, RichiestaForm, SalForm, TrattamentoRischioForm,
+                    ValidazioneRischioForm)
 from .kpi import calcola_kpi
 from .models import (ClassificazioneRischio, ConfigurazioneAI, DIMENSIONE_PER_RUOLO,
                      EsitoBudget, PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
@@ -141,8 +142,12 @@ def dettaglio(request, pk):
 
     azioni = azioni_disponibili(richiesta, request.user)
     timeline = richiesta.transizioni.select_related("attore").all()
-    puo_modificare = richiesta.proponente_id == request.user.id and richiesta.stato in (
-        Stato.BOZZA, Stato.INVIATA
+    bloccata = richiesta.modifica_bloccata
+    # La Funzione AI modifica la scheda completa in tutti gli stati non bloccati;
+    # l'owner solo prima della presa in carico (bozza/inviata).
+    puo_modificare = (not bloccata) and (
+        request.user.is_ai_officer
+        or (richiesta.proponente_id == request.user.id and richiesta.stato in (Stato.BOZZA, Stato.INVIATA))
     )
     puo_eliminare = request.user.is_ai_officer or (
         request.user.is_owner and richiesta.proponente_id == request.user.id and richiesta.is_bozza
@@ -150,7 +155,12 @@ def dettaglio(request, pk):
     sal_form = SalForm(initial={"sal": richiesta.sal}) if (
         richiesta.is_operativa and request.user.is_ai_officer
     ) else None
-    analisi_form = AnalisiAIForm(instance=richiesta) if request.user.is_ai_officer else None
+    analisi_form = AnalisiAIForm(instance=richiesta) if (request.user.is_ai_officer and not bloccata) else None
+    # Beneficio economico e incrementi: modificabili da owner e Funzione AI fino al blocco.
+    puo_beneficio = (not bloccata) and (
+        request.user.is_ai_officer or richiesta.proponente_id == request.user.id
+    )
+    beneficio_form = BeneficioForm(instance=richiesta) if puo_beneficio else None
 
     # Rischio & conformità: le tre dimensioni, con form di validazione SOLO per il presidio competente.
     richiesta.assicura_classificazioni()
@@ -183,7 +193,7 @@ def dettaglio(request, pk):
     return render(request, "flusso/dettaglio.html", {
         "richiesta": richiesta, "azioni": azioni, "timeline": timeline,
         "puo_modificare": puo_modificare, "puo_eliminare": puo_eliminare,
-        "sal_form": sal_form, "analisi_form": analisi_form,
+        "sal_form": sal_form, "analisi_form": analisi_form, "beneficio_form": beneficio_form,
         "rischi": rischi, "puo_analizza_rischio": request.user.is_ai_officer,
         "blocco_approvazione": blocco_approvazione,
         "mostra_decisione_budget": mostra_decisione_budget,
@@ -220,20 +230,22 @@ def nuova(request):
 @login_required
 def modifica(request, pk):
     richiesta = get_object_or_404(Richiesta, pk=pk)
-    if richiesta.proponente_id != request.user.id:
-        return HttpResponseForbidden("Non puoi modificare questa richiesta.")
-    if richiesta.stato not in (Stato.BOZZA, Stato.INVIATA):
-        messages.error(request, "La richiesta non è più modificabile in questo stato.")
+    is_owner = richiesta.proponente_id == request.user.id
+    if richiesta.modifica_bloccata:
+        messages.error(request, "La richiesta è in approvazione o approvata: non è più modificabile.")
         return redirect(richiesta)
+    if not request.user.is_ai_officer and not (is_owner and richiesta.stato in (Stato.BOZZA, Stato.INVIATA)):
+        return HttpResponseForbidden("Non puoi modificare questa richiesta in questo stato.")
+    funz = (richiesta.proponente.funzione or None) if request.user.is_ai_officer else (request.user.funzione or None)
 
     if request.method == "POST":
-        form = RichiestaForm(request.POST, instance=richiesta, funzione_owner=request.user.funzione or None)
+        form = RichiestaForm(request.POST, instance=richiesta, funzione_owner=funz)
         if form.is_valid():
             era_inviata = richiesta.stato == Stato.INVIATA
             form.save()
             # Prima volta utile: stima gli incrementi ancora vuoti (best-effort).
             servizi.stima_incrementi_se_serve(richiesta, attore=request.user)
-            if era_inviata:
+            if is_owner and not request.user.is_ai_officer and era_inviata:
                 richiesta.stato = Stato.BOZZA
                 richiesta.save(update_fields=["stato", "aggiornata_il"])
                 richiesta.transizioni.create(
@@ -247,7 +259,7 @@ def modifica(request, pk):
                 messages.success(request, "Richiesta aggiornata.")
             return redirect(richiesta)
     else:
-        form = RichiestaForm(instance=richiesta, funzione_owner=request.user.funzione or None)
+        form = RichiestaForm(instance=richiesta, funzione_owner=funz)
 
     return render(request, "flusso/richiesta_form.html", {"form": form, "nuova": False, "richiesta": richiesta})
 
@@ -347,6 +359,9 @@ def aggiorna_analisi(request, pk):
     richiesta = get_object_or_404(Richiesta, pk=pk)
     if not request.user.is_ai_officer:
         return HttpResponseForbidden("Solo la Funzione AI puo' compilare l'analisi.")
+    if richiesta.modifica_bloccata:
+        messages.error(request, "La richiesta è in approvazione o approvata: analisi non modificabile.")
+        return redirect(richiesta)
     form = AnalisiAIForm(request.POST, instance=richiesta)
     if form.is_valid():
         form.save()
@@ -377,6 +392,9 @@ def compila_analisi_ai(request, pk):
     richiesta = get_object_or_404(Richiesta, pk=pk)
     if not request.user.is_ai_officer:
         return HttpResponseForbidden("Solo la Funzione AI puo' usare la compilazione automatica.")
+    if richiesta.modifica_bloccata:
+        messages.error(request, "La richiesta è in approvazione o approvata: analisi non modificabile.")
+        return redirect(richiesta)
     ok, errore = servizi.compila_analisi_con_ai(richiesta, attore=request.user)
     if ok:
         messages.success(
@@ -385,6 +403,30 @@ def compila_analisi_ai(request, pk):
         )
     else:
         messages.error(request, f"Compilazione AI non riuscita: {errore}")
+    return redirect(richiesta)
+
+
+@login_required
+@require_POST
+def aggiorna_beneficio(request, pk):
+    """Beneficio economico e incrementi: modificabili da owner e Funzione AI fino al blocco."""
+    richiesta = get_object_or_404(Richiesta, pk=pk)
+    is_owner = richiesta.proponente_id == request.user.id
+    if richiesta.modifica_bloccata:
+        messages.error(request, "La richiesta è in approvazione o approvata: beneficio non modificabile.")
+        return redirect(richiesta)
+    if not (is_owner or request.user.is_ai_officer):
+        return HttpResponseForbidden("Non puoi modificare il beneficio di questa richiesta.")
+    form = BeneficioForm(request.POST, instance=richiesta)
+    if form.is_valid():
+        form.save()
+        # I valori inseriti o corretti a mano non sono (più) una stima AI.
+        if richiesta.incrementi_ai_stimati:
+            richiesta.incrementi_ai_stimati = False
+            richiesta.save(update_fields=["incrementi_ai_stimati"])
+        messages.success(request, "Beneficio economico e incrementi aggiornati.")
+    else:
+        messages.error(request, "Valori non validi: controlla beneficio e percentuali.")
     return redirect(richiesta)
 
 

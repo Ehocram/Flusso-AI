@@ -246,3 +246,33 @@ class PianificazioneForm(forms.ModelForm):
         if inizio and fine and fine < inizio:
             self.add_error("data_consegna_prevista", "La consegna non può precedere l'inizio.")
         return dati
+
+
+class BeneficioForm(forms.ModelForm):
+    """Beneficio economico e incrementi attesi.
+
+    Modificabili dall'owner e dalla Funzione AI in tutti gli stati non bloccati
+    (fino all'ingresso in approvazione). Restano la business case del richiedente.
+    """
+
+    class Meta:
+        model = Richiesta
+        fields = [
+            "saving_economico", "saving_economico_note",
+            "incremento_qualitativo", "incremento_qualitativo_note",
+            "incremento_efficienza", "incremento_efficienza_note",
+        ]
+        widgets = {
+            "saving_economico": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€/anno"}),
+            "saving_economico_note": forms.TextInput(attrs={"placeholder": "Come è stato stimato il beneficio"}),
+            "incremento_qualitativo": forms.NumberInput(attrs={"min": 0, "max": 100, "step": "1", "placeholder": "%"}),
+            "incremento_qualitativo_note": forms.TextInput(attrs={"placeholder": "Nota"}),
+            "incremento_efficienza": forms.NumberInput(attrs={"min": 0, "max": 100, "step": "1", "placeholder": "%"}),
+            "incremento_efficienza_note": forms.TextInput(attrs={"placeholder": "Nota"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for campo in self.fields.values():
+            css = campo.widget.attrs.get("class", "")
+            campo.widget.attrs["class"] = (css + " campo").strip()

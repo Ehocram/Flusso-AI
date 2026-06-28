@@ -34,6 +34,43 @@
   <div>
     {% include "flusso/_scheda.html" with r=richiesta mostra_foot=False %}
 
+    {% if richiesta.modifica_bloccata %}
+    <div class="lock-note"><i class="ti ti-lock"></i> Scheda in approvazione o approvata: i valori sono congelati e non modificabili.</div>
+    {% endif %}
+    {% if beneficio_form %}
+    <form method="post" action="{% url 'flusso:aggiorna_beneficio' richiesta.pk %}" class="card benef-form" style="margin-top:18px;">
+      {% csrf_token %}
+      <div class="benef-head"><i class="ti ti-pencil" style="color:var(--rosso)"></i> Beneficio e incrementi attesi <span class="benef-sub">— modificabili dall'owner e dalla Funzione AI</span></div>
+      <div class="form-grid">
+        <div class="f-row full">
+          <label for="{{ beneficio_form.saving_economico.id_for_label }}">Beneficio economico (€/anno)</label>
+          {{ beneficio_form.saving_economico }}
+        </div>
+        <div class="f-row full">
+          <label for="{{ beneficio_form.saving_economico_note.id_for_label }}">Nota beneficio</label>
+          {{ beneficio_form.saving_economico_note }}
+        </div>
+        <div class="f-row">
+          <label for="{{ beneficio_form.incremento_qualitativo.id_for_label }}">Incremento qualitativo (%)</label>
+          {{ beneficio_form.incremento_qualitativo }}
+        </div>
+        <div class="f-row">
+          <label for="{{ beneficio_form.incremento_qualitativo_note.id_for_label }}">Nota qualitativo</label>
+          {{ beneficio_form.incremento_qualitativo_note }}
+        </div>
+        <div class="f-row">
+          <label for="{{ beneficio_form.incremento_efficienza.id_for_label }}">Incremento efficienza (%)</label>
+          {{ beneficio_form.incremento_efficienza }}
+        </div>
+        <div class="f-row">
+          <label for="{{ beneficio_form.incremento_efficienza_note.id_for_label }}">Nota efficienza</label>
+          {{ beneficio_form.incremento_efficienza_note }}
+        </div>
+      </div>
+      <div style="margin-top:12px;"><button type="submit" class="btn btn-primario btn-sm"><i class="ti ti-device-floppy"></i> Salva beneficio</button></div>
+    </form>
+    {% endif %}
+
     <div class="card" style="margin-top:18px;">
       <h2><i class="ti ti-clipboard-data" style="vertical-align:-2px;color:var(--rosso)"></i> Analisi Funzione AI</h2>
       {% if analisi_form %}
