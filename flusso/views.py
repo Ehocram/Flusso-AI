@@ -377,10 +377,26 @@ def aggiorna_analisi(request, pk):
         msg = ("Analisi aggiornata. Importo token proposto dall'AI: "
                f"€ {richiesta.costo_token_ai} (modificabile)." if stimato
                else "Analisi della Funzione AI aggiornata.")
-        rip = richiesta.ripartizione_budget
-        if rip:
-            msg += (f" Costo € {rip['costo']:.2f}: a budget € {rip['a_budget']:.2f}, "
-                    f"extra budget € {rip['extra']:.2f} ({richiesta.budget_stato_label}).")
+        # Costo zero: nessuna approvazione di budget dall'owner. La Funzione AI genera
+        # subito i rischi al salvataggio dell'analisi e il budget è automaticamente «a budget».
+        if (richiesta.stato == Stato.IN_QUALIFICA and not richiesta.esito_budget
+                and richiesta.costo_progetto_stimato == 0):
+            richiesta.esito_budget = EsitoBudget.A_BUDGET
+            richiesta.save(update_fields=["esito_budget"])
+            res = servizi.classifica_tutti_i_rischi(richiesta, attore=request.user)
+            if res["ok"]:
+                dims = ", ".join(_NOMI_RISCHIO[x] for x in res["ok"])
+                msg += (" Costo zero: nessuna approvazione di budget richiesta. "
+                        f"Rischio stimato dall'AI per: {dims}. "
+                        "Da validare da Legale (AI Act), CISO (NIS2) e DPO (GDPR).")
+            else:
+                msg += (" Costo zero: nessuna approvazione di budget richiesta. "
+                        "Rischi da completare (classificazione AI non riuscita su alcune dimensioni).")
+        else:
+            rip = richiesta.ripartizione_budget
+            if rip:
+                msg += (f" Costo € {rip['costo']:.2f}: a budget € {rip['a_budget']:.2f}, "
+                        f"extra budget € {rip['extra']:.2f} ({richiesta.budget_stato_label}).")
         messages.success(request, msg)
     else:
         messages.error(request, "Controlla i dati dell'analisi: alcuni valori non sono validi.")
@@ -619,6 +635,20 @@ def analizza_rischio(request, pk):
     return redirect(richiesta)
 
 
+def _avanza_in_approvazione_se_pronta(richiesta, attore) -> bool:
+    """Auto-avanzamento: se tutte le dimensioni di rischio sono validate/corrette e il
+    budget è definito, la pratica va in approvazione senza ulteriori passaggi manuali."""
+    if (richiesta.stato == Stato.IN_QUALIFICA and richiesta.esito_budget
+            and richiesta.rischi_tutti_validati):
+        try:
+            richiesta.applica("presenta_approvazione", attore=attore,
+                              nota="Avanzamento automatico: tutte le dimensioni di rischio validate.")
+            return True
+        except Exception:
+            return False
+    return False
+
+
 @login_required
 @require_POST
 def valida_rischio(request, pk, tipo):
@@ -640,6 +670,8 @@ def valida_rischio(request, pk, tipo):
         )
         verbo = "modificato" if classificazione.stato == "MODIFICATO" else "validato"
         messages.success(request, f"Rischio {_NOMI_RISCHIO[tipo]} {verbo}: {classificazione.categoria_label}.")
+        if _avanza_in_approvazione_se_pronta(richiesta, request.user):
+            messages.success(request, "Tutte le dimensioni di rischio sono validate: la pratica è stata inviata in approvazione alla Direzione.")
     else:
         messages.error(request, "Selezione non valida.")
     return redirect(richiesta)
