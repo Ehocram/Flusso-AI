@@ -70,12 +70,13 @@ def classifica_tutti_i_rischi(richiesta, attore=None) -> dict:
 
 
 def stima_incrementi_se_serve(richiesta, attore=None) -> bool:
-    """Stima gli incrementi mancanti, UNA sola volta. True se ha valorizzato qualcosa."""
+    """Stima beneficio e incrementi mancanti, UNA sola volta. True se ha valorizzato qualcosa."""
     if richiesta.incrementi_ai_stimati:
         return False
     eff_manca = richiesta.incremento_efficienza is None
     qual_manca = richiesta.incremento_qualitativo is None
-    if not eff_manca and not qual_manca:
+    ben_manca = richiesta.saving_economico is None
+    if not eff_manca and not qual_manca and not ben_manca:
         richiesta.incrementi_ai_stimati = True
         richiesta.save(update_fields=["incrementi_ai_stimati"])
         return False
@@ -88,6 +89,7 @@ def stima_incrementi_se_serve(richiesta, attore=None) -> bool:
             return False
         valorizzati = richiesta.applica_stima_incrementi(
             efficienza=dati.get("efficienza"), qualita=dati.get("qualita"),
+            beneficio=dati.get("beneficio"), beneficio_nota=dati.get("beneficio_nota", ""),
             modello=dati.get("modello", ""), attore=attore)
         return bool(valorizzati)
     except Exception as e:  # noqa: BLE001

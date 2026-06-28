@@ -218,7 +218,7 @@ def nuova(request):
             estimato = servizi.stima_incrementi_se_serve(richiesta, attore=request.user)
             msg = f"Richiesta {richiesta.codice} creata in bozza."
             if estimato:
-                msg += " Incremento di efficienza/qualità stimato dall'AI (modificabile)."
+                msg += " Beneficio atteso e incrementi stimati dall'AI dove mancanti (modificabili)."
             messages.success(request, msg)
             return redirect(richiesta)
     else:
@@ -243,8 +243,10 @@ def modifica(request, pk):
         if form.is_valid():
             era_inviata = richiesta.stato == Stato.INVIATA
             form.save()
-            # Prima volta utile: stima gli incrementi ancora vuoti (best-effort).
-            servizi.stima_incrementi_se_serve(richiesta, attore=request.user)
+            # Solo lato owner: prima volta utile, stima beneficio/incrementi ancora vuoti (best-effort).
+            # La Funzione AI non genera mai questi valori (li corregge solo a mano).
+            if is_owner and not request.user.is_ai_officer:
+                servizi.stima_incrementi_se_serve(richiesta, attore=request.user)
             if is_owner and not request.user.is_ai_officer and era_inviata:
                 richiesta.stato = Stato.BOZZA
                 richiesta.save(update_fields=["stato", "aggiornata_il"])

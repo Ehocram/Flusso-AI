@@ -334,24 +334,9 @@ class Richiesta(models.Model):
                 self.costo_token_ambito = AmbitoCosto.UTENTE
             campi += ["costo_token_ai", "costo_token_ai_stimato",
                       "costo_token_periodicita", "costo_token_ambito"]
-        # Beneficio economico e incrementi sono la business case dell'OWNER: l'AI li
-        # PROPONE solo se mancanti e non sovrascrive MAI i valori gia' indicati.
-        effi = _dec(dati.get("efficienza"))
-        if effi is not None and self.incremento_efficienza is None:
-            self.incremento_efficienza = effi
-            campi.append("incremento_efficienza")
-        qual = _dec(dati.get("qualita"))
-        if qual is not None and self.incremento_qualitativo is None:
-            self.incremento_qualitativo = qual
-            campi.append("incremento_qualitativo")
-        ben = _dec(dati.get("beneficio_euro"))
-        if ben is not None and self.saving_economico is None:
-            self.saving_economico = ben
-            campi.append("saving_economico")
-            nota = (dati.get("beneficio_nota") or "").strip()[:200]
-            if nota and not self.saving_economico_note:
-                self.saving_economico_note = nota
-                campi.append("saving_economico_note")
+        # Beneficio economico e incrementi (efficienza/qualita) NON sono toccati qui:
+        # restano di competenza dell'owner (proposti solo alla creazione della richiesta,
+        # vedi applica_stima_incrementi). Il bottone AI compila solo i campi tecnici.
         if campi:
             self.save(update_fields=sorted(set(campi)))
         return campi
@@ -749,7 +734,8 @@ class Richiesta(models.Model):
         return evento
 
     @transaction.atomic
-    def applica_stima_incrementi(self, efficienza=None, qualita=None, modello="", attore=None):
+    def applica_stima_incrementi(self, efficienza=None, qualita=None, beneficio=None,
+                                 beneficio_nota="", modello="", attore=None):
         """Applica le percentuali stimate dall'AI ai SOLI campi lasciati vuoti dall'owner.
 
         Imposta sempre il flag «incrementi_ai_stimati» (la stima va fatta una sola
@@ -765,6 +751,15 @@ class Richiesta(models.Model):
             self.incremento_qualitativo = qualita
             campi.append("incremento_qualitativo")
             valorizzati.append(f"qualità {qualita}%")
+        if self.saving_economico is None and beneficio is not None:
+            from decimal import Decimal
+            self.saving_economico = Decimal(str(beneficio))
+            campi.append("saving_economico")
+            valorizzati.append(f"beneficio € {beneficio}")
+            nota = (beneficio_nota or "").strip()[:200]
+            if nota and not self.saving_economico_note:
+                self.saving_economico_note = nota
+                campi.append("saving_economico_note")
         self.incrementi_ai_stimati = True
         self.save(update_fields=campi)
         if valorizzati:

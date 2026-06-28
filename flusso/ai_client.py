@@ -269,11 +269,12 @@ def classifica_rischio(richiesta, config, tipo) -> tuple[dict | None, str | None
 PROMPT_INCREMENTI = (
     "Sei un analista che stima i ritorni ATTESI di un progetto di AI per ISEO Group "
     "(produttore di sistemi di chiusura e controllo accessi). In base alla descrizione, "
-    "stima due percentuali realistiche e prudenti: l'incremento di EFFICIENZA e l'incremento "
-    "di QUALITA' che il progetto puo' portare al processo interessato. Usa valori interi 0-100; "
-    "se un incremento non e' plausibile usa 0. Non essere ottimista: sono stime preliminari, "
-    "modificabili dall'owner.\n"
-    'Il JSON deve avere ESATTAMENTE queste chiavi: {"efficienza": <numero 0-100>, "qualita": <numero 0-100>}'
+    "stima in modo realistico e PRUDENTE: l'incremento di EFFICIENZA e di QUALITA' che il "
+    "progetto puo' portare al processo (percentuali intere 0-100; 0 se un incremento non e' "
+    "plausibile) e il BENEFICIO economico annuo atteso in EURO (0 se il valore e' prevalentemente "
+    "qualitativo). Non essere ottimista: sono stime preliminari, modificabili dall'owner.\n"
+    'Il JSON deve avere ESATTAMENTE queste chiavi: {"efficienza": <numero 0-100>, '
+    '"qualita": <numero 0-100>, "beneficio": <euro/anno>, "beneficio_nota": "<breve nota, max 1 frase>"}'
 )
 
 
@@ -300,12 +301,22 @@ def stima_incrementi(richiesta, config) -> tuple[dict | None, str | None]:
             return None
         return max(0.0, min(100.0, round(x, 1)))
 
+    def _eur(v):
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            return None
+        return max(0.0, round(x, 2))
+
     eff, qual = _pct(obj.get("efficienza")), _pct(obj.get("qualita"))
-    if eff is None and qual is None:
+    ben = _eur(obj.get("beneficio"))
+    if eff is None and qual is None and ben is None:
         return None, "Nessun valore numerico valido nella risposta."
-    audit.info("incrementi_ai richiesta=%s eff=%s qual=%s modello=%s",
-               getattr(richiesta, "codice", "?"), eff, qual, config.modello)
-    return {"efficienza": eff, "qualita": qual, "modello": config.modello}, None
+    audit.info("incrementi_ai richiesta=%s eff=%s qual=%s beneficio=%s modello=%s",
+               getattr(richiesta, "codice", "?"), eff, qual, ben, config.modello)
+    return {"efficienza": eff, "qualita": qual, "beneficio": ben,
+            "beneficio_nota": str(obj.get("beneficio_nota") or "")[:200],
+            "modello": config.modello}, None
 
 
 PROMPT_COSTO_TOKEN = (
@@ -363,11 +374,9 @@ PROMPT_ANALISI_COMPLETA = (
     '  "autonomia": uno tra "NON_AGENTICA", "AGENTICA_SUPPORTO", "AGENTICA_AUTONOMA",\n'
     '  "deployment": uno tra "API" (cloud), "LOCALE" (on-premise), "IBRIDO",\n'
     '  "effort_ore": intero (ore-uomo di sviluppo stimate),\n'
-    '  "costo_token_mensile_per_utente": numero in euro (consumo token al mese per utente; 0 se non applicabile),\n'
-    '  "efficienza": intero 0-100 (incremento di efficienza atteso, %),\n'
-    '  "qualita": intero 0-100 (incremento qualitativo atteso, %),\n'
-    '  "beneficio_euro": numero in euro (beneficio economico annuo atteso; 0 se prevalentemente qualitativo),\n'
-    '  "beneficio_nota": stringa breve (max 1 frase) sul beneficio economico.'
+    '  "costo_token_mensile_per_utente": numero in euro (consumo token al mese per utente; 0 se non applicabile).\n'
+    "NON stimare il beneficio economico ne' le percentuali di efficienza/qualita: "
+    "non fanno parte di questa analisi (sono di competenza dell'owner)."
 )
 
 
