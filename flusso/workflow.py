@@ -23,6 +23,7 @@ class Stato(models.TextChoices):
     INVIATA = "INVIATA", "Inviata alla Funzione AI"
     IN_QUALIFICA = "IN_QUALIFICA", "In qualifica e analisi"
     ATTESA_BUDGET = "ATTESA_BUDGET", "Attesa decisione budget (owner)"
+    PRONTA_APPROVAZIONE = "PRONTA_APPROVAZIONE", "Pronta per approvazione"
     IN_APPROVAZIONE = "IN_APPROVAZIONE", "In approvazione"
     APPROVATA = "APPROVATA", "Approvata"
     RESPINTA = "RESPINTA", "Respinta"
@@ -47,7 +48,7 @@ STATI_MODIFICA_BLOCCATA = {Stato.IN_APPROVAZIONE, Stato.APPROVATA, Stato.ATTIVO,
 FASI = {
     "in_coda": [Stato.BOZZA, Stato.INVIATA],
     "in_analisi": [Stato.IN_QUALIFICA, Stato.ATTESA_BUDGET],
-    "in_approvazione": [Stato.IN_APPROVAZIONE],
+    "in_approvazione": [Stato.PRONTA_APPROVAZIONE, Stato.IN_APPROVAZIONE],
     "approvati": [Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO],
     "chiusi": [Stato.COMPLETATO, Stato.RESPINTA, Stato.ARCHIVIATA],
 }
@@ -135,11 +136,29 @@ TRANSIZIONI: tuple[Transizione, ...] = (
     ),
     Transizione(
         azione="presenta_approvazione",
-        label="Presenta per l'approvazione",
+        label="Segna pronta per l'approvazione",
         da=(Stato.IN_QUALIFICA,),
+        a=Stato.PRONTA_APPROVAZIONE,
+        ruoli=(Ruolo.AI_OFFICER,),
+        descrizione="Rischi validati e budget deciso: la pratica è pronta. La Funzione AI deciderà quando inviarla alla Direzione.",
+    ),
+    Transizione(
+        azione="invia_in_approvazione",
+        label="Invia in approvazione alla Direzione",
+        da=(Stato.PRONTA_APPROVAZIONE,),
         a=Stato.IN_APPROVAZIONE,
         ruoli=(Ruolo.AI_OFFICER,),
-        descrizione="La Funzione AI sottopone la proposta all'Approvatore.",
+        stile="positivo",
+        descrizione="Solo la Funzione AI sottopone la pratica all'Approvatore.",
+    ),
+    Transizione(
+        azione="ritira_da_approvazione",
+        label="Riporta a «Pronta per approvazione»",
+        da=(Stato.IN_APPROVAZIONE,),
+        a=Stato.PRONTA_APPROVAZIONE,
+        ruoli=(Ruolo.AI_OFFICER,),
+        stile="neutro",
+        descrizione="La Funzione AI ritira la pratica dalla coda della Direzione: torna modificabile e potrà essere reinviata.",
     ),
     Transizione(
         azione="approva",

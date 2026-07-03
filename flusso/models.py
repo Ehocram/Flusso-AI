@@ -473,6 +473,29 @@ class Richiesta(models.Model):
         return sum(parti)
 
     @property
+    def costo_progetto_motivo_incompleto(self):
+        """Perché il costo di progetto non è determinabile (None se è calcolabile).
+
+        Usato dal gate di invio a budget per dare un errore preciso invece del
+        blocco generico: il caso tipico è costo token «per utente/per team» con
+        numero utenti non compilato sulla richiesta.
+        """
+        if self.costo_progetto_stimato is not None:
+            return None
+        if self.costo_token_ai is None and self.altri_costi is None:
+            return ("manca il costo del progetto: indica il costo token AI e/o gli altri "
+                    "costi (0 se il progetto non ha costi).")
+        if (self.costo_token_ai is not None
+                and self.costo_token_ambito in ("UTENTE", "TEAM")
+                and not self.numero_utenti):
+            ambito = self.get_costo_token_ambito_display().lower()
+            return (f"il costo token è indicato «{ambito}» ma sulla richiesta manca il "
+                    "«Numero utenti/team» per calcolare il totale: compilalo con "
+                    "«Modifica», oppure cambia l'ambito in «Complessivo».")
+        return ("il costo del progetto non è determinabile: verifica costo token, "
+                "periodicità, ambito e numero utenti.")
+
+    @property
     def ripartizione_budget(self):
         """Quanto del costo di progetto è a budget e quanto extra budget.
 

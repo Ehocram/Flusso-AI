@@ -281,16 +281,15 @@ def esegui_azione(request, pk):
         return redirect(richiesta)
 
     # GATE: l'invio all'owner per la decisione di budget richiede il costo stimato.
-    if azione == "invia_a_budget" and richiesta.costo_progetto_stimato is None:
-        messages.error(
-            request,
-            "Completa prima il costo del progetto (token e/o altri costi, con periodicità, "
-            "ambito e numero utenti dove serve) prima di inviarlo all'owner per il budget.",
-        )
-        return redirect(richiesta)
+    # In caso di blocco il motivo è puntuale (es. ambito per-utente senza numero utenti).
+    if azione == "invia_a_budget":
+        motivo = richiesta.costo_progetto_motivo_incompleto
+        if motivo:
+            messages.error(request, "Non posso inviare all'owner: " + motivo)
+            return redirect(richiesta)
 
     # GATE: niente passaggio alla Direzione senza decisione di budget + tre validazioni.
-    if azione == "presenta_approvazione":
+    if azione in ("presenta_approvazione", "invia_in_approvazione"):
         if not richiesta.esito_budget:
             messages.error(
                 request,
@@ -635,9 +634,10 @@ def analizza_rischio(request, pk):
     return redirect(richiesta)
 
 
-def _avanza_in_approvazione_se_pronta(richiesta, attore) -> bool:
+def _segna_pronta_se_validata(richiesta, attore) -> bool:
     """Auto-avanzamento: se tutte le dimensioni di rischio sono validate/corrette e il
-    budget è definito, la pratica va in approvazione senza ulteriori passaggi manuali."""
+    budget è definito, la pratica passa a «Pronta per approvazione». L'invio alla
+    Direzione resta un'azione manuale riservata alla Funzione AI."""
     if (richiesta.stato == Stato.IN_QUALIFICA and richiesta.esito_budget
             and richiesta.rischi_tutti_validati):
         try:
@@ -670,8 +670,8 @@ def valida_rischio(request, pk, tipo):
         )
         verbo = "modificato" if classificazione.stato == "MODIFICATO" else "validato"
         messages.success(request, f"Rischio {_NOMI_RISCHIO[tipo]} {verbo}: {classificazione.categoria_label}.")
-        if _avanza_in_approvazione_se_pronta(richiesta, request.user):
-            messages.success(request, "Tutte le dimensioni di rischio sono validate: la pratica è stata inviata in approvazione alla Direzione.")
+        if _segna_pronta_se_validata(richiesta, request.user):
+            messages.success(request, "Tutte le dimensioni di rischio sono validate: la pratica è «Pronta per approvazione». La Funzione AI deciderà quando inviarla alla Direzione.")
     else:
         messages.error(request, "Selezione non valida.")
     return redirect(richiesta)

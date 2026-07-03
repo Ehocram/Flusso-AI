@@ -38,7 +38,7 @@ COL = {
 }
 
 # Percorsi di workflow (azione:attore) per raggiungere ogni stato target.
-_BASE = ["invia:owner", "prendi_in_carico:ai", "presenta_approvazione:ai"]
+_BASE = ["invia:owner", "prendi_in_carico:ai", "presenta_approvazione:ai", "invia_in_approvazione:ai"]
 PERCORSI = {
     Stato.INVIATA: ["invia:owner"],
     Stato.IN_APPROVAZIONE: _BASE,
