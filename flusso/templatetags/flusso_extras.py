@@ -48,6 +48,7 @@ from flusso.workflow import FASI, Stato  # noqa: E402
 _FASI_STEPPER = [
     ("in_coda", "In coda"),
     ("in_analisi", "Analisi"),
+    ("pronte", "Pronta"),
     ("in_approvazione", "Approvazione"),
     ("approvati", "Attivo"),
     ("chiusi", "Chiuso"),

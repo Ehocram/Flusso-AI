@@ -48,7 +48,8 @@ STATI_MODIFICA_BLOCCATA = {Stato.IN_APPROVAZIONE, Stato.APPROVATA, Stato.ATTIVO,
 FASI = {
     "in_coda": [Stato.BOZZA, Stato.INVIATA],
     "in_analisi": [Stato.IN_QUALIFICA, Stato.ATTESA_BUDGET],
-    "in_approvazione": [Stato.PRONTA_APPROVAZIONE, Stato.IN_APPROVAZIONE],
+    "pronte": [Stato.PRONTA_APPROVAZIONE],
+    "in_approvazione": [Stato.IN_APPROVAZIONE],
     "approvati": [Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO],
     "chiusi": [Stato.COMPLETATO, Stato.RESPINTA, Stato.ARCHIVIATA],
 }

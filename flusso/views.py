@@ -126,7 +126,8 @@ def kanban(request):
     colonne = []
     etichette = {
         "in_coda": "In coda", "in_analisi": "In analisi (Funzione AI)",
-        "in_approvazione": "In approvazione", "approvati": "Approvati / attivi", "chiusi": "Chiusi",
+        "pronte": "Pronte per approvazione", "in_approvazione": "In approvazione",
+        "approvati": "Approvati / attivi", "chiusi": "Chiusi",
     }
     for chiave, stati in FASI.items():
         items = [r for r in qs if r.stato in stati]

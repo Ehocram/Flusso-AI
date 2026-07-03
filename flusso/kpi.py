@@ -18,6 +18,7 @@ from .workflow import FASI, Stato
 _COLORI_FASE = {
     "in_coda": "#9aa0a6",
     "in_analisi": "#1d6fb8",
+    "pronte": "#7a4fb0",
     "in_approvazione": "#e0a800",
     "approvati": "#1f8a4c",
     "chiusi": "#5b5d63",
@@ -25,11 +26,12 @@ _COLORI_FASE = {
 _ETICHETTE_FASE = {
     "in_coda": "In coda",
     "in_analisi": "In analisi",
+    "pronte": "Pronte per approvazione",
     "in_approvazione": "In approvazione",
     "approvati": "Approvati / attivi",
     "chiusi": "Chiusi",
 }
-_ORDINE_FASE = ["in_coda", "in_analisi", "in_approvazione", "approvati", "chiusi"]
+_ORDINE_FASE = ["in_coda", "in_analisi", "pronte", "in_approvazione", "approvati", "chiusi"]
 _RAGGIO = 52
 
 
@@ -70,7 +72,8 @@ def calcola_kpi() -> dict:
     respinti = per_stato[Stato.RESPINTA]
     approvati = per_stato[Stato.APPROVATA] + attivi + completati
     in_approvazione = per_stato[Stato.IN_APPROVAZIONE]
-    in_pipeline = per_fase["in_coda"] + per_fase["in_analisi"] + per_fase["in_approvazione"]
+    in_pipeline = (per_fase["in_coda"] + per_fase["in_analisi"]
+                   + per_fase["pronte"] + per_fase["in_approvazione"])
     decisi = approvati + respinti
     tasso_appr = round(100 * approvati / decisi) if decisi else None
 
