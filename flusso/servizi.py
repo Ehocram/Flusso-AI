@@ -9,7 +9,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from .ai_client import (classifica_rischio, genera_analisi_completa, stima_costo_token,
-                        stima_incrementi)
+                        stima_incrementi, stima_ripartizione_effort)
 from .models import ConfigurazioneAI, TipoRischio
 
 log = logging.getLogger("flusso.audit")
@@ -185,4 +185,43 @@ def pianifica_su_approvazione(richiesta, forza=False):
     richiesta.data_inizio = inizio
     richiesta.data_consegna_prevista = fine
     richiesta.save(update_fields=["data_inizio", "data_consegna_prevista"])
+    return True
+
+
+def ripartisci_effort_con_ai(richiesta):
+    """Fa proporre all'AI la ripartizione dell'effort e la applica (totale invariato).
+
+    Ritorna (True, None) oppure (False, errore). Funziona in QUALSIASI stato,
+    inclusi in approvazione e approvati: non modifica l'effort totale, solo la
+    sua suddivisione esplicativa.
+    """
+    if not richiesta.effort_ore:
+        return False, "La richiesta non ha un effort in ore da ripartire."
+    cfg = _config_pronta()
+    if cfg is None:
+        return False, "Ripartizione AI non disponibile (abilitazione o API key)."
+    voci, errore = stima_ripartizione_effort(richiesta, cfg)
+    if errore:
+        return False, errore
+    create = richiesta.applica_ripartizione_effort(voci)
+    if not create:
+        return False, "L'AI non ha restituito una ripartizione utilizzabile."
+    return True, None
+
+
+def crea_griglia_effort(richiesta) -> bool:
+    """Griglia manuale: tutte le attività a 0 ore con figure di default.
+
+    Per compilare a mano quando l'AI non è disponibile o non convince. Non crea
+    nulla se esistono già voci. Le ore a 0 NON quadrano finché non distribuite:
+    la pagina lo segnala (fail loudly, nessun numero inventato).
+    """
+    from .models import (AttivitaEffort, FIGURA_DEFAULT_PER_ATTIVITA, VoceEffort)
+    if richiesta.voci_effort.exists():
+        return False
+    VoceEffort.objects.bulk_create([
+        VoceEffort(richiesta=richiesta, attivita=a, figura=FIGURA_DEFAULT_PER_ATTIVITA[a],
+                   ore=0, stimata_ai=False)
+        for a in AttivitaEffort
+    ])
     return True

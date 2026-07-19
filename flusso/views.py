@@ -13,9 +13,10 @@ from collections import Counter
 from accounts.models import Funzione
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -25,7 +26,8 @@ from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, BeneficioForm, Impo
                     PianificazioneForm, RichiestaForm, SalForm, TrattamentoRischioForm,
                     ValidazioneRischioForm)
 from .kpi import calcola_kpi
-from .models import (ClassificazioneRischio, ConfigurazioneAI, DIMENSIONE_PER_RUOLO,
+from .models import (AttivitaEffort, ClassificazioneRischio, ConfigurazioneAI,
+                     DIMENSIONE_PER_RUOLO, FiguraEffort, ORDINE_ATTIVITA, VoceEffort,
                      EsitoBudget, PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
                      StatoRischio, TipoRischio)
 from .notifiche import notifica_transizione
@@ -478,6 +480,119 @@ def salva_pianificazione(request, pk):
     else:
         messages.error(request, "Date non valide: controlla inizio e consegna.")
     return redirect("flusso:schedulazione")
+
+
+@login_required
+def ripartizione_effort(request):
+    """Ripartizione dell'effort per attività e figure: la vista per spiegare il carico.
+
+    Aggregati di portafoglio (sviluppo vs resto, per attività, per figura) e
+    dettaglio per progetto. Include OGNI stato, anche in approvazione e approvati:
+    la ripartizione non tocca l'effort totale, lo spiega.
+    """
+    if not request.user.is_gestore:
+        return HttpResponseForbidden("Pagina riservata.")
+    qs = (Richiesta.objects.filter(effort_ore__gt=0)
+          .select_related("proponente").prefetch_related("voci_effort")
+          .order_by("-effort_ore", "-creata_il"))
+    ordine = {a: i for i, a in enumerate(ORDINE_ATTIVITA)}
+    righe = []
+    for r in qs:
+        voci = sorted(r.voci_effort.all(), key=lambda v: ordine.get(v.attivita, 99))
+        righe.append({"r": r, "voci": voci, "quadra": r.ripartizione_quadra,
+                      "delta": r.ripartizione_delta})
+    voci_tutte = VoceEffort.objects.filter(richiesta__in=qs)
+    tot_rip = voci_tutte.aggregate(t=Sum("ore"))["t"] or 0
+    per_att = {x["attivita"]: x["t"] for x in voci_tutte.values("attivita").annotate(t=Sum("ore"))}
+    per_fig = {x["figura"]: x["t"] for x in voci_tutte.values("figura").annotate(t=Sum("ore"))}
+    att_labels, fig_labels = dict(AttivitaEffort.choices), dict(FiguraEffort.choices)
+    agg_att = [{"codice": a, "label": att_labels[a], "ore": per_att.get(a, 0),
+                "pct": round(per_att.get(a, 0) * 100 / tot_rip) if tot_rip else 0}
+               for a in ORDINE_ATTIVITA]
+    agg_fig = sorted([{"label": fig_labels[f], "ore": o,
+                       "pct": round(o * 100 / tot_rip) if tot_rip else 0}
+                      for f, o in per_fig.items()], key=lambda x: -x["ore"])
+    ore_sviluppo = per_att.get(AttivitaEffort.SVILUPPO.value, 0)
+    pct_sviluppo = round(ore_sviluppo * 100 / tot_rip) if tot_rip else 0
+    return render(request, "flusso/ripartizione.html", {
+        "righe": righe, "puo_modificare": request.user.is_ai_officer,
+        "tot_effort": qs.aggregate(t=Sum("effort_ore"))["t"] or 0, "tot_rip": tot_rip,
+        "agg_att": agg_att, "agg_fig": agg_fig,
+        "ore_sviluppo": ore_sviluppo, "pct_sviluppo": pct_sviluppo,
+        "ore_resto": tot_rip - ore_sviluppo, "pct_resto": (100 - pct_sviluppo) if tot_rip else 0,
+        "senza_ripartizione": sum(1 for x in righe if not x["voci"]),
+        "senza_effort": Richiesta.objects.exclude(effort_ore__gt=0).count(),
+        "fig_choices": FiguraEffort.choices,
+    })
+
+
+@login_required
+@require_POST
+def genera_ripartizione(request, pk):
+    """L'AI propone la ripartizione dell'effort (sostituisce le voci; totale invariato)."""
+    richiesta = get_object_or_404(Richiesta, pk=pk)
+    if not request.user.is_ai_officer:
+        return HttpResponseForbidden("Solo la Funzione AI puo' generare la ripartizione.")
+    ok, errore = servizi.ripartisci_effort_con_ai(richiesta)
+    if ok:
+        messages.success(request, f"Ripartizione effort proposta dall'AI per {richiesta.codice} "
+                                  "(totale invariato, modificabile).")
+    else:
+        messages.error(request, f"Ripartizione {richiesta.codice} non riuscita: {errore}")
+    return redirect(reverse("flusso:ripartizione_effort") + f"#r{richiesta.pk}")
+
+
+@login_required
+@require_POST
+def salva_ripartizione(request, pk):
+    """Salvataggio manuale delle voci: la somma DEVE quadrare con l'effort registrato."""
+    richiesta = get_object_or_404(Richiesta, pk=pk)
+    if not request.user.is_ai_officer:
+        return HttpResponseForbidden("Solo la Funzione AI puo' modificare la ripartizione.")
+    voci = list(richiesta.voci_effort.all())
+    figure_valide = dict(FiguraEffort.choices)
+    nuove = []
+    for v in voci:
+        try:
+            ore = int(request.POST.get(f"ore_{v.id}", v.ore))
+        except (TypeError, ValueError):
+            messages.error(request, f"Ore non valide su «{v.get_attivita_display()}».")
+            return redirect(reverse("flusso:ripartizione_effort") + f"#r{richiesta.pk}")
+        if ore < 0:
+            messages.error(request, f"Ore negative su «{v.get_attivita_display()}».")
+            return redirect(reverse("flusso:ripartizione_effort") + f"#r{richiesta.pk}")
+        figura = request.POST.get(f"figura_{v.id}", v.figura)
+        if figura not in figure_valide:
+            figura = v.figura
+        nuove.append((v, ore, figura))
+    somma = sum(o for _, o, _ in nuove)
+    atteso = richiesta.effort_ore or 0
+    if somma != atteso:
+        messages.error(request, f"La ripartizione di {richiesta.codice} non quadra: "
+                                f"somma {somma} h contro un effort di {atteso} h "
+                                f"(Δ {somma - atteso:+d} h). Correggi e risalva.")
+        return redirect(reverse("flusso:ripartizione_effort") + f"#r{richiesta.pk}")
+    for v, ore, figura in nuove:
+        if v.ore != ore or v.figura != figura:
+            v.ore, v.figura, v.stimata_ai = ore, figura, False
+            v.save(update_fields=["ore", "figura", "stimata_ai", "aggiornata_il"])
+    messages.success(request, f"Ripartizione di {richiesta.codice} aggiornata (quadra: {atteso} h).")
+    return redirect(reverse("flusso:ripartizione_effort") + f"#r{richiesta.pk}")
+
+
+@login_required
+@require_POST
+def crea_griglia_effort_view(request, pk):
+    """Griglia manuale a 0 ore, da compilare (nessun numero inventato)."""
+    richiesta = get_object_or_404(Richiesta, pk=pk)
+    if not request.user.is_ai_officer:
+        return HttpResponseForbidden("Solo la Funzione AI puo' creare la griglia.")
+    if servizi.crea_griglia_effort(richiesta):
+        messages.success(request, f"Griglia creata per {richiesta.codice}: distribuisci le "
+                                  f"{richiesta.effort_ore} h e salva.")
+    else:
+        messages.error(request, "Esistono già voci di ripartizione per questa richiesta.")
+    return redirect(reverse("flusso:ripartizione_effort") + f"#r{richiesta.pk}")
 
 
 @login_required

@@ -399,3 +399,53 @@ def genera_analisi_completa(richiesta, config):
         return None, "Risposta del modello non interpretabile come JSON."
     audit.info("analisi_ai richiesta=%s modello=%s", getattr(richiesta, "codice", "?"), config.modello)
     return obj, None
+
+
+PROMPT_RIPARTIZIONE = (
+    "Sei la Funzione AI di ISEO. Ti viene dato un progetto AI interno (titolo, descrizione, "
+    "analisi di fattibilita', tipo di AI, infrastruttura) e il suo effort TOTALE gia' deciso, in ore.\n"
+    "NON devi ristimare il totale: devi solo RIPARTIRLO in percentuale sulle attivita' del ciclo "
+    "di vita del progetto. Tieni conto che il codice viene scritto con forte supporto dell'AI, "
+    "quindi lo SVILUPPO pesa tipicamente meno che in un progetto tradizionale, mentre analisi, "
+    "test con gli utenti, compliance e adozione pesano in proporzione di piu'. Sii realistico e "
+    "specifico per QUESTO progetto (es. un progetto vendor/attivazione ha sviluppo quasi nullo; "
+    "un progetto con dati personali ha compliance alta).\n"
+    "Attivita' ammesse (usa ESATTAMENTE questi codici):\n"
+    "  ANALISI (analisi e progettazione), SVILUPPO (implementazione), TEST (test e validazione), "
+    "COMPLIANCE (rischio, GDPR/AI Act, documentazione), INFRASTRUTTURA (deploy e integrazioni IT), "
+    "ADOZIONE (formazione e avvio all'uso).\n"
+    "Figura prevalente per ogni attivita' (usa ESATTAMENTE questi codici, sono RUOLI, mai persone):\n"
+    "  FUNZIONE_AI, OWNER (owner del progetto o suoi delegati), INFRA (IT/infrastruttura), "
+    "PRESIDI (CISO/DPO/Legale), UTENTI (utenti chiave).\n"
+    'Il JSON deve avere ESATTAMENTE questa forma: {"voci": [{"attivita": "SVILUPPO", '
+    '"figura": "FUNZIONE_AI", "percento": 25}, ...]}. Le percentuali sono interi che sommano 100; '
+    "ometti le attivita' non pertinenti."
+)
+
+
+def stima_ripartizione_effort(richiesta, config):
+    """Propone la ripartizione percentuale dell'effort sulle attività.
+
+    Ritorna (lista_voci, None) — ogni voce {attivita, figura, percento} — oppure
+    (None, errore). Il totale ore NON viene mai modificato: la conversione in ore
+    e la quadratura sono deterministiche (Richiesta.applica_ripartizione_effort).
+    """
+    contesto = [_descrizione_progetto(richiesta)]
+    if richiesta.analisi_fattibilita:
+        contesto.append(f"Analisi di fattibilita': {richiesta.analisi_fattibilita}")
+    if richiesta.ai_autonomia:
+        contesto.append(f"Tipo AI: {richiesta.get_ai_autonomia_display()}")
+    if richiesta.ai_deployment:
+        contesto.append(f"Infrastruttura: {richiesta.get_ai_deployment_display()}")
+    contesto.append(f"EFFORT TOTALE da ripartire: {richiesta.effort_ore} ore.")
+    contenuto = ("Ripartisci l'effort del seguente progetto.\n\n"
+                 + "\n".join(contesto) + "\n\n" + _ISTRUZIONE_JSON)
+    data, errore = _chiama_modello(config, PROMPT_RIPARTIZIONE, contenuto, 1500, RISCHIO_TIMEOUT)
+    if errore:
+        return None, errore
+    obj = _estrai_json(_testo_risposta(data))
+    if not isinstance(obj, dict) or not isinstance(obj.get("voci"), list):
+        return None, "Risposta del modello non interpretabile come JSON con «voci»."
+    audit.info("ripartizione_ai richiesta=%s voci=%s modello=%s",
+               getattr(richiesta, "codice", "?"), len(obj["voci"]), config.modello)
+    return obj["voci"], None

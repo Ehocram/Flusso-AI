@@ -341,6 +341,73 @@ class Richiesta(models.Model):
             self.save(update_fields=sorted(set(campi)))
         return campi
 
+    # --- Ripartizione dell'effort sulle attività -----------------------------
+    @property
+    def effort_ripartito(self):
+        """Somma delle ore ripartite sulle attività (None se non c'è alcuna voce)."""
+        voci = list(self.voci_effort.all())
+        return sum(v.ore for v in voci) if voci else None
+
+    @property
+    def ripartizione_quadra(self) -> bool:
+        """True se la ripartizione esiste e somma esattamente all'effort registrato."""
+        rip = self.effort_ripartito
+        return rip is not None and rip == (self.effort_ore or 0)
+
+    @property
+    def ripartizione_delta(self):
+        """Differenza ore ripartite - effort (0 se quadra; None se nessuna voce)."""
+        rip = self.effort_ripartito
+        if rip is None:
+            return None
+        return rip - (self.effort_ore or 0)
+
+    def applica_ripartizione_effort(self, voci) -> list:
+        """Applica una proposta di ripartizione {attivita, figura, percento} alle ORE registrate.
+
+        Deterministico: le percentuali vengono normalizzate a 100 e convertite in ore
+        con arrotondamento a resto massimo, così la somma delle voci è SEMPRE uguale
+        a effort_ore. L'AI propone solo le proporzioni; il totale non viene mai toccato.
+        Sostituisce le voci esistenti. Ritorna le voci create.
+        """
+        from django.db import transaction
+
+        tot = self.effort_ore or 0
+        if tot <= 0:
+            return []
+        attivita_valide = dict(AttivitaEffort.choices)
+        figure_valide = dict(FiguraEffort.choices)
+        valide = []
+        for v in voci or []:
+            att = v.get("attivita")
+            if att not in attivita_valide:
+                continue
+            try:
+                pct = float(v.get("percento") or 0)
+            except (TypeError, ValueError):
+                continue
+            if pct <= 0:
+                continue
+            fig = v.get("figura")
+            if fig not in figure_valide:
+                fig = FIGURA_DEFAULT_PER_ATTIVITA.get(att, FiguraEffort.OWNER)
+            valide.append([att, fig, pct])
+        if not valide:
+            return []
+        somma_pct = sum(p for _, _, p in valide)
+        quote = [(att, fig, p * tot / somma_pct) for att, fig, p in valide]
+        ore = [int(q) for _, _, q in quote]
+        resto = tot - sum(ore)
+        ordine = sorted(range(len(quote)), key=lambda i: quote[i][2] - int(quote[i][2]), reverse=True)
+        for i in ordine[:resto]:
+            ore[i] += 1
+        with transaction.atomic():
+            self.voci_effort.all().delete()
+            create = [VoceEffort(richiesta=self, attivita=att, figura=fig, ore=o, stimata_ai=True)
+                      for (att, fig, _), o in zip(quote, ore) if o > 0]
+            VoceEffort.objects.bulk_create(create)
+        return create
+
     class Meta:
         verbose_name = "Richiesta"
         verbose_name_plural = "Richieste"
@@ -1254,3 +1321,59 @@ class ConfigurazioneAI(models.Model):
         custom = {"AIACT": self.prompt_rischio_aiact, "NIS2": self.prompt_rischio_nis2,
                   "GDPR": self.prompt_rischio_gdpr}.get(tipo, "")
         return (custom or "").strip() or PROMPT_RISCHIO_DEFAULT.get(tipo, "")
+
+
+class AttivitaEffort(models.TextChoices):
+    """Attività su cui viene ripartito l'effort di progetto (tassonomia fissa per aggregare)."""
+
+    ANALISI = "ANALISI", "Analisi e progettazione"
+    SVILUPPO = "SVILUPPO", "Sviluppo"
+    TEST = "TEST", "Test e validazione"
+    COMPLIANCE = "COMPLIANCE", "Compliance e rischio"
+    INFRASTRUTTURA = "INFRASTRUTTURA", "Infrastruttura e deploy"
+    ADOZIONE = "ADOZIONE", "Formazione e adozione"
+
+
+class FiguraEffort(models.TextChoices):
+    """Figure coinvolte, a livello di RUOLO (mai persone nominate)."""
+
+    FUNZIONE_AI = "FUNZIONE_AI", "Funzione AI"
+    OWNER = "OWNER", "Owner / delegati"
+    INFRA = "INFRA", "IT / Infrastruttura"
+    PRESIDI = "PRESIDI", "Presìdi (CISO/DPO/Legale)"
+    UTENTI = "UTENTI", "Utenti chiave"
+
+
+FIGURA_DEFAULT_PER_ATTIVITA = {
+    AttivitaEffort.ANALISI: FiguraEffort.FUNZIONE_AI,
+    AttivitaEffort.SVILUPPO: FiguraEffort.FUNZIONE_AI,
+    AttivitaEffort.TEST: FiguraEffort.OWNER,
+    AttivitaEffort.COMPLIANCE: FiguraEffort.PRESIDI,
+    AttivitaEffort.INFRASTRUTTURA: FiguraEffort.INFRA,
+    AttivitaEffort.ADOZIONE: FiguraEffort.OWNER,
+}
+
+ORDINE_ATTIVITA = [a.value for a in AttivitaEffort]
+
+
+class VoceEffort(models.Model):
+    """Una voce della ripartizione effort: attività, figura coinvolta, ore.
+
+    La somma delle voci di una richiesta deve quadrare con effort_ore: la
+    creazione via AI lo garantisce per costruzione, la modifica manuale lo
+    valida nel form. Tutto resta modificabile dalla Funzione AI.
+    """
+
+    richiesta = models.ForeignKey(Richiesta, on_delete=models.CASCADE, related_name="voci_effort")
+    attivita = models.CharField(max_length=16, choices=AttivitaEffort.choices)
+    figura = models.CharField(max_length=16, choices=FiguraEffort.choices)
+    ore = models.PositiveIntegerField(default=0)
+    stimata_ai = models.BooleanField(default=True)
+    aggiornata_il = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Voce effort"
+        verbose_name_plural = "Voci effort"
+
+    def __str__(self):
+        return f"{self.richiesta_id} {self.attivita} {self.ore}h"

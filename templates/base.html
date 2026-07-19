@@ -32,6 +32,8 @@
       {% if user.is_gestore %}<a href="{{ u_kpi }}" class="{% if request.path == u_kpi %}attivo{% endif %}"><i class="ti ti-chart-arcs-3"></i> KPI</a>{% endif %}
       {% url 'flusso:schedulazione' as u_sched %}
       {% if user.is_gestore %}<a href="{{ u_sched }}" class="{% if request.path == u_sched %}attivo{% endif %}"><i class="ti ti-calendar-event"></i> Schedulazione</a>{% endif %}
+      {% url 'flusso:ripartizione_effort' as u_eff %}
+      {% if user.is_gestore %}<a href="{{ u_eff }}" class="{% if request.path == u_eff %}attivo{% endif %}"><i class="ti ti-chart-pie"></i> Effort</a>{% endif %}
       {% url 'flusso:rischio' as u_rischio %}
       {% if user.is_ai_officer or user.is_legale or user.is_ciso or user.is_dpo %}<a href="{{ u_rischio }}" class="{% if request.path == u_rischio %}attivo{% endif %}"><i class="ti ti-scale"></i> Rischio &amp; Conformità</a>{% endif %}
       {% if user.is_ai_officer %}{% url 'accounts:utenti' as u_utenti %}<a href="{{ u_utenti }}" class="{% if request.path == u_utenti %}attivo{% endif %}"><i class="ti ti-users"></i> Utenti</a>{% endif %}

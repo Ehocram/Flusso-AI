@@ -701,3 +701,35 @@ body.auth { background: #080a10; overflow-x: hidden; }
 .benef-sub { font-weight: 400; font-size: 12.5px; color: var(--testo-2); }
 .lock-note { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 10px 14px;
   background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 10px; font-size: 13px; }
+
+/* ===== Ripartizione effort ===== */
+.rip-hero { background: var(--bianco); border: 1px solid var(--bordo); border-left: 4px solid var(--rosso);
+  border-radius: var(--r-card); padding: 16px 20px; margin-bottom: 14px; }
+.rip-hero-big { font-size: 19px; }
+.rip-hero-big .pctx { color: var(--rosso); font-weight: 700; }
+.rip-hero-vs { margin-top: 4px; font-size: 14px; }
+.rip-hero .note { margin-top: 6px; font-size: 12.5px; color: var(--testo-2); }
+.rip-agg { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.rip-agg-col { padding: 14px 16px; }
+.rip-agg-col h2 { font-size: 14.5px; margin: 0 0 10px; }
+.rip-bar-row { display: grid; grid-template-columns: 170px 1fr 110px; gap: 10px; align-items: center; margin: 6px 0; font-size: 12.5px; }
+.rip-bar-lbl { color: var(--inchiostro); }
+.rip-bar-track { background: #eef1f6; border-radius: 999px; height: 10px; overflow: hidden; display: block; }
+.rip-bar-fill { display: block; height: 100%; background: #1d6fb8; border-radius: 999px; }
+.rip-bar-fill.dev { background: var(--rosso); }
+.rip-bar-fill.fig { background: #7a4fb0; }
+.rip-bar-val { text-align: right; color: var(--testo-2); }
+.rip-item { display: flex; flex-direction: column; gap: 0; }
+.rip-mini { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.rip-chip { background: #eef1f6; border-radius: 6px; padding: 2px 8px; font-size: 12px; }
+.rip-chip.dev { background: #fbe9e9; color: var(--rosso); }
+.rip-ok { color: #1f8a4c; font-weight: 700; font-size: 12px; margin-left: 6px; }
+.rip-ko { color: var(--rosso); font-weight: 700; font-size: 12px; margin-left: 6px; }
+.rip-na { color: #9a6b00; font-weight: 700; font-size: 12px; margin-left: 6px; }
+.rip-edit { background: var(--bianco); border: 1px solid var(--bordo); border-top: none;
+  border-radius: 0 0 var(--r-card) var(--r-card); padding: 10px 16px 14px; margin-top: -8px; }
+.rip-edit summary { cursor: pointer; font-size: 12.5px; color: var(--testo-2); }
+.rip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-top: 10px; }
+.rip-num { max-width: 110px; }
+.rip-foot { margin-top: 10px; display: flex; align-items: center; gap: 12px; font-size: 13px; }
+@media (max-width: 860px) { .rip-agg { grid-template-columns: 1fr; } .rip-bar-row { grid-template-columns: 120px 1fr 90px; } }
