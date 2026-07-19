@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block titolo %}Costi · ISEO AI{% endblock %}
+{% block contenuto %}
+<div class="page-head">
+  <div>
+    <h1>Costi del portafoglio</h1>
+    <p class="sub">Costo annuo stimato dei progetti (token AI annualizzati + altri costi), con la quota a budget e quella extra. Di default vedi la coda in approvazione alla Direzione; cambia fase con i filtri. I costi si modificano dall'analisi del singolo progetto.</p>
+  </div>
+  <div class="ph-side"><span class="pill">€ {{ tot|floatformat:0 }} / anno</span></div>
+</div>
+
+<div class="rip-filtri">
+  {% for f in filtri %}
+  <a href="?fase={{ f.chiave }}" class="rip-filtro {% if f.attivo %}attivo{% endif %}">{{ f.label }} <span class="c">{{ f.n }}</span></a>
+  {% endfor %}
+</div>
+
+<div class="rip-hero">
+  <div class="rip-hero-big">Totale stimato: <b>€ {{ tot|floatformat:0 }}</b> / anno <span class="pctx">su {{ n_progetti }} progett{{ n_progetti|pluralize:"o,i" }}</span></div>
+  <div class="rip-hero-vs">Token AI: <b>€ {{ tot_token|floatformat:0 }}</b> · Altri costi: <b>€ {{ tot_altri|floatformat:0 }}</b></div>
+  <div class="cost-split">
+    <span class="cost-tag ok">A budget € {{ tot_a_budget|floatformat:0 }}</span>
+    <span class="cost-tag ko">Extra budget € {{ tot_extra|floatformat:0 }}</span>
+    {% if tot_da_definire %}<span class="cost-tag nd">Budget da definire € {{ tot_da_definire|floatformat:0 }}</span>{% endif %}
+    {% if n_incompleti %}<span class="cost-tag warn">{{ n_incompleti }} cost{{ n_incompleti|pluralize:"o,i" }} non determinabil{{ n_incompleti|pluralize:"e,i" }}</span>{% endif %}
+  </div>
+</div>
+
+{% if agg_funzioni %}
+<div class="card rip-agg-col" style="margin-bottom:14px;">
+  <h2>Per funzione richiedente</h2>
+  {% for f in agg_funzioni %}
+  <div class="rip-bar-row">
+    <span class="rip-bar-lbl">{{ f.label }}</span>
+    <span class="rip-bar-track"><span class="rip-bar-fill dev" style="width: {{ f.pct }}%"></span></span>
+    <span class="rip-bar-val">€ {{ f.costo|floatformat:0 }} · {{ f.pct }}%</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="sched-list">
+  {% for riga in righe %}
+  <div class="sched-row">
+    <div class="sched-main">
+      <a href="{{ riga.r.get_absolute_url }}" class="sched-title"><b>{{ riga.r.codice }}</b> — {{ riga.r.titolo }}</a>
+      <div class="sched-meta">
+        <span class="stato-pill">{{ riga.r.stato_label }}</span> · {{ riga.r.get_funzione_display }}
+        {% if riga.r.costo_token_ai is not None %} · token {{ riga.r.get_costo_token_periodicita_display|default:"—"|lower }} {{ riga.r.get_costo_token_ambito_display|default:""|lower }}{% if riga.r.numero_utenti %} × {{ riga.r.numero_utenti }}{% endif %}{% if riga.r.costo_token_ai_stimato %} <span class="rip-chip dev" title="Importo token proposto dall'AI, modificabile">stima AI</span>{% endif %}{% endif %}
+      </div>
+      {% if riga.motivo %}<div class="cost-motivo"><i class="ti ti-alert-triangle"></i> Costo non determinabile: {{ riga.motivo }}</div>{% endif %}
+    </div>
+    <div class="cost-side">
+      {% if riga.costo is not None %}
+      <div class="cost-tot">€ {{ riga.costo|floatformat:0 }}<span class="anno">/anno</span></div>
+      <div class="cost-dett">token € {{ riga.token|default:0|floatformat:0 }} · altri € {{ riga.altri|default:0|floatformat:0 }}</div>
+      {% if riga.rip %}
+        {% if riga.rip.stato == "a_budget" %}<span class="cost-tag ok">{{ riga.r.budget_stato_label }}</span>
+        {% elif riga.rip.stato == "extra_ok" %}<span class="cost-tag ko">Extra € {{ riga.rip.extra|floatformat:0 }} (entro richiesta)</span>
+        {% else %}<span class="cost-tag ko">Extra € {{ riga.rip.extra|floatformat:0 }} — {{ riga.r.budget_stato_label }}</span>{% endif %}
+      {% elif riga.r.esito_budget %}<span class="cost-tag nd">{{ riga.r.get_esito_budget_display }} (tetto non indicato)</span>
+      {% else %}<span class="cost-tag nd">Budget da definire</span>{% endif %}
+      {% elif not riga.motivo %}
+      <div class="cost-tot muto">senza costi</div>
+      {% endif %}
+    </div>
+  </div>
+  {% empty %}
+  <div class="vuoto-box"><p>Nessun progetto in questa selezione.</p></div>
+  {% endfor %}
+</div>
+{% endblock %}

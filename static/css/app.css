@@ -733,3 +733,28 @@ body.auth { background: #080a10; overflow-x: hidden; }
 .rip-num { max-width: 110px; }
 .rip-foot { margin-top: 10px; display: flex; align-items: center; gap: 12px; font-size: 13px; }
 @media (max-width: 860px) { .rip-agg { grid-template-columns: 1fr; } .rip-bar-row { grid-template-columns: 120px 1fr 90px; } }
+
+/* ===== Filtro fasi (pagina Effort) ===== */
+.rip-filtri { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.rip-filtro { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--bordo); background: var(--bianco); color: var(--inchiostro);
+  font-size: 13px; text-decoration: none; }
+.rip-filtro:hover { border-color: var(--rosso); }
+.rip-filtro .c { background: #eef1f6; border-radius: 999px; padding: 1px 8px; font-size: 12px; font-weight: 700; }
+.rip-filtro.attivo { background: var(--rosso); border-color: var(--rosso); color: #fff; }
+.rip-filtro.attivo .c { background: rgba(255,255,255,.25); color: #fff; }
+
+/* ===== Pagina costi ===== */
+.cost-split { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+.cost-tag { display: inline-block; border-radius: 6px; padding: 3px 10px; font-size: 12.5px; font-weight: 700; }
+.cost-tag.ok { background: #e6f4ea; color: #1f8a4c; }
+.cost-tag.ko { background: #fbe9e9; color: var(--rosso); }
+.cost-tag.nd { background: #fff7e6; color: #9a6b00; }
+.cost-tag.warn { background: #fff1f1; color: var(--rosso); border: 1px dashed var(--rosso); }
+.cost-side { text-align: right; flex: 0 0 auto; }
+.cost-tot { font-size: 18px; font-weight: 800; }
+.cost-tot .anno { font-size: 12px; font-weight: 400; color: var(--testo-2); margin-left: 2px; }
+.cost-tot.muto { color: var(--testo-2); font-weight: 400; font-size: 13px; }
+.cost-dett { font-size: 12px; color: var(--testo-2); margin: 2px 0 6px; }
+.cost-motivo { margin-top: 8px; font-size: 12.5px; color: var(--rosso); }
+@media (max-width: 720px) { .cost-side { text-align: left; } }

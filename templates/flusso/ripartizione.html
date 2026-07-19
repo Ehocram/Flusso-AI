@@ -9,6 +9,12 @@
   <div class="ph-side"><span class="pill">{{ tot_effort }} h totali</span></div>
 </div>
 
+<div class="rip-filtri">
+  {% for f in filtri %}
+  <a href="{% if f.chiave %}?fase={{ f.chiave }}{% else %}{% url 'flusso:ripartizione_effort' %}{% endif %}" class="rip-filtro {% if f.attivo %}attivo{% endif %}">{{ f.label }} <span class="c">{{ f.n }}</span></a>
+  {% endfor %}
+</div>
+
 <div class="rip-hero">
   <div class="rip-hero-big">Sviluppo: <b>{{ ore_sviluppo }} h</b> <span class="pctx">({{ pct_sviluppo }}%)</span></div>
   <div class="rip-hero-vs">Tutto il resto — analisi, test, compliance, infrastruttura, adozione — vale <b>{{ ore_resto }} h</b> ({{ pct_resto }}%).</div>
@@ -59,12 +65,12 @@
       {% if puo_modificare %}
       <div class="sched-form">
         <form method="post" action="{% url 'flusso:genera_ripartizione' riga.r.pk %}" data-ai-wait="Ripartizione AI di {{ riga.r.codice }} in corso…">
-          {% csrf_token %}
+          {% csrf_token %}<input type="hidden" name="fase" value="{{ fase_attiva }}">
           <button type="submit" class="btn btn-sm" title="L'AI propone la suddivisione: il totale resta {{ riga.r.effort_ore }} h.">{% if riga.voci %}Rigenera AI{% else %}Ripartisci con AI{% endif %}</button>
         </form>
         {% if not riga.voci %}
         <form method="post" action="{% url 'flusso:crea_griglia_effort' riga.r.pk %}">
-          {% csrf_token %}
+          {% csrf_token %}<input type="hidden" name="fase" value="{{ fase_attiva }}">
           <button type="submit" class="btn btn-sm">Griglia manuale</button>
         </form>
         {% endif %}
@@ -75,7 +81,7 @@
     <details class="rip-edit">
       <summary>Modifica voci ({{ riga.r.effort_ore }} h da quadrare)</summary>
       <form method="post" action="{% url 'flusso:salva_ripartizione' riga.r.pk %}">
-        {% csrf_token %}
+        {% csrf_token %}<input type="hidden" name="fase" value="{{ fase_attiva }}">
         <div class="rip-grid">
           {% for v in riga.voci %}
           <label class="sched-lbl">{{ v.get_attivita_display }}
@@ -94,7 +100,7 @@
     {% endif %}
   </div>
   {% empty %}
-  <div class="vuoto-box"><p>Nessun progetto con effort in ore. L'effort si registra nell'analisi della Funzione AI.</p></div>
+  <div class="vuoto-box"><p>Nessun progetto con effort in ore in questa selezione. L'effort si registra nell'analisi della Funzione AI.</p></div>
   {% endfor %}
 </div>
 

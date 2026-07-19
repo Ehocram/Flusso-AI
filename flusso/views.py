@@ -482,6 +482,13 @@ def salva_pianificazione(request, pk):
     return redirect("flusso:schedulazione")
 
 
+def _url_effort(request, pk):
+    """URL della pagina Effort che conserva il filtro di fase attivo (se valido)."""
+    fase = request.POST.get("fase", "")
+    suffisso = f"?fase={fase}" if fase in FASI else ""
+    return reverse("flusso:ripartizione_effort") + suffisso + f"#r{pk}"
+
+
 @login_required
 def ripartizione_effort(request):
     """Ripartizione dell'effort per attività e figure: la vista per spiegare il carico.
@@ -492,9 +499,25 @@ def ripartizione_effort(request):
     """
     if not request.user.is_gestore:
         return HttpResponseForbidden("Pagina riservata.")
-    qs = (Richiesta.objects.filter(effort_ore__gt=0)
-          .select_related("proponente").prefetch_related("voci_effort")
-          .order_by("-effort_ore", "-creata_il"))
+    base_qs = (Richiesta.objects.filter(effort_ore__gt=0)
+               .select_related("proponente").prefetch_related("voci_effort")
+               .order_by("-effort_ore", "-creata_il"))
+    # Filtro per fase (le stesse di board e KPI), con conteggi che guidano la scelta.
+    etichette_fase = {
+        "in_coda": "In coda", "in_analisi": "In analisi", "pronte": "Pronte per approvazione",
+        "in_approvazione": "In approvazione", "approvati": "Approvati / attivi", "chiusi": "Chiusi",
+    }
+    fase_per_stato = {s.value: k for k, stati in FASI.items() for s in stati}
+    conteggi = Counter(fase_per_stato.get(st) for st in base_qs.values_list("stato", flat=True))
+    fase = request.GET.get("fase") or ""
+    if fase in FASI:
+        qs = base_qs.filter(stato__in=FASI[fase])
+    else:
+        fase = ""
+        qs = base_qs
+    filtri = ([{"chiave": "", "label": "Tutto", "n": base_qs.count(), "attivo": fase == ""}]
+              + [{"chiave": k, "label": etichette_fase[k], "n": conteggi.get(k, 0),
+                  "attivo": fase == k} for k in FASI])
     ordine = {a: i for i, a in enumerate(ORDINE_ATTIVITA)}
     righe = []
     for r in qs:
@@ -523,6 +546,7 @@ def ripartizione_effort(request):
         "senza_ripartizione": sum(1 for x in righe if not x["voci"]),
         "senza_effort": Richiesta.objects.exclude(effort_ore__gt=0).count(),
         "fig_choices": FiguraEffort.choices,
+        "filtri": filtri, "fase_attiva": fase,
     })
 
 
@@ -539,7 +563,7 @@ def genera_ripartizione(request, pk):
                                   "(totale invariato, modificabile).")
     else:
         messages.error(request, f"Ripartizione {richiesta.codice} non riuscita: {errore}")
-    return redirect(reverse("flusso:ripartizione_effort") + f"#r{richiesta.pk}")
+    return redirect(_url_effort(request, richiesta.pk))
 
 
 @login_required
@@ -557,10 +581,10 @@ def salva_ripartizione(request, pk):
             ore = int(request.POST.get(f"ore_{v.id}", v.ore))
         except (TypeError, ValueError):
             messages.error(request, f"Ore non valide su «{v.get_attivita_display()}».")
-            return redirect(reverse("flusso:ripartizione_effort") + f"#r{richiesta.pk}")
+            return redirect(_url_effort(request, richiesta.pk))
         if ore < 0:
             messages.error(request, f"Ore negative su «{v.get_attivita_display()}».")
-            return redirect(reverse("flusso:ripartizione_effort") + f"#r{richiesta.pk}")
+            return redirect(_url_effort(request, richiesta.pk))
         figura = request.POST.get(f"figura_{v.id}", v.figura)
         if figura not in figure_valide:
             figura = v.figura
@@ -571,13 +595,13 @@ def salva_ripartizione(request, pk):
         messages.error(request, f"La ripartizione di {richiesta.codice} non quadra: "
                                 f"somma {somma} h contro un effort di {atteso} h "
                                 f"(Δ {somma - atteso:+d} h). Correggi e risalva.")
-        return redirect(reverse("flusso:ripartizione_effort") + f"#r{richiesta.pk}")
+        return redirect(_url_effort(request, richiesta.pk))
     for v, ore, figura in nuove:
         if v.ore != ore or v.figura != figura:
             v.ore, v.figura, v.stimata_ai = ore, figura, False
             v.save(update_fields=["ore", "figura", "stimata_ai", "aggiornata_il"])
     messages.success(request, f"Ripartizione di {richiesta.codice} aggiornata (quadra: {atteso} h).")
-    return redirect(reverse("flusso:ripartizione_effort") + f"#r{richiesta.pk}")
+    return redirect(_url_effort(request, richiesta.pk))
 
 
 @login_required
@@ -592,7 +616,79 @@ def crea_griglia_effort_view(request, pk):
                                   f"{richiesta.effort_ore} h e salva.")
     else:
         messages.error(request, "Esistono già voci di ripartizione per questa richiesta.")
-    return redirect(reverse("flusso:ripartizione_effort") + f"#r{richiesta.pk}")
+    return redirect(_url_effort(request, richiesta.pk))
+
+
+@login_required
+def costi(request):
+    """Vista costi del portafoglio, di default sulla coda di approvazione.
+
+    Totale annuo stimato (token AI + altri costi), quota a budget / extra budget /
+    da definire, aggregato per funzione e dettaglio per progetto. Sola lettura:
+    i costi si modificano nell'analisi. Stesse fasi di board/KPI/Effort.
+    """
+    if not request.user.is_gestore:
+        return HttpResponseForbidden("Pagina riservata.")
+    from decimal import Decimal as _D
+    base_qs = Richiesta.objects.select_related("proponente")
+    etichette_fase = {
+        "in_coda": "In coda", "in_analisi": "In analisi", "pronte": "Pronte per approvazione",
+        "in_approvazione": "In approvazione", "approvati": "Approvati / attivi", "chiusi": "Chiusi",
+    }
+    fase_per_stato = {s.value: k for k, stati in FASI.items() for s in stati}
+    conteggi = Counter(fase_per_stato.get(st) for st in base_qs.values_list("stato", flat=True))
+    fase = request.GET.get("fase")
+    if fase == "tutte":
+        qs = base_qs
+    elif fase in FASI:
+        qs = base_qs.filter(stato__in=FASI[fase])
+    else:
+        fase = "in_approvazione"  # default: la coda della Direzione
+        qs = base_qs.filter(stato__in=FASI[fase])
+    filtri = ([{"chiave": "tutte", "label": "Tutto", "n": base_qs.count(), "attivo": fase == "tutte"}]
+              + [{"chiave": k, "label": etichette_fase[k], "n": conteggi.get(k, 0),
+                  "attivo": fase == k} for k in FASI])
+
+    righe = []
+    tot = tot_token = tot_altri = tot_a_budget = tot_extra = tot_da_definire = _D(0)
+    n_incompleti = 0
+    per_funzione = {}
+    for r in qs:
+        costo = r.costo_progetto_stimato
+        rip = r.ripartizione_budget
+        motivo = None
+        if costo is None and (r.costo_token_ai is not None or r.altri_costi is not None):
+            motivo = r.costo_progetto_motivo_incompleto
+            n_incompleti += 1
+        # La componente token è derivata per differenza dal totale: così la
+        # scomposizione ricompone SEMPRE il costo (una tantum inclusa).
+        token_comp = (costo - (r.altri_costi or 0)) if costo is not None else None
+        righe.append({
+            "r": r, "costo": costo, "token": token_comp,
+            "altri": r.altri_costi, "rip": rip, "motivo": motivo,
+        })
+        if costo is not None:
+            tot += costo
+            tot_token += token_comp
+            tot_altri += r.altri_costi or 0
+            if rip:
+                tot_a_budget += rip["a_budget"]
+                tot_extra += rip["extra"]
+            else:
+                tot_da_definire += costo
+            label_f = r.get_funzione_display()
+            per_funzione[label_f] = per_funzione.get(label_f, _D(0)) + costo
+    righe.sort(key=lambda x: (x["costo"] is None, -(x["costo"] or 0)))
+    agg_funzioni = sorted(
+        [{"label": k, "costo": v, "pct": round(v * 100 / tot) if tot else 0}
+         for k, v in per_funzione.items()], key=lambda x: -x["costo"])
+    return render(request, "flusso/costi.html", {
+        "righe": righe, "filtri": filtri, "fase_attiva": fase,
+        "tot": tot, "tot_token": tot_token, "tot_altri": tot_altri,
+        "tot_a_budget": tot_a_budget, "tot_extra": tot_extra,
+        "tot_da_definire": tot_da_definire, "n_incompleti": n_incompleti,
+        "agg_funzioni": agg_funzioni, "n_progetti": len(righe),
+    })
 
 
 @login_required

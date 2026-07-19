@@ -20,6 +20,7 @@ urlpatterns = [
     path("richieste/<int:pk>/azione/", views.esegui_azione, name="esegui_azione"),
     path("schedulazione/", views.schedulazione, name="schedulazione"),
     path("effort/", views.ripartizione_effort, name="ripartizione_effort"),
+    path("costi/", views.costi, name="costi"),
     path("richieste/<int:pk>/effort/ai/", views.genera_ripartizione, name="genera_ripartizione"),
     path("richieste/<int:pk>/effort/salva/", views.salva_ripartizione, name="salva_ripartizione"),
     path("richieste/<int:pk>/effort/griglia/", views.crea_griglia_effort_view, name="crea_griglia_effort"),
