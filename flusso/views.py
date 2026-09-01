@@ -261,7 +261,9 @@ def dettaglio(request, pk):
     ) else None
     analisi_form = AnalisiAIForm(instance=richiesta) if (request.user.is_funzione and not bloccata) else None
     # Beneficio economico e incrementi: modificabili da owner e Funzione tecnica fino al blocco.
-    puo_beneficio = (not bloccata) and (
+    # Il beneficio atteso è una misura del perimetro AI: sulle schede Application /
+    # IT Operation non viene chiesto (il valore sta sul progetto AI di origine).
+    puo_beneficio = (not bloccata) and richiesta.tipo == TipoProgetto.AI and (
         request.user.is_funzione or richiesta.proponente_id == request.user.id
     )
     beneficio_form = BeneficioForm(instance=richiesta) if puo_beneficio else None

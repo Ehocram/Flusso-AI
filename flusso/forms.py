@@ -37,7 +37,10 @@ class AnalisiAIForm(forms.ModelForm):
         # I costi token sono specifici dei progetti AI: sulle schede Application e
         # IT Operation il costo si indica nel campo dedicato «Costo del progetto».
         if getattr(self.instance, "tipo", TipoProgetto.AI) != TipoProgetto.AI:
-            for nome in ("costo_token_ai", "costo_token_periodicita", "costo_token_ambito"):
+            # Su Application / IT Operation i campi specifici dell'AI non si applicano:
+            # tipo di AI, infrastruttura e costi token restano fuori dal form.
+            for nome in ("costo_token_ai", "costo_token_periodicita", "costo_token_ambito",
+                         "ai_autonomia", "ai_deployment"):
                 self.fields.pop(nome, None)
             if "altri_costi" in self.fields:
                 self.fields["altri_costi"].label = "Costo del progetto (€)"
@@ -123,9 +126,12 @@ class RichiestaForm(forms.ModelForm):
             dati["costo_owner"] = None
             # Incremento qualitativo/efficienza non si applicano fuori dai progetti AI:
             # non sono mostrati e non vengono stimati.
-            for campo in ("incremento_qualitativo", "incremento_qualitativo_note",
-                          "incremento_efficienza", "incremento_efficienza_note"):
-                dati[campo] = None if not campo.endswith("_note") else ""
+            for campo in ("saving_economico", "incremento_qualitativo",
+                          "incremento_efficienza"):
+                dati[campo] = None
+            for campo in ("saving_economico_note", "incremento_qualitativo_note",
+                          "incremento_efficienza_note"):
+                dati[campo] = ""
         return dati
 
 

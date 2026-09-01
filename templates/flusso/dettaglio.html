@@ -89,6 +89,7 @@
           {{ analisi_form.analisi_fattibilita }}
         </div>
         <div class="form-grid">
+{% if richiesta.tipo == "AI" %}
           <div class="f-row">
             <label for="{{ analisi_form.ai_autonomia.id_for_label }}">Tipo di AI</label>
             {{ analisi_form.ai_autonomia }}
@@ -103,6 +104,7 @@
             <label for="{{ analisi_form.effort_ore.id_for_label }}">Effort (ore)</label>
             {{ analisi_form.effort_ore }}
           </div>
+          {% endif %}
           <div class="f-row">
             <label for="{{ analisi_form.entity.id_for_label }}">Entity</label>
             {{ analisi_form.entity }}
@@ -214,8 +216,8 @@
       {# Sola lettura per gli altri ruoli #}
       {% if richiesta.analisi_fattibilita %}<p class="analisi-fatt">{{ richiesta.analisi_fattibilita }}</p>{% endif %}
       <div class="analisi-grid">
-        <div class="dato"><span class="lab">Tipo di AI</span><span class="val">{{ richiesta.get_ai_autonomia_display|default:"—" }}</span></div>
-        <div class="dato"><span class="lab">Infrastruttura</span><span class="val">{{ richiesta.get_ai_deployment_display|default:"—" }}</span></div>
+{% if richiesta.tipo == "AI" %}<div class="dato"><span class="lab">Tipo di AI</span><span class="val">{{ richiesta.get_ai_autonomia_display|default:"—" }}</span></div>
+        <div class="dato"><span class="lab">Infrastruttura</span><span class="val">{{ richiesta.get_ai_deployment_display|default:"—" }}</span></div>{% endif %}
         <div class="dato"><span class="lab">Effort</span><span class="val">{% if richiesta.effort_ore %}{{ richiesta.effort_ore }} h{% else %}—{% endif %}</span></div>
         <div class="dato"><span class="lab">Inizio lavori</span><span class="val">{{ richiesta.data_inizio|date:"d/m/Y"|default:"—" }}</span></div>
         <div class="dato"><span class="lab">Consegna prevista</span><span class="val">{{ richiesta.data_consegna_prevista|date:"d/m/Y"|default:"—" }}</span></div>

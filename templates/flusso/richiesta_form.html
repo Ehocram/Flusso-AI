@@ -74,7 +74,7 @@
         {% if form.costo_owner.errors %}<div class="err">{{ form.costo_owner.errors|striptags }}</div>{% endif %}
       </div>
       <div class="f-row full solo-ai"><div class="metric-hint"><i class="ti ti-robot"></i> Se lasci vuoti «incremento qualitativo» ed «efficienza», li stima l'AI in base alla descrizione (sempre modificabili).</div></div>
-      <div class="f-row full metric">
+      <div class="f-row full metric solo-ai">
         <label for="{{ form.saving_economico.id_for_label }}">Beneficio economico atteso (€)</label>
         <div class="metric-row">{{ form.saving_economico }}{{ form.saving_economico_note }}</div>
       </div>

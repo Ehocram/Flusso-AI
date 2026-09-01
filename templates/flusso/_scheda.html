@@ -31,7 +31,8 @@
 
   <p class="descr">{{ r.descrizione }}{% if r.tipo_soluzione %} <em>— {{ r.tipo_soluzione }}</em>{% endif %}</p>
 
-  <div class="savings {% if r.tipo == 'AI' %}savings-3{% else %}savings-1{% endif %}">
+{% if r.tipo == 'AI' %}
+    <div class="savings savings-3">
     <div class="sav">
       <span class="lab">Beneficio economico atteso</span>
       <span class="val {% if r.saving_economico_fmt is None %}tbd{% endif %}">{{ r.saving_economico_fmt|default:"—" }}</span>
@@ -48,6 +49,7 @@
       <span class="val">{{ r.incremento_efficienza_fmt|default:"—" }}</span>
       {% if r.incremento_efficienza_note %}<span class="sav-note">{{ r.incremento_efficienza_note }}</span>{% endif %}
     </div>
+  {% endif %}
     {% endif %}
   </div>
 
