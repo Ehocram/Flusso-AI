@@ -1,8 +1,10 @@
 """Form per compilazione/modifica della scheda (rettangolo slide 8-9)."""
 
 from django import forms
+from django.forms import inlineformset_factory
 
-from .models import CATEGORIE_RISCHIO, ConfigurazioneAI, Richiesta
+from .models import (AzioneTrattamento, CATEGORIE_RISCHIO, ClassificazioneRischio,
+                     ConfigurazioneAI, Richiesta)
 
 
 class AnalisiAIForm(forms.ModelForm):
@@ -11,21 +13,26 @@ class AnalisiAIForm(forms.ModelForm):
     class Meta:
         model = Richiesta
         fields = [
-            "analisi_fattibilita", "effort_ore", "data_inizio",
-            "data_consegna_prevista", "costo_token_ai", "altri_costi", "altri_costi_note",
+            "analisi_fattibilita", "ai_autonomia", "ai_deployment", "effort_ore",
+            "costo_token_ai", "costo_token_periodicita",
+            "costo_token_ambito", "altri_costi", "altri_costi_note",
         ]
         widgets = {
             "analisi_fattibilita": forms.Textarea(attrs={"rows": 4, "placeholder": "Valutazione di fattibilità, approccio, rischi, dipendenze…"}),
-            "data_inizio": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
-            "data_consegna_prevista": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "effort_ore": forms.NumberInput(attrs={"min": 0, "placeholder": "es. 120"}),
-            "costo_token_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
+            "costo_token_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ (vuoto = stima AI)"}),
             "altri_costi": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
             "altri_costi_note": forms.TextInput(attrs={"placeholder": "es. licenze, infrastruttura on-prem"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        for nome in ("ai_autonomia", "ai_deployment", "costo_token_periodicita", "costo_token_ambito"):
+            if nome in self.fields:
+                self.fields[nome].choices = (
+                    [("", "— non specificato —")]
+                    + [c for c in self.fields[nome].choices if c[0]]
+                )
         for campo in self.fields.values():
             css = campo.widget.attrs.get("class", "")
             campo.widget.attrs["class"] = (css + " campo").strip()
@@ -37,11 +44,13 @@ class RichiestaForm(forms.ModelForm):
     class Meta:
         model = Richiesta
         fields = [
+            "tipo",
             "funzione",
             "titolo",
             "tipo_soluzione",
             "descrizione",
             "referente_area",
+            "numero_utenti",
             "saving_economico",
             "saving_economico_note",
             "incremento_qualitativo",
@@ -53,6 +62,7 @@ class RichiestaForm(forms.ModelForm):
             "descrizione": forms.Textarea(attrs={"rows": 3}),
             "titolo": forms.TextInput(attrs={"placeholder": "Es. Knowledge management"}),
             "tipo_soluzione": forms.TextInput(attrs={"placeholder": "Es. Assistente AI interno"}),
+            "numero_utenti": forms.NumberInput(attrs={"min": 1, "placeholder": "n. utenti che useranno il tool"}),
             "saving_economico": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
             "incremento_qualitativo": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "% (vuoto = stima AI)"}),
             "incremento_efficienza": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "% (vuoto = stima AI)"}),
@@ -148,6 +158,11 @@ class ValidazioneRischioForm(forms.Form):
         required=False, label="Motivazione (opzionale)",
         widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Lascia vuoto per mantenere la motivazione dell'AI."}),
     )
+    obblighi = forms.CharField(
+        required=False, label="Obblighi e misure di trattamento",
+        widget=forms.Textarea(attrs={"rows": 4, "placeholder": "Una misura per riga. Vuoto = mantiene le misure proposte dall'AI."}),
+        help_text="Una voce per riga: misure e adempimenti con cui il presidio tratta il rischio.",
+    )
     nota = forms.CharField(
         required=False, max_length=300, label="Nota del presidio",
         widget=forms.TextInput(attrs={"placeholder": "Es. confermato dopo verifica interna."}),
@@ -156,6 +171,109 @@ class ValidazioneRischioForm(forms.Form):
     def __init__(self, *args, tipo=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["categoria"].choices = CATEGORIE_RISCHIO.get(tipo, [])
+        for campo in self.fields.values():
+            css = campo.widget.attrs.get("class", "")
+            campo.widget.attrs["class"] = (css + " campo").strip()
+
+
+class TrattamentoRischioForm(forms.ModelForm):
+    """Trattamento del rischio da parte del presidio competente (ISO 27005).
+
+    Strategia (accetta/mitiga/trasferisci/evita) + livello residuo + convalida.
+    Le azioni di mitigazione (con data) sono gestite dal formset collegato.
+    """
+
+    rischio_residuo = forms.ChoiceField(choices=[], required=False, label="Rischio residuo")
+
+    class Meta:
+        model = ClassificazioneRischio
+        fields = ["strategia", "rischio_residuo", "residuo_convalidato", "trattamento_note"]
+        widgets = {
+            "trattamento_note": forms.Textarea(attrs={
+                "rows": 3,
+                "placeholder": "Trasferimento: a chi e come (assicurazione, contratto, fornitore). "
+                               "Accettazione: motivazione. Lascia vuoto se non serve.",
+            }),
+        }
+        labels = {
+            "strategia": "Strategia di trattamento",
+            "residuo_convalidato": "Convalida il rischio residuo",
+            "trattamento_note": "Note di trattamento",
+        }
+
+    def __init__(self, *args, tipo=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["rischio_residuo"].choices = (
+            [("", "— pari al rischio inerente —")] + list(CATEGORIE_RISCHIO.get(tipo, []))
+        )
+        for nome, campo in self.fields.items():
+            if isinstance(campo.widget, forms.CheckboxInput):
+                continue
+            css = campo.widget.attrs.get("class", "")
+            campo.widget.attrs["class"] = (css + " campo").strip()
+
+
+AzioneTrattamentoFormSet = inlineformset_factory(
+    ClassificazioneRischio,
+    AzioneTrattamento,
+    fields=["descrizione", "data_prevista"],
+    extra=1,
+    can_delete=True,
+    widgets={
+        "descrizione": forms.TextInput(attrs={
+            "class": "campo",
+            "placeholder": "Es. Implementare la cifratura at-rest sui repository indicizzati",
+        }),
+        "data_prevista": forms.DateInput(attrs={"type": "date", "class": "campo"}, format="%Y-%m-%d"),
+    },
+)
+
+
+class PianificazioneForm(forms.ModelForm):
+    """Date di pianificazione del progetto, modificabili a mano nella schedulazione."""
+
+    class Meta:
+        model = Richiesta
+        fields = ["data_inizio", "data_consegna_prevista"]
+        widgets = {
+            "data_inizio": forms.DateInput(attrs={"type": "date", "class": "campo"}, format="%Y-%m-%d"),
+            "data_consegna_prevista": forms.DateInput(attrs={"type": "date", "class": "campo"}, format="%Y-%m-%d"),
+        }
+
+    def clean(self):
+        dati = super().clean()
+        inizio = dati.get("data_inizio")
+        fine = dati.get("data_consegna_prevista")
+        if inizio and fine and fine < inizio:
+            self.add_error("data_consegna_prevista", "La consegna non può precedere l'inizio.")
+        return dati
+
+
+class BeneficioForm(forms.ModelForm):
+    """Beneficio economico e incrementi attesi.
+
+    Modificabili dall'owner e dalla Funzione AI in tutti gli stati non bloccati
+    (fino all'ingresso in approvazione). Restano la business case del richiedente.
+    """
+
+    class Meta:
+        model = Richiesta
+        fields = [
+            "saving_economico", "saving_economico_note",
+            "incremento_qualitativo", "incremento_qualitativo_note",
+            "incremento_efficienza", "incremento_efficienza_note",
+        ]
+        widgets = {
+            "saving_economico": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€/anno"}),
+            "saving_economico_note": forms.TextInput(attrs={"placeholder": "Come è stato stimato il beneficio"}),
+            "incremento_qualitativo": forms.NumberInput(attrs={"min": 0, "max": 100, "step": "1", "placeholder": "%"}),
+            "incremento_qualitativo_note": forms.TextInput(attrs={"placeholder": "Nota"}),
+            "incremento_efficienza": forms.NumberInput(attrs={"min": 0, "max": 100, "step": "1", "placeholder": "%"}),
+            "incremento_efficienza_note": forms.TextInput(attrs={"placeholder": "Nota"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         for campo in self.fields.values():
             css = campo.widget.attrs.get("class", "")
             campo.widget.attrs["class"] = (css + " campo").strip()

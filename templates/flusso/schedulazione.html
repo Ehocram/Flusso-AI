@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block titolo %}Schedulazione · Progetti Digital Transformation{% endblock %}
+{% block contenuto %}
+<div class="page-head">
+  <div>
+    <h1>Schedulazione progetti approvati</h1>
+    <p class="sub">Date di inizio e consegna dei soli progetti approvati — usate dai KPI. Proposte automaticamente all'approvazione (in base all'effort stimato dall'AI) e modificabili a mano.</p>
+  </div>
+  <div class="ph-side"><span class="pill">{{ totale }} progett{{ totale|pluralize:"o,i" }}</span></div>
+</div>
+
+{% if righe %}
+<div class="sched-list">
+  {% for riga in righe %}
+  <div class="sched-row">
+    <div class="sched-main">
+      <a href="{{ riga.r.get_absolute_url }}" class="sched-title"><b>{{ riga.r.codice }}</b> — {{ riga.r.titolo }}</a>
+      <div class="sched-meta"><span class="stato-pill">{{ riga.r.stato_label }}</span> · {{ riga.r.get_funzione_display }}{% if riga.r.effort_ore %} · effort {{ riga.r.effort_ore }} h{% endif %}</div>
+    </div>
+    {% if puo_modificare %}
+    <form method="post" action="{% url 'flusso:salva_pianificazione' riga.r.pk %}" class="sched-form">
+      {% csrf_token %}
+      <label class="sched-lbl">Inizio {{ riga.form.data_inizio }}</label>
+      <label class="sched-lbl">Consegna {{ riga.form.data_consegna_prevista }}</label>
+      <button type="submit" class="btn btn-sm" title="Salva le date"><i class="ti ti-device-floppy"></i> Salva</button>
+    </form>
+    {% else %}
+    <div class="sched-date">
+      <span>Inizio: <b>{{ riga.r.data_inizio|date:"d/m/Y"|default:"—" }}</b></span>
+      <span>Consegna: <b>{{ riga.r.data_consegna_prevista|date:"d/m/Y"|default:"—" }}</b></span>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="vuoto-box"><p>Nessun progetto approvato al momento. I progetti compaiono qui dopo l'approvazione della Direzione, con date proposte dall'AI e modificabili.</p></div>
+{% endif %}
+{% endblock %}

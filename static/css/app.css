@@ -261,6 +261,33 @@ h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -.01em; }
 .form-card { max-width: 760px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .form-grid .full { grid-column: 1 / -1; }
+.costo-token-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+@media (max-width: 560px) { .costo-token-row { grid-template-columns: 1fr; } }
+.badge-ai { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; color:var(--info); background:#e6f0fa; border-radius:var(--r-pill); padding:2px 8px; vertical-align:middle; }
+.badge-ai .ti { font-size:13px; }
+/* --- Verifica a budget --- */
+.bgt { padding:12px 14px; border:1px solid var(--bordo); border-left:3px solid var(--info); border-radius:11px; background:#fbfcfe; }
+.bgt.bg-ok { border-left-color:var(--ok); }
+.bgt.bg-warn { border-left-color:var(--attesa); }
+.bgt.bg-bad { border-left-color:var(--rosso); }
+.bgt-head { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:var(--testo-2); }
+.bgt-head .ti { color:var(--info); }
+.bgt-stato { margin-left:auto; font-size:12px; font-weight:700; padding:2px 10px; border-radius:var(--r-pill); }
+.bg-ok .bgt-stato { background:var(--verde-bg); color:var(--verde-fg); }
+.bg-warn .bgt-stato { background:var(--giallo-bg); color:var(--giallo-fg); }
+.bg-bad .bgt-stato { background:#fdebec; color:var(--rosso-scuro); }
+.bgt-barra { display:flex; height:10px; border-radius:6px; overflow:hidden; background:#eef0f2; margin:10px 0 8px; }
+.bgt-fill { height:100%; }
+.bgt-ab { background:var(--ok); }
+.bgt-ex { background:var(--rosso); }
+.bgt-righe { display:flex; flex-wrap:wrap; gap:16px; font-size:13px; color:var(--testo-2); }
+.bgt-ab-txt b { color:var(--verde-fg); }
+.bgt-ex-txt b { color:var(--rosso-scuro); }
+/* --- Pannello decisione budget (owner) --- */
+.dec-costo { font-size:14px; color:var(--inchiostro); background:#f5f7fa; border-radius:8px; padding:8px 10px; margin-bottom:10px; }
+.dec-opt { display:flex; align-items:center; gap:8px; padding:9px 11px; border:1px solid var(--bordo); border-radius:8px; margin-bottom:6px; font-size:14px; cursor:pointer; }
+.dec-opt:hover { border-color:var(--info); background:#fbfcfe; }
+.dec-opt input { margin:0; }
 .f-row label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
 .f-row .help { font-size: 12px; color: var(--testo-3); margin-top: 4px; }
 .f-row .err { color: var(--rosso); font-size: 12px; margin-top: 4px; }
@@ -533,6 +560,44 @@ body.auth { background: #080a10; overflow-x: hidden; }
 .rischio-mot { font-size:13.5px; color:var(--testo-2); margin:12px 0 10px; white-space:pre-line; }
 .rischio-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 @media (max-width:560px){ .rischio-grid { grid-template-columns:1fr; } }
+.rischio-misure-wrap { margin-top:10px; }
+.rischio-misure-wrap > .lab { font-size:10px; font-weight:700; letter-spacing:.02em; color:var(--testo-3); text-transform:uppercase; display:block; margin-bottom:6px; }
+.rischio-misure { margin:0; padding:0; list-style:none; display:grid; gap:6px; }
+.rischio-misure li { position:relative; padding:7px 12px 7px 30px; background:#f7f8f9; border-radius:9px; font-size:13.5px; line-height:1.4; color:var(--inchiostro); }
+.rischio-misure li::before { content:""; position:absolute; left:12px; top:13px; width:7px; height:7px; border-radius:50%; background:var(--rosso); }
+
+/* --- Trattamento del rischio --- */
+.trk { margin-top:12px; padding:11px 13px; border:1px solid var(--bordo); border-left:3px solid var(--info); border-radius:11px; background:#fbfcfe; }
+.trk-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.trk-lab { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:800; letter-spacing:.03em; text-transform:uppercase; color:var(--testo-3); }
+.trk-lab .ti { color:var(--info); }
+.trk-strat { display:inline-flex; align-items:center; border-radius:var(--r-pill); font-size:12px; font-weight:700; padding:3px 11px; }
+.trk-accettato { background:#eef0f2; color:var(--testo-2); }
+.trk-mitigato  { background:var(--verde-bg); color:var(--verde-fg); }
+.trk-trasferito{ background:#e6f0fa; color:#114a7a; }
+.trk-evitato   { background:#fdebec; color:var(--rosso-scuro); }
+.trk-res { font-size:12.5px; font-weight:600; color:var(--testo-2); display:inline-flex; align-items:center; gap:6px; }
+.rk-arrow { font-weight:800; font-size:15px; line-height:1; }
+.rk-giu { color:var(--ok); }
+.rk-su  { color:var(--rosso); }
+.rk-pari{ color:var(--testo-3); }
+.trk-op { font-size:13px; color:var(--testo-2); margin:8px 0 0; }
+.trk-azioni { margin:8px 0 0; padding:0; list-style:none; display:grid; gap:5px; }
+.trk-azioni li { display:flex; align-items:baseline; justify-content:space-between; gap:10px; background:#fff; border:1px solid var(--bordo); border-radius:8px; padding:6px 10px; font-size:13px; }
+.trk-az-data { font-size:12px; font-weight:700; color:var(--testo-2); white-space:nowrap; }
+.trk-az-data .ti { vertical-align:-2px; }
+.trk-form { margin-top:12px; padding-top:12px; border-top:1px dashed var(--bordo-2); }
+.trk-form-tit { font-size:13px; font-weight:700; color:var(--testo-2); display:flex; align-items:center; gap:7px; margin-bottom:10px; }
+.trk-form-tit .ti { color:var(--info); }
+.trk-blocco { margin:6px 0 10px; }
+.trk-blocco > .lab { font-size:10px; font-weight:700; letter-spacing:.02em; color:var(--testo-3); text-transform:uppercase; display:block; margin-bottom:6px; }
+.trk-rows { display:grid; gap:7px; margin-bottom:8px; }
+.trk-row { display:grid; grid-template-columns:1fr 175px auto; gap:8px; align-items:center; }
+@media (max-width:560px){ .trk-row { grid-template-columns:1fr; } }
+.trk-row-del { font-size:12px; color:var(--testo-3); display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.trk-check { display:inline-flex; align-items:center; gap:7px; font-size:13px; color:var(--testo-2); cursor:pointer; }
+.btn-ghost { background:#fff; border:1px solid var(--bordo-2); color:var(--testo-2); }
+.btn-ghost:hover { background:var(--sfondo); }
 .rischio-legale { margin-top:16px; padding-top:14px; border-top:1px dashed var(--bordo-2); }
 .rischio-legale-tit { font-size:13px; font-weight:700; color:var(--testo-2); margin-bottom:10px; display:flex; align-items:center; gap:7px; }
 .rischio-legale-tit .ti { color:var(--rosso); }
@@ -590,3 +655,110 @@ body.auth { background: #080a10; overflow-x: hidden; }
 .metric-hint { font-size:12.5px; color:var(--testo-2); background:#f4f8fb; border:1px solid #d9e6f0; border-radius:8px; padding:8px 11px; }
 .metric-hint .ti { color:var(--info); vertical-align:-2px; }
 .sav-note { display:block; font-size:11px; color:var(--testo-3); margin-top:3px; line-height:1.3; }
+
+/* ===== Overlay attesa calcolo AI (blocca la pagina durante la generazione rischi) ===== */
+.ai-wait { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center;
+  background: rgba(27,27,29,.55); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); padding: 24px; }
+.ai-wait[hidden] { display: none; }
+.ai-wait-box { background: var(--bianco); border-radius: var(--r-card); border-top: 3px solid var(--rosso);
+  padding: 30px 34px; text-align: center; max-width: 360px; box-shadow: 0 18px 50px rgba(16,17,20,.30); }
+.ai-spinner { width: 46px; height: 46px; margin: 0 auto 18px; border-radius: 50%;
+  border: 4px solid var(--bordo); border-top-color: var(--rosso); animation: ai-spin .8s linear infinite; }
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+.ai-wait-txt { font-weight: 700; font-size: 16px; color: var(--inchiostro); }
+.ai-wait-sub { margin-top: 7px; font-size: 13px; color: var(--testo-2); }
+@media (prefers-reduced-motion: reduce) { .ai-spinner { animation-duration: 1.6s; } }
+
+/* ===== Bottone tondo «AI» (precompila l'intera analisi) ===== */
+.analisi-ai-form { display: flex; align-items: center; gap: 12px; margin: 4px 0 14px; }
+.btn-ai-tondo { flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%; border: none;
+  background: var(--rosso); color: #fff; font-weight: 800; font-size: 15px; letter-spacing: .5px;
+  cursor: pointer; box-shadow: 0 4px 14px rgba(214,40,40,.35); transition: transform .12s, box-shadow .12s; }
+.btn-ai-tondo:hover { transform: translateY(-1px) scale(1.04); box-shadow: 0 7px 20px rgba(214,40,40,.45); }
+.btn-ai-tondo:active { transform: scale(.97); }
+.ai-tondo-hint { font-size: 12.5px; color: var(--testo-2); line-height: 1.35; }
+
+/* ===== Pagina schedulazione ===== */
+.ph-side { display: flex; align-items: center; }
+.pill { background: #fbe9e9; color: var(--rosso); border-radius: 999px; padding: 5px 13px; font-weight: 700; font-size: 13px; }
+.sched-list { display: flex; flex-direction: column; gap: 10px; }
+.sched-row { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  background: var(--bianco); border: 1px solid var(--bordo); border-radius: var(--r-card); padding: 14px 16px; }
+.sched-main { min-width: 0; }
+.sched-title { color: var(--inchiostro); text-decoration: none; font-size: 15px; }
+.sched-title:hover { text-decoration: underline; }
+.sched-meta { font-size: 12.5px; color: var(--testo-2); margin-top: 4px; }
+.stato-pill { display: inline-block; background: #eef1f6; color: var(--inchiostro); border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
+.sched-form { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; flex-wrap: wrap; }
+.sched-lbl { font-size: 12px; color: var(--testo-2); display: flex; flex-direction: column; gap: 3px; }
+.sched-date { display: flex; gap: 16px; font-size: 13px; color: var(--inchiostro); flex: 0 0 auto; }
+.vuoto-box { background: var(--bianco); border: 1px dashed var(--bordo); border-radius: var(--r-card); padding: 28px; text-align: center; color: var(--testo-2); }
+@media (max-width: 720px) { .sched-row { flex-direction: column; align-items: stretch; } }
+
+/* ===== Modifica beneficio e incrementi + avviso blocco ===== */
+.benef-form { padding: 16px 18px; }
+.benef-head { font-weight: 700; font-size: 14px; margin-bottom: 12px; }
+.benef-sub { font-weight: 400; font-size: 12.5px; color: var(--testo-2); }
+.lock-note { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 10px 14px;
+  background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 10px; font-size: 13px; }
+
+/* ===== Ripartizione effort ===== */
+.rip-hero { background: var(--bianco); border: 1px solid var(--bordo); border-left: 4px solid var(--rosso);
+  border-radius: var(--r-card); padding: 16px 20px; margin-bottom: 14px; }
+.rip-hero-big { font-size: 19px; }
+.rip-hero-big .pctx { color: var(--rosso); font-weight: 700; }
+.rip-hero-vs { margin-top: 4px; font-size: 14px; }
+.rip-hero .note { margin-top: 6px; font-size: 12.5px; color: var(--testo-2); }
+.rip-agg { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.rip-agg-col { padding: 14px 16px; }
+.rip-agg-col h2 { font-size: 14.5px; margin: 0 0 10px; }
+.rip-bar-row { display: grid; grid-template-columns: 170px 1fr 110px; gap: 10px; align-items: center; margin: 6px 0; font-size: 12.5px; }
+.rip-bar-lbl { color: var(--inchiostro); }
+.rip-bar-track { background: #eef1f6; border-radius: 999px; height: 10px; overflow: hidden; display: block; }
+.rip-bar-fill { display: block; height: 100%; background: #1d6fb8; border-radius: 999px; }
+.rip-bar-fill.dev { background: var(--rosso); }
+.rip-bar-fill.fig { background: #7a4fb0; }
+.rip-bar-val { text-align: right; color: var(--testo-2); }
+.rip-item { display: flex; flex-direction: column; gap: 0; }
+.rip-mini { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.rip-chip { background: #eef1f6; border-radius: 6px; padding: 2px 8px; font-size: 12px; }
+.rip-chip.dev { background: #fbe9e9; color: var(--rosso); }
+.rip-ok { color: #1f8a4c; font-weight: 700; font-size: 12px; margin-left: 6px; }
+.rip-ko { color: var(--rosso); font-weight: 700; font-size: 12px; margin-left: 6px; }
+.rip-na { color: #9a6b00; font-weight: 700; font-size: 12px; margin-left: 6px; }
+.rip-edit { background: var(--bianco); border: 1px solid var(--bordo); border-top: none;
+  border-radius: 0 0 var(--r-card) var(--r-card); padding: 10px 16px 14px; margin-top: -8px; }
+.rip-edit summary { cursor: pointer; font-size: 12.5px; color: var(--testo-2); }
+.rip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-top: 10px; }
+.rip-num { max-width: 110px; }
+.rip-foot { margin-top: 10px; display: flex; align-items: center; gap: 12px; font-size: 13px; }
+@media (max-width: 860px) { .rip-agg { grid-template-columns: 1fr; } .rip-bar-row { grid-template-columns: 120px 1fr 90px; } }
+
+/* ===== Filtro fasi (pagina Effort) ===== */
+.rip-filtri { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.rip-filtro { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--bordo); background: var(--bianco); color: var(--inchiostro);
+  font-size: 13px; text-decoration: none; }
+.rip-filtro:hover { border-color: var(--rosso); }
+.rip-filtro .c { background: #eef1f6; border-radius: 999px; padding: 1px 8px; font-size: 12px; font-weight: 700; }
+.rip-filtro.attivo { background: var(--rosso); border-color: var(--rosso); color: #fff; }
+.rip-filtro.attivo .c { background: rgba(255,255,255,.25); color: #fff; }
+
+/* ===== Pagina costi ===== */
+.cost-split { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+.cost-tag { display: inline-block; border-radius: 6px; padding: 3px 10px; font-size: 12.5px; font-weight: 700; }
+.cost-tag.ok { background: #e6f4ea; color: #1f8a4c; }
+.cost-tag.ko { background: #fbe9e9; color: var(--rosso); }
+.cost-tag.nd { background: #fff7e6; color: #9a6b00; }
+.cost-tag.warn { background: #fff1f1; color: var(--rosso); border: 1px dashed var(--rosso); }
+.cost-side { text-align: right; flex: 0 0 auto; }
+.cost-tot { font-size: 18px; font-weight: 800; }
+.cost-tot .anno { font-size: 12px; font-weight: 400; color: var(--testo-2); margin-left: 2px; }
+.cost-tot.muto { color: var(--testo-2); font-weight: 400; font-size: 13px; }
+.cost-dett { font-size: 12px; color: var(--testo-2); margin: 2px 0 6px; }
+.cost-motivo { margin-top: 8px; font-size: 12.5px; color: var(--rosso); }
+@media (max-width: 720px) { .cost-side { text-align: left; } }
+
+/* ===== Tipo richiesta (AI / Application / IT Operation) ===== */
+.tipo-pill { background: #eef1f6; color: var(--inchiostro); border: 1px solid var(--bordo); }
+.tipo-filtri { margin-bottom: 10px; }

@@ -16,7 +16,8 @@ from django.db import models, transaction
 from django.urls import reverse
 from django.utils import timezone
 
-from .workflow import STATI_OPERATIVI, STATI_TERMINALI, Stato, transizione
+from .workflow import (STATI_MODIFICA_BLOCCATA, STATI_OPERATIVI, STATI_TERMINALI, Stato,
+                       transizione)
 
 audit = logging.getLogger("flusso.audit")
 
@@ -36,6 +37,15 @@ class StatoRischio(models.TextChoices):
     PROPOSTO_AI = "PROPOSTO_AI", "Proposto dall'AI — da validare"
     VALIDATO = "VALIDATO", "Validato dal presidio"
     MODIFICATO = "MODIFICATO", "Modificato dal presidio"
+
+
+class StrategiaTrattamento(models.TextChoices):
+    """Strategia di trattamento del rischio (ISO 27005 / ISO 31000)."""
+
+    ACCETTATO = "ACCETTATO", "Accettato"
+    MITIGATO = "MITIGATO", "Mitigato (ridotto)"
+    TRASFERITO = "TRASFERITO", "Trasferito"
+    EVITATO = "EVITATO", "Evitato (eliminato)"
 
 
 # Categorie ammesse per ciascuna dimensione (codice, etichetta).
@@ -63,6 +73,42 @@ CATEGORIE_RISCHIO = {
 # Ruolo (processo) che valida/modifica ciascuna dimensione.
 RUOLO_VALIDATORE = {"AIACT": "LEGALE", "NIS2": "CISO", "GDPR": "DPO"}
 ETICHETTA_VALIDATORE = {"AIACT": "Funzione Legale", "NIS2": "CISO", "GDPR": "DPO"}
+# Mappa inversa: ruolo del presidio -> dimensione di rischio di sua competenza.
+DIMENSIONE_PER_RUOLO = {ruolo: dim for dim, ruolo in RUOLO_VALIDATORE.items()}
+
+
+def obblighi_in_voci(testo) -> list:
+    """Normalizza il campo `obblighi` in un elenco pulito di voci.
+
+    Accetta indifferentemente: un array JSON, la repr di una lista Python
+    (compatibilita' con dati storici salvati come str(list)), oppure testo con
+    voci separate da a-capo o ';'. Rimuove marcatori iniziali e voci vuote.
+    """
+    import ast
+    import json
+    import re
+
+    t = (testo or "").strip()
+    if not t:
+        return []
+    voci = None
+    if t[0] in "[(":
+        for parser in (json.loads, ast.literal_eval):
+            try:
+                val = parser(t)
+            except Exception:
+                continue
+            if isinstance(val, (list, tuple)):
+                voci = [str(x) for x in val]
+                break
+    if voci is None:
+        voci = re.split(r"[\n;]+", t)
+    out = []
+    for v in voci:
+        v = re.sub(r"^[\s\-\u2022\u00b7\*]+", "", str(v)).strip()
+        if v:
+            out.append(v)
+    return out
 
 _CSS_AIACT = {"VIETATO": "rk-vietato", "ALTO": "rk-alto", "LIMITATO": "rk-limitato", "MINIMO": "rk-minimo"}
 _CSS_LIVELLO = {"ALTO": "rk-vietato", "MEDIO": "rk-alto", "BASSO": "rk-minimo", "NA": "rk-nd"}
@@ -85,12 +131,100 @@ def categoria_css(tipo, code) -> str:
     return tabella.get(code, "rk-nd")
 
 
+# Scala ordinale dei livelli per dimensione (serve a confrontare inerente vs residuo).
+_ORDINE_LIVELLO = {
+    "AIACT": {"MINIMO": 1, "LIMITATO": 2, "ALTO": 3, "VIETATO": 4},
+    "NIS2": {"NA": 0, "BASSO": 1, "MEDIO": 2, "ALTO": 3},
+    "GDPR": {"NA": 0, "BASSO": 1, "MEDIO": 2, "ALTO": 3},
+}
+
+
+def livello_ordinale(tipo, code):
+    """Posizione del livello nella scala della dimensione (None se sconosciuto)."""
+    return _ORDINE_LIVELLO.get(tipo, {}).get(code)
+
+
+def livello_suggerito_residuo(tipo, code):
+    """Suggerimento INDICATIVO del residuo: un livello sotto l'inerente (mai negativo).
+
+    Non e' un calcolo vincolante: il residuo resta una valutazione del presidio.
+    """
+    scala = _ORDINE_LIVELLO.get(tipo, {})
+    pos = scala.get(code)
+    if pos is None:
+        return ""
+    target = max(min(scala.values()), pos - 1)
+    for c, p in scala.items():
+        if p == target:
+            return c
+    return code
+
+
+class PeriodicitaCosto(models.TextChoices):
+    """Periodicità con cui va letto un costo (per dare senso alla cifra)."""
+
+    MENSILE = "MENSILE", "Mensile"
+    ANNUALE = "ANNUALE", "Annuale"
+    UNA_TANTUM = "UNA_TANTUM", "Una tantum"
+
+
+class AmbitoCosto(models.TextChoices):
+    """Ambito a cui si riferisce un costo."""
+
+    UTENTE = "UTENTE", "Per utente"
+    TEAM = "TEAM", "Per team"
+    COMPLESSIVO = "COMPLESSIVO", "Complessivo"
+
+
+class TipoProgetto(models.TextChoices):
+    """Tipo di richiesta, flaggato dall'owner: determina la funzione tecnica competente."""
+
+    AI = "AI", "AI — Intelligenza Artificiale (registro AI Act)"
+    APPLICATION = "APPLICATION", "Application — nuovi software, implementazioni ERP…"
+    IT_OPERATION = "IT_OPERATION", "IT Operation"
+
+
+FUNZIONE_PER_TIPO = {
+    TipoProgetto.AI: "Funzione AI",
+    TipoProgetto.APPLICATION: "Funzione Applicativa",
+    TipoProgetto.IT_OPERATION: "Funzione IT Operations",
+}
+
+
+class AutonomiaAI(models.TextChoices):
+    """Grado di autonomia della soluzione AI (rilevante per l'AI Act)."""
+
+    NON_AGENTICA = "NON_AGENTICA", "Non agentica"
+    AGENTICA_SUPPORTO = "AGENTICA_SUPPORTO", "Agentica — a supporto dell'utente (human-in-the-loop)"
+    AGENTICA_AUTONOMA = "AGENTICA_AUTONOMA", "Agentica — autonoma"
+
+
+class DeploymentAI(models.TextChoices):
+    """Infrastruttura prevista per i modelli (rilevante per GDPR/NIS2)."""
+
+    API = "API", "API (cloud)"
+    LOCALE = "LOCALE", "LLM locale (on-premise)"
+    IBRIDO = "IBRIDO", "Ibrido (API + locale)"
+
+
+class EsitoBudget(models.TextChoices):
+    """Decisione dell'owner sull'importo stimato dalla Funzione AI."""
+
+    A_BUDGET = "A_BUDGET", "A budget"
+    EXTRA_BUDGET = "EXTRA_BUDGET", "Extra budget"
+
+
 class Richiesta(models.Model):
     """Esigenza/opportunita' AT proposta da una funzione aziendale."""
 
     numero = models.PositiveIntegerField(unique=True, editable=False, db_index=True)
 
     # --- Campi della scheda (rettangolo slide 8-9) ---------------------------
+    tipo = models.CharField(
+        max_length=16, choices=TipoProgetto.choices, default=TipoProgetto.AI, db_index=True,
+        verbose_name="Tipo di richiesta",
+        help_text="AI (perimetro registro AI Act), Application (software/ERP) o IT Operation.",
+    )
     funzione = models.CharField("Funzione", max_length=10, choices=Funzione.choices)
     titolo = models.CharField("Titolo (case study)", max_length=140)
     tipo_soluzione = models.CharField(
@@ -100,7 +234,7 @@ class Richiesta(models.Model):
     descrizione = models.TextField("Descrizione")
 
     saving_economico = models.DecimalField(
-        "Saving economico (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        "Beneficio economico atteso (€)", max_digits=12, decimal_places=2, null=True, blank=True,
     )
     incremento_qualitativo = models.DecimalField(
         "Incremento qualitativo (%)", max_digits=6, decimal_places=2, null=True, blank=True,
@@ -114,15 +248,51 @@ class Richiesta(models.Model):
 
     # --- Analisi della Funzione AI (compilata da AI Officer) -----------------
     analisi_fattibilita = models.TextField("Analisi di fattibilità", blank=True)
+    ai_autonomia = models.CharField(
+        "Tipo di AI", max_length=20, choices=AutonomiaAI.choices, blank=True,
+        help_text="Grado di autonomia: non agentica, agentica a supporto, agentica autonoma.",
+    )
+    ai_deployment = models.CharField(
+        "Infrastruttura prevista", max_length=10, choices=DeploymentAI.choices, blank=True,
+        help_text="API (cloud), LLM locale (on-premise) o ibrido. Impatta GDPR/NIS2.",
+    )
     effort_ore = models.PositiveIntegerField("Effort stimato (ore)", null=True, blank=True)
     data_inizio = models.DateField("Data inizio lavori", null=True, blank=True)
     data_consegna_prevista = models.DateField("Data prevista consegna", null=True, blank=True)
     costo_token_ai = models.DecimalField("Costi token AI (€)", max_digits=10, decimal_places=2, null=True, blank=True)
+    costo_token_periodicita = models.CharField(
+        "Periodicità costo token", max_length=12, choices=PeriodicitaCosto.choices, blank=True,
+    )
+    costo_token_ambito = models.CharField(
+        "Ambito costo token", max_length=12, choices=AmbitoCosto.choices, blank=True,
+    )
+    numero_utenti = models.PositiveIntegerField(
+        "Numero utenti/team", null=True, blank=True,
+        help_text="Numero di utenti (o di team) su cui scalare il costo per ottenere il totale.",
+    )
+    costo_token_ai_stimato = models.BooleanField(
+        default=False, editable=False,
+        help_text="True se l'importo token è stato proposto dall'AI (modificabile).",
+    )
     altri_costi = models.DecimalField("Altri costi (€)", max_digits=10, decimal_places=2, null=True, blank=True)
     altri_costi_note = models.CharField("Dettaglio altri costi", max_length=200, blank=True)
 
+    # --- Budget (compilato dall'owner) --------------------------------------
+    budget_massimo = models.DecimalField(
+        "Budget massimo disponibile (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Importo massimo a budget per il progetto.",
+    )
+    extra_budget_massimo = models.DecimalField(
+        "Extra budget richiedibile (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Importo massimo extra budget che l'owner è disposto a richiedere.",
+    )
+    esito_budget = models.CharField(
+        "Esito budget", max_length=12, choices=EsitoBudget.choices, blank=True,
+        help_text="Decisione dell'owner sull'importo stimato: a budget o extra budget.",
+    )
+
     # --- Note sui ritorni (compilabili dall'owner) --------------------------
-    saving_economico_note = models.CharField("Note saving economico", max_length=200, blank=True)
+    saving_economico_note = models.CharField("Note beneficio economico", max_length=200, blank=True)
     incremento_qualitativo_note = models.CharField("Note incremento qualitativo", max_length=200, blank=True)
     incremento_efficienza_note = models.CharField("Note incremento efficienza", max_length=200, blank=True)
     # Gli incrementi possono essere stimati una sola volta dall'AI (poi sempre
@@ -136,6 +306,127 @@ class Richiesta(models.Model):
     )
     creata_il = models.DateTimeField(auto_now_add=True)
     aggiornata_il = models.DateTimeField(auto_now=True)
+
+    def applica_analisi_ai(self, dati: dict) -> list:
+        """Mappa l'output di ai_client.genera_analisi_completa sui campi dell'analisi e salva.
+
+        Tutti i valori restano modificabili: e' una precompilazione, non un vincolo.
+        Ritorna l'elenco dei campi effettivamente aggiornati.
+        """
+        from decimal import Decimal, InvalidOperation
+
+        def _dec(v):
+            if v is None or v == "":
+                return None
+            try:
+                return Decimal(str(v))
+            except (InvalidOperation, ValueError, TypeError):
+                return None
+
+        def _intero(v):
+            d = _dec(v)
+            return int(d) if d is not None else None
+
+        campi = []
+        fatt = (dati.get("fattibilita") or "").strip()
+        if fatt:
+            self.analisi_fattibilita = fatt
+            campi.append("analisi_fattibilita")
+        aut = dati.get("autonomia")
+        if aut in dict(AutonomiaAI.choices):
+            self.ai_autonomia = aut
+            campi.append("ai_autonomia")
+        dep = dati.get("deployment")
+        if dep in dict(DeploymentAI.choices):
+            self.ai_deployment = dep
+            campi.append("ai_deployment")
+        eff = _intero(dati.get("effort_ore"))
+        if eff is not None and eff >= 0:
+            self.effort_ore = eff
+            campi.append("effort_ore")
+        costo = _dec(dati.get("costo_token_mensile_per_utente"))
+        if costo is not None and costo > 0:
+            self.costo_token_ai = costo
+            self.costo_token_ai_stimato = True
+            if not self.costo_token_periodicita:
+                self.costo_token_periodicita = PeriodicitaCosto.MENSILE
+            if not self.costo_token_ambito:
+                self.costo_token_ambito = AmbitoCosto.UTENTE
+            campi += ["costo_token_ai", "costo_token_ai_stimato",
+                      "costo_token_periodicita", "costo_token_ambito"]
+        # Beneficio economico e incrementi (efficienza/qualita) NON sono toccati qui:
+        # restano di competenza dell'owner (proposti solo alla creazione della richiesta,
+        # vedi applica_stima_incrementi). Il bottone AI compila solo i campi tecnici.
+        if campi:
+            self.save(update_fields=sorted(set(campi)))
+        return campi
+
+    # --- Ripartizione dell'effort sulle attività -----------------------------
+    @property
+    def effort_ripartito(self):
+        """Somma delle ore ripartite sulle attività (None se non c'è alcuna voce)."""
+        voci = list(self.voci_effort.all())
+        return sum(v.ore for v in voci) if voci else None
+
+    @property
+    def ripartizione_quadra(self) -> bool:
+        """True se la ripartizione esiste e somma esattamente all'effort registrato."""
+        rip = self.effort_ripartito
+        return rip is not None and rip == (self.effort_ore or 0)
+
+    @property
+    def ripartizione_delta(self):
+        """Differenza ore ripartite - effort (0 se quadra; None se nessuna voce)."""
+        rip = self.effort_ripartito
+        if rip is None:
+            return None
+        return rip - (self.effort_ore or 0)
+
+    def applica_ripartizione_effort(self, voci) -> list:
+        """Applica una proposta di ripartizione {attivita, figura, percento} alle ORE registrate.
+
+        Deterministico: le percentuali vengono normalizzate a 100 e convertite in ore
+        con arrotondamento a resto massimo, così la somma delle voci è SEMPRE uguale
+        a effort_ore. L'AI propone solo le proporzioni; il totale non viene mai toccato.
+        Sostituisce le voci esistenti. Ritorna le voci create.
+        """
+        from django.db import transaction
+
+        tot = self.effort_ore or 0
+        if tot <= 0:
+            return []
+        attivita_valide = dict(AttivitaEffort.choices)
+        figure_valide = dict(FiguraEffort.choices)
+        valide = []
+        for v in voci or []:
+            att = v.get("attivita")
+            if att not in attivita_valide:
+                continue
+            try:
+                pct = float(v.get("percento") or 0)
+            except (TypeError, ValueError):
+                continue
+            if pct <= 0:
+                continue
+            fig = v.get("figura")
+            if fig not in figure_valide:
+                fig = FIGURA_DEFAULT_PER_ATTIVITA.get(att, FiguraEffort.OWNER)
+            valide.append([att, fig, pct])
+        if not valide:
+            return []
+        somma_pct = sum(p for _, _, p in valide)
+        quote = [(att, fig, p * tot / somma_pct) for att, fig, p in valide]
+        ore = [int(q) for _, _, q in quote]
+        resto = tot - sum(ore)
+        ordine = sorted(range(len(quote)), key=lambda i: quote[i][2] - int(quote[i][2]), reverse=True)
+        for i in ordine[:resto]:
+            ore[i] += 1
+        with transaction.atomic():
+            self.voci_effort.all().delete()
+            create = [VoceEffort(richiesta=self, attivita=att, figura=fig, ore=o, stimata_ai=True)
+                      for (att, fig, _), o in zip(quote, ore) if o > 0]
+            VoceEffort.objects.bulk_create(create)
+        return create
 
     class Meta:
         verbose_name = "Richiesta"
@@ -170,6 +461,38 @@ class Richiesta(models.Model):
         return self.stato in STATI_OPERATIVI
 
     @property
+    def modifica_bloccata(self) -> bool:
+        """True quando la scheda è in approvazione o approvata: nessuna modifica consentita."""
+        return self.stato in STATI_MODIFICA_BLOCCATA
+
+    @property
+    def tipo_breve(self) -> str:
+        """Etichetta corta del tipo per pill e chip."""
+        return {"AI": "AI", "APPLICATION": "Application", "IT_OPERATION": "IT Operation"}.get(self.tipo, self.tipo)
+
+    @property
+    def funzione_competente_label(self) -> str:
+        """Nome della funzione tecnica competente in base al tipo (AI/Applicativa/IT Ops)."""
+        return FUNZIONE_PER_TIPO.get(self.tipo, "Funzione tecnica")
+
+    def azzera_per_bozza(self):
+        """Al rientro in bozza: via decisione budget, date e validazioni dei rischi.
+
+        Le categorie di rischio proposte restano (sono un'analisi, non una decisione);
+        tornano «da validare» perché i presìdi devono riesaminare ciò che cambia.
+        """
+        self.esito_budget = ""
+        self.data_inizio = None
+        self.data_consegna_prevista = None
+        self.save(update_fields=["esito_budget", "data_inizio", "data_consegna_prevista"])
+        for c in self.classificazioni.all():
+            if c.stato in (StatoRischio.VALIDATO, StatoRischio.MODIFICATO):
+                c.stato = StatoRischio.PROPOSTO_AI if c.categoria else StatoRischio.DA_ANALIZZARE
+                c.validato_da = None
+                c.validato_il = None
+                c.save(update_fields=["stato", "validato_da", "validato_il"])
+
+    @property
     def is_bozza(self) -> bool:
         return self.stato == Stato.BOZZA
 
@@ -179,22 +502,206 @@ class Richiesta(models.Model):
 
     @property
     def stato_label(self) -> str:
-        return self.get_stato_display()
+        """Etichetta di stato con il nome della funzione competente (es. «Inviata alla Funzione Applicativa»)."""
+        return self.get_stato_display().replace("Funzione tecnica", self.funzione_competente_label)
 
     @property
     def costo_totale_stimato(self):
-        """Somma dei costi stimati (token AI + altri). None se non valorizzati."""
-        if self.costo_token_ai is None and self.altri_costi is None:
+        """Costo totale di progetto: alias di costo_progetto_stimato (token AI
+        annualizzato e scalato per numero utenti + altri costi).
+
+        In precedenza sommava il costo token GREZZO (importo mensile per utente)
+        senza annualizzare né moltiplicare per gli utenti, producendo totali
+        errati (es. € 5.035 invece di € 9.200). Ora delega all'unica logica
+        corretta, così pannello di dettaglio e KPI restano coerenti.
+        """
+        return self.costo_progetto_stimato
+
+    @property
+    def costo_token_annuo(self):
+        """Costo token ANNUALIZZATO (ricorrente), per confronti tra progetti.
+
+        Mensile ×12, Annuale ×1. Restituisce None se la periodicità manca o è
+        'una tantum' (un costo una tantum non è ricorrente: non va annualizzato).
+        Mantiene l'AMBITO (per utente/team/complessivo): per gli ambiti per-unità
+        è un valore unitario, non un totale d'azienda.
+        """
+        if self.costo_token_ai is None:
             return None
-        return (self.costo_token_ai or 0) + (self.altri_costi or 0)
+        fattore = {"MENSILE": 12, "ANNUALE": 1}.get(self.costo_token_periodicita)
+        if fattore is None:
+            return None
+        return self.costo_token_ai * fattore
+
+    @property
+    def costo_token_annuo_nota(self):
+        """Etichetta sintetica del calcolo annualizzato (None se non calcolabile)."""
+        if self.costo_token_annuo is None:
+            return None
+        period = self.get_costo_token_periodicita_display()
+        nota = f"{period} ×{12 if self.costo_token_periodicita == 'MENSILE' else 1}"
+        if self.costo_token_ambito:
+            nota += f" · {self.get_costo_token_ambito_display().lower()}"
+        return nota
+
+    @property
+    def costo_token_annuo_totale(self):
+        """Costo token annuo TOTALE. Per ambiti per-unità moltiplica per numero_utenti.
+
+        - Ambito 'per utente'/'per team': annualizzato × numero_utenti (None se manca
+          il numero, perché il totale non è determinabile senza la numerosità).
+        - Ambito 'complessivo' o non indicato: coincide con l'annualizzato.
+        - None se l'annualizzato non è calcolabile.
+        """
+        base = self.costo_token_annuo
+        if base is None:
+            return None
+        if self.costo_token_ambito in ("UTENTE", "TEAM"):
+            if not self.numero_utenti:
+                return None
+            return base * self.numero_utenti
+        return base
+
+    @property
+    def costo_progetto_stimato(self):
+        """Costo di progetto per il confronto a budget.
+
+        Token (annualizzato se ricorrente, importo grezzo se una tantum/senza
+        periodicità), scalato per numero_utenti se l'ambito è per-unità, più gli
+        altri costi. None se il costo token è impostato ma non scalabile (manca il
+        numero utenti per gli ambiti per-unità).
+        """
+        parti = []
+        if self.costo_token_ai is not None:
+            base = self.costo_token_annuo
+            if base is None:  # una tantum o periodicità non indicata
+                base = self.costo_token_ai
+            if self.costo_token_ambito in ("UTENTE", "TEAM"):
+                if not self.numero_utenti:
+                    return None
+                base = base * self.numero_utenti
+            parti.append(base)
+        if self.altri_costi is not None:
+            parti.append(self.altri_costi)
+        if not parti:
+            return None
+        return sum(parti)
+
+    @property
+    def costo_progetto_motivo_incompleto(self):
+        """Perché il costo di progetto non è determinabile (None se è calcolabile).
+
+        Usato dal gate di invio a budget per dare un errore preciso invece del
+        blocco generico: il caso tipico è costo token «per utente/per team» con
+        numero utenti non compilato sulla richiesta.
+        """
+        if self.costo_progetto_stimato is not None:
+            return None
+        if self.costo_token_ai is None and self.altri_costi is None:
+            return ("manca il costo del progetto: indica il costo token AI e/o gli altri "
+                    "costi (0 se il progetto non ha costi).")
+        if (self.costo_token_ai is not None
+                and self.costo_token_ambito in ("UTENTE", "TEAM")
+                and not self.numero_utenti):
+            ambito = self.get_costo_token_ambito_display().lower()
+            return (f"il costo token è indicato «{ambito}» ma sulla richiesta manca il "
+                    "«Numero utenti/team» per calcolare il totale: compilalo con "
+                    "«Modifica», oppure cambia l'ambito in «Complessivo».")
+        return ("il costo del progetto non è determinabile: verifica costo token, "
+                "periodicità, ambito e numero utenti.")
+
+    @property
+    def ripartizione_budget(self):
+        """Quanto del costo di progetto è a budget e quanto extra budget.
+
+        None se manca il budget o il costo. Ritorna un dict con costo, a_budget,
+        extra, budget, extra_richiesto e uno stato sintetico.
+        """
+        from decimal import Decimal as _D
+        costo = self.costo_progetto_stimato
+        if costo is None or self.budget_massimo is None:
+            return None
+        a_budget = min(costo, self.budget_massimo)
+        extra = costo - self.budget_massimo
+        if extra < 0:
+            extra = _D(0)
+        if extra == 0:
+            stato = "a_budget"
+        elif self.extra_budget_massimo is not None and extra <= self.extra_budget_massimo:
+            stato = "extra_ok"
+        elif self.extra_budget_massimo is not None:
+            stato = "extra_oltre"
+        else:
+            stato = "fuori_budget"
+        return {
+            "costo": costo, "a_budget": a_budget, "extra": extra,
+            "budget": self.budget_massimo, "extra_richiesto": self.extra_budget_massimo,
+            "stato": stato,
+        }
+
+    @property
+    def costo_a_budget(self):
+        rip = self.ripartizione_budget
+        return rip["a_budget"] if rip else None
+
+    @property
+    def costo_extra_budget(self):
+        rip = self.ripartizione_budget
+        return rip["extra"] if rip else None
+
+    @property
+    def budget_stato_label(self):
+        rip = self.ripartizione_budget
+        if not rip:
+            return ""
+        return {
+            "a_budget": "Interamente a budget",
+            "extra_ok": "Extra budget entro la richiesta",
+            "extra_oltre": "Extra budget OLTRE la richiesta",
+            "fuori_budget": "Fuori budget",
+        }.get(rip["stato"], "")
+
+    @property
+    def budget_stato_css(self):
+        rip = self.ripartizione_budget
+        if not rip:
+            return ""
+        return {"a_budget": "bg-ok", "extra_ok": "bg-warn",
+                "extra_oltre": "bg-bad", "fuori_budget": "bg-bad"}.get(rip["stato"], "")
+
+    @property
+    def esito_budget_css(self):
+        return {"A_BUDGET": "bg-ok", "EXTRA_BUDGET": "bg-warn"}.get(self.esito_budget, "")
+
+    @property
+    def contributo_budget(self):
+        """Quanto del costo di progetto va a budget e quanto extra, per i KPI.
+
+        Priorità alla decisione esplicita dell'owner (esito_budget): l'intero costo
+        finisce in un'unica voce. In assenza del flag (dati storici) ripiega sulla
+        ripartizione per importi, se l'owner aveva indicato un budget. Ritorna
+        (a_budget, extra) oppure None se il costo non è calcolabile.
+        """
+        from decimal import Decimal as _D
+        costo = self.costo_progetto_stimato
+        if costo is None:
+            return None
+        if self.esito_budget == "A_BUDGET":
+            return (costo, _D(0))
+        if self.esito_budget == "EXTRA_BUDGET":
+            return (_D(0), costo)
+        rip = self.ripartizione_budget
+        if rip:
+            return (rip["a_budget"], rip["extra"])
+        return None
 
     @property
     def ha_analisi(self) -> bool:
         """True se almeno un campo dell'analisi Funzione AI e' stato compilato."""
         return any([
-            self.analisi_fattibilita, self.effort_ore, self.data_inizio,
-            self.data_consegna_prevista, self.costo_token_ai is not None,
-            self.altri_costi is not None, self.altri_costi_note,
+            self.analisi_fattibilita, self.ai_autonomia, self.ai_deployment,
+            self.effort_ore, self.data_inizio, self.data_consegna_prevista,
+            self.costo_token_ai is not None, self.altri_costi is not None, self.altri_costi_note,
         ])
 
     # --- Rischio & conformità (tre dimensioni) ------------------------------
@@ -327,7 +834,7 @@ class Richiesta(models.Model):
         evento = Transizione.objects.create(
             richiesta=self,
             azione=azione,
-            etichetta=t.label,
+            etichetta=t.per(self).label,
             stato_da=stato_da,
             stato_a=t.a,
             attore=attore,
@@ -365,7 +872,8 @@ class Richiesta(models.Model):
         return evento
 
     @transaction.atomic
-    def applica_stima_incrementi(self, efficienza=None, qualita=None, modello="", attore=None):
+    def applica_stima_incrementi(self, efficienza=None, qualita=None, beneficio=None,
+                                 beneficio_nota="", modello="", attore=None):
         """Applica le percentuali stimate dall'AI ai SOLI campi lasciati vuoti dall'owner.
 
         Imposta sempre il flag «incrementi_ai_stimati» (la stima va fatta una sola
@@ -381,6 +889,15 @@ class Richiesta(models.Model):
             self.incremento_qualitativo = qualita
             campi.append("incremento_qualitativo")
             valorizzati.append(f"qualità {qualita}%")
+        if self.saving_economico is None and beneficio is not None:
+            from decimal import Decimal
+            self.saving_economico = Decimal(str(beneficio))
+            campi.append("saving_economico")
+            valorizzati.append(f"beneficio € {beneficio}")
+            nota = (beneficio_nota or "").strip()[:200]
+            if nota and not self.saving_economico_note:
+                self.saving_economico_note = nota
+                campi.append("saving_economico_note")
         self.incrementi_ai_stimati = True
         self.save(update_fields=campi)
         if valorizzati:
@@ -457,6 +974,28 @@ class ClassificazioneRischio(models.Model):
     )
     validato_il = models.DateTimeField(null=True, blank=True)
     nota_validatore = models.TextField(blank=True)
+    # --- Trattamento del rischio (ISO 27005): strategia + residuo --------------
+    strategia = models.CharField(
+        max_length=12, choices=StrategiaTrattamento.choices,
+        default=StrategiaTrattamento.ACCETTATO,
+        verbose_name="Strategia di trattamento",
+    )
+    rischio_residuo = models.CharField(
+        max_length=12, blank=True, verbose_name="Rischio residuo",
+        help_text="Livello atteso dopo il trattamento. Vuoto = pari al rischio inerente.",
+    )
+    residuo_convalidato = models.BooleanField(
+        default=False, verbose_name="Rischio residuo convalidato dal presidio",
+    )
+    trattamento_note = models.TextField(
+        blank=True, verbose_name="Note di trattamento",
+        help_text="Per il trasferimento: a chi/come. Per l'accettazione: motivazione.",
+    )
+    trattato_da = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="rischi_trattati",
+    )
+    trattato_il = models.DateTimeField(null=True, blank=True)
     aggiornata_il = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -504,6 +1043,74 @@ class ClassificazioneRischio(models.Model):
     def ruolo_validatore(self) -> str:
         return RUOLO_VALIDATORE.get(self.tipo, "")
 
+    @property
+    def obblighi_voci(self) -> list:
+        """Elenco pulito delle misure/obblighi di trattamento (robusto ai dati storici)."""
+        return obblighi_in_voci(self.obblighi)
+
+    # --- Trattamento del rischio: residuo, direzione, etichetta dell'operazione ---
+    @property
+    def residuo_codice(self) -> str:
+        """Livello residuo EFFETTIVO. Evitato => nessun residuo; altrimenti residuo o inerente."""
+        if self.strategia == StrategiaTrattamento.EVITATO:
+            return ""
+        return self.rischio_residuo or self.categoria
+
+    @property
+    def residuo_label(self) -> str:
+        if self.strategia == StrategiaTrattamento.EVITATO:
+            return "Eliminato"
+        return categoria_label(self.tipo, self.residuo_codice)
+
+    @property
+    def residuo_css(self) -> str:
+        if self.strategia == StrategiaTrattamento.EVITATO:
+            return "rk-minimo"
+        return categoria_css(self.tipo, self.residuo_codice)
+
+    @property
+    def residuo_suggerito(self) -> str:
+        """Suggerimento indicativo (un livello sotto l'inerente), non vincolante."""
+        return livello_suggerito_residuo(self.tipo, self.categoria)
+
+    @property
+    def residuo_direzione(self) -> str:
+        """'giu' (ridotto), 'pari' (invariato), 'su' (aumentato) o '' se non confrontabile."""
+        if self.strategia == StrategiaTrattamento.EVITATO:
+            return "giu"
+        a = livello_ordinale(self.tipo, self.categoria)
+        b = livello_ordinale(self.tipo, self.residuo_codice)
+        if a is None or b is None:
+            return ""
+        return "giu" if b < a else ("su" if b > a else "pari")
+
+    @property
+    def trattato(self) -> bool:
+        """True se il presidio ha applicato un trattamento diverso dalla semplice accettazione."""
+        return self.strategia != StrategiaTrattamento.ACCETTATO or bool(self.trattato_il)
+
+    @property
+    def residuo_da_convalidare(self) -> bool:
+        return (self.strategia in (StrategiaTrattamento.MITIGATO, StrategiaTrattamento.TRASFERITO)
+                and not self.residuo_convalidato)
+
+    @property
+    def trattamento_operazione(self) -> str:
+        """Etichetta che esplicita l'operazione di calcolo del rischio residuo."""
+        iner = self.categoria_label
+        if self.strategia == StrategiaTrattamento.ACCETTATO:
+            return f"Rischio accettato al livello inerente ({iner}); nessuna mitigazione applicata."
+        if self.strategia == StrategiaTrattamento.EVITATO:
+            return "Rischio evitato: il caso d'uso non procede nella forma che genera il rischio (residuo eliminato)."
+        n = self.azioni.count()
+        if self.strategia == StrategiaTrattamento.MITIGATO:
+            azioni_txt = f"{n} azione/i di mitigazione" if n else "le misure di trattamento"
+            return (f"Rischio residuo {self.residuo_label} = rischio inerente {iner} "
+                    f"ridotto tramite {azioni_txt}.")
+        # TRASFERITO
+        return (f"Rischio trasferito a terzi; livello residuo trattenuto {self.residuo_label} "
+                f"(rischio inerente {iner}).")
+
     @transaction.atomic
     def applica_ai(self, categoria, motivazione="", riferimenti="", obblighi="", modello="", attore=None):
         """Registra la proposta dell'AI; non sovrascrive una decisione già presa dal presidio."""
@@ -529,8 +1136,12 @@ class ClassificazioneRischio(models.Model):
         return self
 
     @transaction.atomic
-    def valida(self, categoria, attore, nota="", motivazione=None):
-        """Il presidio competente conferma (validato) o cambia categoria (modificato)."""
+    def valida(self, categoria, attore, nota="", motivazione=None, obblighi=None):
+        """Il presidio competente conferma (validato) o cambia categoria (modificato).
+
+        Puo' anche rifinire il trattamento del rischio (misure/obblighi): se
+        `obblighi` e' valorizzato, sostituisce le misure proposte dall'AI.
+        """
         categoria = str(categoria)
         modificato = bool(self.ai_categoria) and categoria != self.ai_categoria
         if not self.ai_categoria and categoria != self.categoria:
@@ -538,6 +1149,8 @@ class ClassificazioneRischio(models.Model):
         self.categoria = categoria
         if motivazione is not None and motivazione.strip():
             self.motivazione = motivazione.strip()
+        if obblighi is not None and obblighi.strip():
+            self.obblighi = obblighi.strip()
         self.nota_validatore = nota or ""
         self.stato = StatoRischio.MODIFICATO if modificato else StatoRischio.VALIDATO
         self.validato_da = attore
@@ -554,10 +1167,49 @@ class ClassificazioneRischio(models.Model):
                    verbo, self.tipo, categoria, getattr(attore, "username", "?"))
         return self
 
+    @transaction.atomic
+    def registra_trattamento(self, attore):
+        """Scrive l'audit del trattamento (le azioni sono salvate a parte dal formset)."""
+        self.trattato_da = attore
+        self.trattato_il = timezone.now()
+        # Coerenza: ACCETTATO/EVITATO non hanno un residuo selezionabile.
+        if self.strategia in (StrategiaTrattamento.ACCETTATO, StrategiaTrattamento.EVITATO):
+            self.rischio_residuo = ""
+            self.residuo_convalidato = False
+        self.save()
+        etichetta = f"Rischio {self.get_tipo_display()} — trattamento: {self.get_strategia_display()}"
+        nota = self.trattamento_operazione
+        if self.residuo_da_convalidare:
+            nota += " · rischio residuo DA CONVALIDARE"
+        Transizione.objects.create(
+            richiesta=self.richiesta, azione=f"rischio_trattato_{self.tipo.lower()}",
+            etichetta=etichetta, stato_da=self.richiesta.stato, stato_a=self.richiesta.stato,
+            attore=attore, nota=nota,
+        )
+        audit.info("richiesta=%s rischio_trattato tipo=%s strategia=%s residuo=%s conv=%s attore=%s",
+                   self.richiesta.codice, self.tipo, self.strategia, self.residuo_codice,
+                   self.residuo_convalidato, getattr(attore, "username", "?"))
+        return self
 
-# =============================================================================
-# Configurazione AI (singleton) per la lettura esecutiva dei KPI
-# =============================================================================
+
+class AzioneTrattamento(models.Model):
+    """Azione di mitigazione pianificata per una classificazione di rischio."""
+
+    classificazione = models.ForeignKey(
+        ClassificazioneRischio, on_delete=models.CASCADE, related_name="azioni",
+    )
+    descrizione = models.CharField(max_length=500, verbose_name="Azione da intraprendere")
+    data_prevista = models.DateField(null=True, blank=True, verbose_name="Data prevista di applicazione")
+    ordine = models.PositiveIntegerField(default=0)
+    creata_il = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        verbose_name = "Azione di trattamento"
+        verbose_name_plural = "Azioni di trattamento"
+        ordering = ["ordine", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.classificazione.tipo} · {self.descrizione[:40]}"
 
 MODELLI_CLAUDE = [
     ("claude-sonnet-4-6", "Claude Sonnet 4.6 — consigliato (qualità/costo)"),
@@ -590,7 +1242,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
 - "categoria": uno tra "VIETATO", "ALTO", "LIMITATO", "MINIMO"
 - "motivazione": 1-3 frasi in italiano che spiegano la classificazione riferendosi al caso d'uso
 - "riferimenti": articolo o allegato pertinente (es. "Allegato III, punto 4" oppure "Art. 50")
-- "obblighi": elenco sintetico degli obblighi derivati (es. DPIA/FRIA, registrazione UE, sorveglianza umana, informativa agli interessati); per la categoria MINIMO indica che non vi sono obblighi specifici oltre ai principi generali e al GDPR.
+- "obblighi": array JSON di 3-6 stringhe brevi, ciascuna una misura concreta e attuabile di trattamento del rischio, formulata in modo professionale e specifica per il caso (es. "Condurre una DPIA/FRIA prima del rilascio", "Predisporre una sorveglianza umana effettiva sull'output", "Registrare il sistema nella banca dati UE se richiesto", "Fornire un'informativa chiara agli interessati"); per la categoria MINIMO usa un'unica voce che non vi sono obblighi specifici oltre ai principi generali e al GDPR.
 
 La classificazione è preliminare e dovrà essere validata dalla Funzione Legale."""
 
@@ -608,7 +1260,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
 - "categoria": uno tra "ALTO", "MEDIO", "BASSO", "NA"
 - "motivazione": 1-3 frasi in italiano riferite al caso d'uso
 - "riferimenti": riferimento pertinente (es. "Art. 21 — misure di gestione del rischio" o "Art. 23 — notifica incidenti")
-- "obblighi": elenco sintetico delle misure/obblighi che ne derivano; per "NA" indica che non vi sono obblighi NIS2 specifici.
+- "obblighi": array JSON di 3-6 stringhe brevi, ciascuna una misura concreta e attuabile di trattamento del rischio, formulata in modo professionale e specifica per il caso (es. "Definire misure di gestione del rischio ex art. 21", "Predisporre il processo di rilevamento e notifica degli incidenti", "Valutare la sicurezza della catena di fornitura coinvolta", "Applicare controllo accessi, segmentazione e cifratura"); per "NA" usa un'unica voce che non vi sono obblighi NIS2 specifici.
 
 La classificazione è preliminare e dovrà essere validata dal CISO."""
 
@@ -626,7 +1278,7 @@ Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo e s
 - "categoria": uno tra "ALTO", "MEDIO", "BASSO", "NA"
 - "motivazione": 1-3 frasi in italiano riferite al caso d'uso
 - "riferimenti": riferimento pertinente (es. "Art. 35 — DPIA", "Art. 9 — categorie particolari", "Art. 6 — base giuridica")
-- "obblighi": elenco sintetico degli obblighi che ne derivano (es. base giuridica, informativa, DPIA, minimizzazione); per "NA" indica che non vi sono obblighi GDPR specifici.
+- "obblighi": array JSON di 3-6 stringhe brevi, ciascuna una misura concreta e attuabile di trattamento del rischio, formulata in modo professionale e specifica per il caso (es. "Individuare e documentare la base giuridica del trattamento", "Aggiornare il Registro dei trattamenti (art. 30)", "Applicare la minimizzazione e limitare l'accesso ai soli autorizzati", "Garantire misure di sicurezza adeguate, quali controllo accessi e cifratura"); per "NA" usa un'unica voce che non vi sono obblighi GDPR specifici.
 
 La classificazione è preliminare e dovrà essere validata dal DPO."""
 
@@ -717,3 +1369,59 @@ class ConfigurazioneAI(models.Model):
         custom = {"AIACT": self.prompt_rischio_aiact, "NIS2": self.prompt_rischio_nis2,
                   "GDPR": self.prompt_rischio_gdpr}.get(tipo, "")
         return (custom or "").strip() or PROMPT_RISCHIO_DEFAULT.get(tipo, "")
+
+
+class AttivitaEffort(models.TextChoices):
+    """Attività su cui viene ripartito l'effort di progetto (tassonomia fissa per aggregare)."""
+
+    ANALISI = "ANALISI", "Analisi e progettazione"
+    SVILUPPO = "SVILUPPO", "Sviluppo"
+    TEST = "TEST", "Test e validazione"
+    COMPLIANCE = "COMPLIANCE", "Compliance e rischio"
+    INFRASTRUTTURA = "INFRASTRUTTURA", "Infrastruttura e deploy"
+    ADOZIONE = "ADOZIONE", "Formazione e adozione"
+
+
+class FiguraEffort(models.TextChoices):
+    """Figure coinvolte, a livello di RUOLO (mai persone nominate)."""
+
+    FUNZIONE_AI = "FUNZIONE_AI", "Funzione tecnica"
+    OWNER = "OWNER", "Owner / delegati"
+    INFRA = "INFRA", "IT / Infrastruttura"
+    PRESIDI = "PRESIDI", "Presìdi (CISO/DPO/Legale)"
+    UTENTI = "UTENTI", "Utenti chiave"
+
+
+FIGURA_DEFAULT_PER_ATTIVITA = {
+    AttivitaEffort.ANALISI: FiguraEffort.FUNZIONE_AI,
+    AttivitaEffort.SVILUPPO: FiguraEffort.FUNZIONE_AI,
+    AttivitaEffort.TEST: FiguraEffort.OWNER,
+    AttivitaEffort.COMPLIANCE: FiguraEffort.PRESIDI,
+    AttivitaEffort.INFRASTRUTTURA: FiguraEffort.INFRA,
+    AttivitaEffort.ADOZIONE: FiguraEffort.OWNER,
+}
+
+ORDINE_ATTIVITA = [a.value for a in AttivitaEffort]
+
+
+class VoceEffort(models.Model):
+    """Una voce della ripartizione effort: attività, figura coinvolta, ore.
+
+    La somma delle voci di una richiesta deve quadrare con effort_ore: la
+    creazione via AI lo garantisce per costruzione, la modifica manuale lo
+    valida nel form. Tutto resta modificabile dalla Funzione AI.
+    """
+
+    richiesta = models.ForeignKey(Richiesta, on_delete=models.CASCADE, related_name="voci_effort")
+    attivita = models.CharField(max_length=16, choices=AttivitaEffort.choices)
+    figura = models.CharField(max_length=16, choices=FiguraEffort.choices)
+    ore = models.PositiveIntegerField(default=0)
+    stimata_ai = models.BooleanField(default=True)
+    aggiornata_il = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Voce effort"
+        verbose_name_plural = "Voci effort"
+
+    def __str__(self):
+        return f"{self.richiesta_id} {self.attivita} {self.ore}h"

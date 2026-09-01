@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load flusso_extras %}
-{% block titolo %}Dashboard · ISEO AI{% endblock %}
+{% block titolo %}Dashboard · Progetti Digital Transformation{% endblock %}
 {% block contenuto %}
 <div class="page-head">
   <div>
@@ -9,6 +9,7 @@
     <p>Stato delle esigenze/opportunità AI di Gruppo e azioni in carico al tuo ruolo.</p>
   </div>
 </div>
+{% include "flusso/_filtro_tipo.html" %}
 
 <div class="kpi-row">
   <div class="kpi"><div class="n">{{ totale }}</div><div class="l">Richieste totali</div></div>
@@ -16,6 +17,28 @@
   <div class="kpi"><div class="n">{{ attivi }}</div><div class="l">Progetti attivi / SAL</div></div>
   <div class="kpi"><div class="n">{{ da_fare_totale }}</div><div class="l">In attesa di una tua azione</div></div>
 </div>
+
+{% if dimensione_presidio %}
+<div class="card" style="margin-bottom:16px;border-left:3px solid var(--rosso);">
+  <h2><i class="ti ti-gavel" style="vertical-align:-2px;color:var(--rosso)"></i> Da validare — {{ dimensione_presidio }} <span class="sub">— rischi in attesa della tua validazione o trattamento</span></h2>
+  {% if rischi_da_validare %}
+  <div class="todo-list">
+    {% for c in rischi_da_validare %}
+    <a href="{{ c.richiesta.get_absolute_url }}#rischio" class="todo-item">
+      <span class="scheda-icona {{ c.richiesta.funzione|classe_funzione }}" style="width:32px;height:32px;font-size:16px;"><i class="ti {{ c.richiesta.funzione|icona_funzione }}"></i></span>
+      <span class="ti-corpo">
+        <span class="t-tit">{{ c.richiesta.codice }} · {{ c.richiesta.titolo }}</span>
+        <span class="t-sub">{{ c.richiesta.get_funzione_display }} · proposta AI: <b>{{ c.ai_label }}</b></span>
+      </span>
+      <span class="rk-stato rks-att"><i class="ti ti-robot"></i> Da validare</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="vuoto"><i class="ti ti-circle-check" style="font-size:22px;display:block;margin-bottom:6px;color:var(--ok)"></i>Nessun rischio in attesa della tua validazione.</div>
+  {% endif %}
+</div>
+{% endif %}
 
 <div class="cols-2">
   <div class="card">

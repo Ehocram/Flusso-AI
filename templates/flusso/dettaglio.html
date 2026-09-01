@@ -34,10 +34,52 @@
   <div>
     {% include "flusso/_scheda.html" with r=richiesta mostra_foot=False %}
 
+    {% if richiesta.modifica_bloccata %}
+    <div class="lock-note"><i class="ti ti-lock"></i> Scheda in approvazione o approvata: i valori sono congelati e non modificabili.</div>
+    {% endif %}
+    {% if beneficio_form %}
+    <form method="post" action="{% url 'flusso:aggiorna_beneficio' richiesta.pk %}" class="card benef-form" style="margin-top:18px;">
+      {% csrf_token %}
+      <div class="benef-head"><i class="ti ti-pencil" style="color:var(--rosso)"></i> Beneficio e incrementi attesi <span class="benef-sub">— modificabili dall'owner e dalla Funzione tecnica</span></div>
+      <div class="form-grid">
+        <div class="f-row full">
+          <label for="{{ beneficio_form.saving_economico.id_for_label }}">Beneficio economico (€/anno)</label>
+          {{ beneficio_form.saving_economico }}
+        </div>
+        <div class="f-row full">
+          <label for="{{ beneficio_form.saving_economico_note.id_for_label }}">Nota beneficio</label>
+          {{ beneficio_form.saving_economico_note }}
+        </div>
+        <div class="f-row">
+          <label for="{{ beneficio_form.incremento_qualitativo.id_for_label }}">Incremento qualitativo (%)</label>
+          {{ beneficio_form.incremento_qualitativo }}
+        </div>
+        <div class="f-row">
+          <label for="{{ beneficio_form.incremento_qualitativo_note.id_for_label }}">Nota qualitativo</label>
+          {{ beneficio_form.incremento_qualitativo_note }}
+        </div>
+        <div class="f-row">
+          <label for="{{ beneficio_form.incremento_efficienza.id_for_label }}">Incremento efficienza (%)</label>
+          {{ beneficio_form.incremento_efficienza }}
+        </div>
+        <div class="f-row">
+          <label for="{{ beneficio_form.incremento_efficienza_note.id_for_label }}">Nota efficienza</label>
+          {{ beneficio_form.incremento_efficienza_note }}
+        </div>
+      </div>
+      <div style="margin-top:12px;"><button type="submit" class="btn btn-primario btn-sm"><i class="ti ti-device-floppy"></i> Salva beneficio</button></div>
+    </form>
+    {% endif %}
+
     <div class="card" style="margin-top:18px;">
-      <h2><i class="ti ti-clipboard-data" style="vertical-align:-2px;color:var(--rosso)"></i> Analisi Funzione AI</h2>
+      <h2><i class="ti ti-clipboard-data" style="vertical-align:-2px;color:var(--rosso)"></i> Analisi {{ richiesta.funzione_competente_label }}</h2>
       {% if analisi_form %}
       {# Modificabile dall'AI Officer #}
+      <form method="post" action="{% url 'flusso:compila_analisi_ai' richiesta.pk %}" class="analisi-ai-form" data-ai-wait="Compilazione AI dell'analisi in corso…">
+        {% csrf_token %}
+        <button type="submit" class="btn-ai-tondo" title="Compila l'intera analisi con l'AI (fattibilità, tipo, infrastruttura, effort, costi, benefici), poi verifica e salva.">AI</button>
+        <span class="ai-tondo-hint">Premi <b>AI</b> per far precompilare l'intera analisi. Poi verifica i campi, modificali se serve e salva con «Salva analisi».</span>
+      </form>
       <form method="post" action="{% url 'flusso:aggiorna_analisi' richiesta.pk %}" class="analisi-form">
         {% csrf_token %}
         <div class="f-row">
@@ -46,30 +88,63 @@
         </div>
         <div class="form-grid">
           <div class="f-row">
+            <label for="{{ analisi_form.ai_autonomia.id_for_label }}">Tipo di AI</label>
+            {{ analisi_form.ai_autonomia }}
+            <span class="help">Agentica autonoma, agentica a supporto (human-in-the-loop) o non agentica.</span>
+          </div>
+          <div class="f-row">
+            <label for="{{ analisi_form.ai_deployment.id_for_label }}">Infrastruttura prevista</label>
+            {{ analisi_form.ai_deployment }}
+            <span class="help">API cloud, LLM locale on-premise o ibrido — impatta GDPR/NIS2.</span>
+          </div>
+          <div class="f-row">
             <label for="{{ analisi_form.effort_ore.id_for_label }}">Effort (ore)</label>
             {{ analisi_form.effort_ore }}
-          </div>
-          <div class="f-row">
-            <label for="{{ analisi_form.data_inizio.id_for_label }}">Inizio lavori</label>
-            {{ analisi_form.data_inizio }}
-          </div>
-          <div class="f-row">
-            <label for="{{ analisi_form.data_consegna_prevista.id_for_label }}">Consegna prevista</label>
-            {{ analisi_form.data_consegna_prevista }}
-          </div>
-          <div class="f-row">
-            <label for="{{ analisi_form.costo_token_ai.id_for_label }}">Costi token AI (€)</label>
-            {{ analisi_form.costo_token_ai }}
           </div>
           <div class="f-row">
             <label for="{{ analisi_form.altri_costi.id_for_label }}">Altri costi (€)</label>
             {{ analisi_form.altri_costi }}
           </div>
-          <div class="f-row">
+          <div class="f-row full">
             <label for="{{ analisi_form.altri_costi_note.id_for_label }}">Dettaglio altri costi</label>
             {{ analisi_form.altri_costi_note }}
           </div>
+          <div class="f-row full">
+            <label for="{{ analisi_form.costo_token_ai.id_for_label }}">Costi token AI (€){% if richiesta.costo_token_ai_stimato %} <span class="badge-ai"><i class="ti ti-robot"></i> Stima AI · modificabile</span>{% endif %}</label>
+            <div class="costo-token-row ctr-3">
+              {{ analisi_form.costo_token_ai }}
+              {{ analisi_form.costo_token_periodicita }}
+              {{ analisi_form.costo_token_ambito }}
+            </div>
+            <span class="help">Importo (lascia vuoto = stima AI al salvataggio) · periodicità · ambito. Utenti previsti (dall'owner): <b>{{ richiesta.numero_utenti|default:"non indicato" }}</b> — usato per il totale.</span>
+            <div class="help" data-annuo data-utenti="{{ richiesta.numero_utenti|default:0 }}" style="margin-top:6px;">Costo token annualizzato: <b>—</b></div>
+          </div>
         </div>
+        {% if richiesta.esito_budget %}
+        <div class="bgt {{ richiesta.esito_budget_css }}" style="margin-top:14px;">
+          <div class="bgt-head"><i class="ti ti-user-check"></i> Decisione dell'owner <span class="bgt-stato">{{ richiesta.get_esito_budget_display }}</span></div>
+          {% if richiesta.costo_progetto_stimato is not None %}<div class="t-mut" style="margin-top:4px;">Costo di progetto € {{ richiesta.costo_progetto_stimato|floatformat:2 }} — classificato {{ richiesta.get_esito_budget_display|lower }} dall'owner.</div>{% endif %}
+        </div>
+        {% endif %}
+        {% if richiesta.ripartizione_budget %}
+        <div class="bgt {{ richiesta.budget_stato_css }}" style="margin-top:14px;">
+          <div class="bgt-head"><i class="ti ti-wallet"></i> Verifica a budget (importi owner) <span class="bgt-stato">{{ richiesta.budget_stato_label }}</span></div>
+          <div class="bgt-barra">
+            {% if richiesta.ripartizione_budget.costo %}
+            <div class="bgt-fill bgt-ab" style="width: {% widthratio richiesta.ripartizione_budget.a_budget richiesta.ripartizione_budget.costo 100 %}%;"></div>
+            <div class="bgt-fill bgt-ex" style="width: {% widthratio richiesta.ripartizione_budget.extra richiesta.ripartizione_budget.costo 100 %}%;"></div>
+            {% endif %}
+          </div>
+          <div class="bgt-righe">
+            <span>Costo di progetto: <b>€ {{ richiesta.ripartizione_budget.costo|floatformat:2 }}</b></span>
+            <span class="bgt-ab-txt">A budget: <b>€ {{ richiesta.ripartizione_budget.a_budget|floatformat:2 }}</b></span>
+            <span class="bgt-ex-txt">Extra budget: <b>€ {{ richiesta.ripartizione_budget.extra|floatformat:2 }}</b></span>
+          </div>
+          <div class="t-mut" style="margin-top:4px;">Budget disponibile € {{ richiesta.budget_massimo|floatformat:2 }}{% if richiesta.extra_budget_massimo is not None %} · extra richiedibile € {{ richiesta.extra_budget_massimo|floatformat:2 }}{% endif %}.</div>
+        </div>
+        {% elif not richiesta.esito_budget and richiesta.costo_progetto_stimato is not None %}
+        <div class="t-mut" style="margin-top:12px;"><i class="ti ti-wallet"></i> In attesa della decisione di budget dell'owner (a budget / extra budget).</div>
+        {% endif %}
         <div style="margin-top:14px;">
           <button type="submit" class="btn btn-primario btn-sm"><i class="ti ti-device-floppy"></i> Salva analisi</button>
           {% if richiesta.costo_totale_stimato is not None %}
@@ -81,20 +156,48 @@
       {# Sola lettura per gli altri ruoli #}
       {% if richiesta.analisi_fattibilita %}<p class="analisi-fatt">{{ richiesta.analisi_fattibilita }}</p>{% endif %}
       <div class="analisi-grid">
+        <div class="dato"><span class="lab">Tipo di AI</span><span class="val">{{ richiesta.get_ai_autonomia_display|default:"—" }}</span></div>
+        <div class="dato"><span class="lab">Infrastruttura</span><span class="val">{{ richiesta.get_ai_deployment_display|default:"—" }}</span></div>
         <div class="dato"><span class="lab">Effort</span><span class="val">{% if richiesta.effort_ore %}{{ richiesta.effort_ore }} h{% else %}—{% endif %}</span></div>
         <div class="dato"><span class="lab">Inizio lavori</span><span class="val">{{ richiesta.data_inizio|date:"d/m/Y"|default:"—" }}</span></div>
         <div class="dato"><span class="lab">Consegna prevista</span><span class="val">{{ richiesta.data_consegna_prevista|date:"d/m/Y"|default:"—" }}</span></div>
-        <div class="dato"><span class="lab">Costi token AI</span><span class="val">{% if richiesta.costo_token_ai is not None %}€ {{ richiesta.costo_token_ai|floatformat:2 }}{% else %}—{% endif %}</span></div>
+        <div class="dato"><span class="lab">Costi token AI{% if richiesta.costo_token_ai_stimato %} · stima AI{% endif %}</span><span class="val">{% if richiesta.costo_token_ai is not None %}€ {{ richiesta.costo_token_ai|floatformat:2 }}{% if richiesta.costo_token_periodicita %} · {{ richiesta.get_costo_token_periodicita_display }}{% endif %}{% if richiesta.costo_token_ambito %} · {{ richiesta.get_costo_token_ambito_display }}{% endif %}{% else %}—{% endif %}</span></div>
+        <div class="dato"><span class="lab">Numero utenti/team</span><span class="val">{{ richiesta.numero_utenti|default:"—" }}</span></div>
+        <div class="dato"><span class="lab">Costo token annualizzato</span><span class="val">{% if richiesta.costo_token_annuo is not None %}€ {{ richiesta.costo_token_annuo|floatformat:2 }}/anno{% if richiesta.costo_token_ambito %} · {{ richiesta.get_costo_token_ambito_display|lower }}{% endif %}{% elif richiesta.costo_token_ai is not None and richiesta.costo_token_periodicita == 'UNA_TANTUM' %}una tantum{% else %}—{% endif %}</span></div>
+        <div class="dato tot"><span class="lab">Costo token annuo totale</span><span class="val">{% if richiesta.costo_token_annuo_totale is not None %}€ {{ richiesta.costo_token_annuo_totale|floatformat:2 }}/anno{% else %}—{% endif %}</span></div>
         <div class="dato"><span class="lab">Altri costi</span><span class="val">{% if richiesta.altri_costi is not None %}€ {{ richiesta.altri_costi|floatformat:2 }}{% else %}—{% endif %}</span></div>
         <div class="dato tot"><span class="lab">Totale stimato</span><span class="val">{% if richiesta.costo_totale_stimato is not None %}€ {{ richiesta.costo_totale_stimato|floatformat:2 }}{% else %}—{% endif %}</span></div>
       </div>
       {% if richiesta.altri_costi_note %}<div class="t-mut" style="margin-top:8px;">Dettaglio altri costi: {{ richiesta.altri_costi_note }}</div>{% endif %}
+      {% if richiesta.esito_budget %}
+      <div class="bgt {{ richiesta.esito_budget_css }}" style="margin-top:12px;">
+        <div class="bgt-head"><i class="ti ti-user-check"></i> Decisione dell'owner <span class="bgt-stato">{{ richiesta.get_esito_budget_display }}</span></div>
+        {% if richiesta.costo_progetto_stimato is not None %}<div class="t-mut" style="margin-top:4px;">Costo di progetto € {{ richiesta.costo_progetto_stimato|floatformat:2 }} — classificato {{ richiesta.get_esito_budget_display|lower }} dall'owner.</div>{% endif %}
+      </div>
+      {% endif %}
+      {% if richiesta.ripartizione_budget %}
+      <div class="bgt {{ richiesta.budget_stato_css }}" style="margin-top:12px;">
+        <div class="bgt-head"><i class="ti ti-wallet"></i> Verifica a budget <span class="bgt-stato">{{ richiesta.budget_stato_label }}</span></div>
+        <div class="bgt-barra">
+          {% if richiesta.ripartizione_budget.costo %}
+          <div class="bgt-fill bgt-ab" style="width: {% widthratio richiesta.ripartizione_budget.a_budget richiesta.ripartizione_budget.costo 100 %}%;"></div>
+          <div class="bgt-fill bgt-ex" style="width: {% widthratio richiesta.ripartizione_budget.extra richiesta.ripartizione_budget.costo 100 %}%;"></div>
+          {% endif %}
+        </div>
+        <div class="bgt-righe">
+          <span>Costo di progetto: <b>€ {{ richiesta.ripartizione_budget.costo|floatformat:2 }}</b></span>
+          <span class="bgt-ab-txt">A budget: <b>€ {{ richiesta.ripartizione_budget.a_budget|floatformat:2 }}</b></span>
+          <span class="bgt-ex-txt">Extra budget: <b>€ {{ richiesta.ripartizione_budget.extra|floatformat:2 }}</b></span>
+        </div>
+        <div class="t-mut" style="margin-top:4px;">Budget disponibile € {{ richiesta.budget_massimo|floatformat:2 }}{% if richiesta.extra_budget_massimo is not None %} · extra richiedibile € {{ richiesta.extra_budget_massimo|floatformat:2 }}{% endif %} (indicati dall'owner).</div>
+      </div>
+      {% endif %}
       {% else %}
-      <div class="vuoto" style="padding:10px 4px;">Analisi non ancora compilata dalla Funzione AI.</div>
+      <div class="vuoto" style="padding:10px 4px;">Analisi non ancora compilata dalla {{ richiesta.funzione_competente_label }}.</div>
       {% endif %}
     </div>
 
-    <div class="card rischio-card" style="margin-top:18px;">
+    <div class="card rischio-card" id="rischio" style="margin-top:18px;">
       <div class="rischio-cardhead">
         <h2><i class="ti ti-scale" style="vertical-align:-2px;color:var(--rosso)"></i> Rischio &amp; Conformità
           <span class="sub">classificazione preliminare · da validare dai presìdi</span></h2>
@@ -125,13 +228,43 @@
         {% if d.c.motivazione %}<p class="rischio-mot">{{ d.c.motivazione }}</p>{% endif %}
         <div class="rischio-grid">
           {% if d.c.riferimenti %}<div class="dato"><span class="lab">Riferimenti</span><span class="val">{{ d.c.riferimenti }}</span></div>{% endif %}
-          {% if d.c.obblighi %}<div class="dato"><span class="lab">Obblighi derivati</span><span class="val">{{ d.c.obblighi }}</span></div>{% endif %}
         </div>
+        {% if d.c.obblighi_voci %}
+        <div class="rischio-misure-wrap">
+          <span class="lab">Obblighi e misure di trattamento</span>
+          <ul class="rischio-misure">{% for voce in d.c.obblighi_voci %}<li>{{ voce }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
         <div class="t-mut" style="margin-top:8px;">
           {% if d.c.ai_il %}<i class="ti ti-robot" style="vertical-align:-2px;"></i> Stima AI{% if d.c.ai_modello %} ({{ d.c.ai_modello }}){% endif %} del {{ d.c.ai_il|date:"d/m/Y H:i" }}{% endif %}
-          {% if d.c.validato %} · <i class="ti ti-gavel" style="vertical-align:-2px;"></i> {{ d.c.validato_da.get_full_name|default:d.c.validato_da.username }} il {{ d.c.validato_il|date:"d/m/Y H:i" }}{% endif %}
+          {% if d.c.validato %} · <i class="ti ti-gavel" style="vertical-align:-2px;"></i> {% if d.c.validato_da %}{{ d.c.validato_da.get_full_name|default:d.c.validato_da.username }}{% else %}sistema{% endif %} il {{ d.c.validato_il|date:"d/m/Y H:i" }}{% endif %}
         </div>
         {% if d.c.nota_validatore %}<div class="t-nota" style="margin-top:6px;">Nota {{ d.c.validatore_label }}: {{ d.c.nota_validatore }}</div>{% endif %}
+
+        {% if d.c.trattato %}
+        <div class="trk">
+          <div class="trk-head">
+            <span class="trk-lab"><i class="ti ti-shield-check"></i> Trattamento</span>
+            <span class="trk-strat trk-{{ d.c.strategia|lower }}">{{ d.c.get_strategia_display }}</span>
+            {% if d.c.strategia == 'MITIGATO' or d.c.strategia == 'TRASFERITO' %}
+            <span class="rk-arrow rk-{{ d.c.residuo_direzione }}">{% if d.c.residuo_direzione == 'giu' %}&#8595;{% elif d.c.residuo_direzione == 'su' %}&#8593;{% else %}={% endif %}</span>
+            <span class="trk-res">Residuo: <span class="rk {{ d.c.residuo_css }}">{{ d.c.residuo_label }}</span></span>
+            {% if d.c.residuo_da_convalidare %}<span class="rk-stato rks-att"><i class="ti ti-clock"></i> Residuo da convalidare</span>
+            {% else %}<span class="rk-stato rks-ok"><i class="ti ti-check"></i> Residuo convalidato</span>{% endif %}
+            {% endif %}
+          </div>
+          <p class="trk-op">{{ d.c.trattamento_operazione }}</p>
+          {% if d.c.azioni.all %}
+          <ul class="trk-azioni">
+            {% for a in d.c.azioni.all %}
+            <li><span class="trk-az-desc">{{ a.descrizione }}</span>{% if a.data_prevista %}<span class="trk-az-data"><i class="ti ti-calendar-event"></i> {{ a.data_prevista|date:"d/m/Y" }}</span>{% endif %}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if d.c.trattamento_note %}<div class="t-nota" style="margin-top:6px;">Note: {{ d.c.trattamento_note }}</div>{% endif %}
+          {% if d.c.trattato_il %}<div class="t-mut" style="margin-top:6px;"><i class="ti ti-gavel" style="vertical-align:-2px;"></i> {% if d.c.trattato_da %}{{ d.c.trattato_da.get_full_name|default:d.c.trattato_da.username }}{% else %}sistema{% endif %} il {{ d.c.trattato_il|date:"d/m/Y H:i" }}</div>{% endif %}
+        </div>
+        {% endif %}
 
         {% if d.form %}
         <form method="post" action="{% url 'flusso:valida_rischio' richiesta.pk d.c.tipo %}" class="rk-valida">
@@ -141,15 +274,58 @@
             <div class="f-row"><label for="{{ d.form.nota.id_for_label }}">Nota</label>{{ d.form.nota }}</div>
           </div>
           <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.form.motivazione.id_for_label }}">Motivazione (opzionale)</label>{{ d.form.motivazione }}</div>
+          <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.form.obblighi.id_for_label }}">Obblighi e misure di trattamento</label>{{ d.form.obblighi }}<span class="t-mut" style="display:block;margin-top:4px;">Una misura per riga. Vuoto = mantiene le misure proposte dall'AI.</span></div>
           <button type="submit" class="btn btn-positivo btn-sm"><i class="ti ti-check"></i> Conferma {{ d.c.get_tipo_display }}</button>
           <span class="t-mut" style="margin-left:8px;">Conferma = validato; categoria diversa = modificato.</span>
+        </form>
+        {% endif %}
+
+        {% if d.tratta_form %}
+        <form method="post" action="{% url 'flusso:tratta_rischio' richiesta.pk d.c.tipo %}" class="trk-form" data-trk>
+          {% csrf_token %}
+          <div class="trk-form-tit"><i class="ti ti-shield-check"></i> Tratta il rischio</div>
+          <div class="f-row" style="margin-bottom:8px;"><label for="{{ d.tratta_form.strategia.id_for_label }}">Strategia di trattamento</label>{{ d.tratta_form.strategia }}</div>
+
+          <div class="trk-blocco" data-trk-azioni>
+            <span class="lab">Azioni da intraprendere (con data prevista di applicazione)</span>
+            {{ d.azioni_formset.management_form }}
+            <div class="trk-rows" data-formset-rows data-prefix="{{ d.azioni_formset.prefix }}">
+              {% for af in d.azioni_formset %}
+              <div class="trk-row" data-formset-row>
+                {{ af.id }}
+                <div class="trk-row-desc">{{ af.descrizione }}</div>
+                <div class="trk-row-data">{{ af.data_prevista }}</div>
+                {% if af.instance.pk %}<label class="trk-row-del">{{ af.DELETE }} elimina</label>{% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            <template data-empty-row>
+              <div class="trk-row" data-formset-row>
+                <div class="trk-row-desc">{{ d.azioni_formset.empty_form.descrizione }}</div>
+                <div class="trk-row-data">{{ d.azioni_formset.empty_form.data_prevista }}</div>
+              </div>
+            </template>
+            <button type="button" class="btn btn-ghost btn-sm" data-add-row><i class="ti ti-plus"></i> Aggiungi azione</button>
+          </div>
+
+          <div class="trk-blocco" data-trk-residuo>
+            <div class="rk-valida-row">
+              <div class="f-row"><label for="{{ d.tratta_form.rischio_residuo.id_for_label }}">Rischio residuo</label>{{ d.tratta_form.rischio_residuo }}<span class="t-mut" style="display:block;margin-top:4px;">Suggerito (indicativo): <b>{{ d.c.residuo_suggerito|default:"—" }}</b> — un livello sotto l'inerente. La decisione resta del presidio.</span></div>
+              <div class="f-row"><label>&nbsp;</label><label class="trk-check">{{ d.tratta_form.residuo_convalidato }} <span>Convalida il rischio residuo</span></label></div>
+            </div>
+          </div>
+
+          <div class="f-row" style="margin:8px 0 10px;"><label for="{{ d.tratta_form.trattamento_note.id_for_label }}">Note di trattamento</label>{{ d.tratta_form.trattamento_note }}</div>
+
+          <button type="submit" class="btn btn-positivo btn-sm"><i class="ti ti-device-floppy"></i> Salva trattamento {{ d.c.get_tipo_display }}</button>
+          <span class="t-mut" style="margin-left:8px;">Se non tratti nulla, il rischio resta accettato come proposto dall'AI.</span>
         </form>
         {% endif %}
       </div>
       {% endfor %}
 
       {% if puo_analizza_rischio %}
-      <form method="post" action="{% url 'flusso:analizza_rischio' richiesta.pk %}" style="margin-top:14px;">
+      <form method="post" action="{% url 'flusso:analizza_rischio' richiesta.pk %}" style="margin-top:14px;" data-ai-wait="Calcolo AI dei rischi in corso…">
         {% csrf_token %}
         <button type="submit" class="btn btn-sm"><i class="ti ti-robot"></i> Analizza le tre dimensioni con l'AI</button>
         <span class="t-mut" style="margin-left:8px;">La descrizione del progetto viene inviata a Claude.</span>
@@ -165,7 +341,7 @@
           <div class="t-az">{{ ev.etichetta }}
             {% if not ev.is_sal %}<span class="t-mut">· {{ ev.stato_da_label }} → {{ ev.stato_a_label }}</span>{% endif %}
           </div>
-          <div class="t-mut">{{ ev.creata_il|date:"d/m/Y H:i" }} · {{ ev.attore.get_full_name|default:ev.attore.username|default:"sistema" }}</div>
+          <div class="t-mut">{{ ev.creata_il|date:"d/m/Y H:i" }} · {% if ev.attore %}{{ ev.attore.get_full_name|default:ev.attore.username }}{% else %}sistema{% endif %}</div>
           {% if ev.nota %}<div class="t-nota">{{ ev.nota }}</div>{% endif %}
         </li>
         {% empty %}
@@ -178,7 +354,23 @@
   <aside>
     <div class="card">
       <h2><i class="ti ti-arrow-guide" style="vertical-align:-2px;color:var(--rosso)"></i> Azioni</h2>
-      {% if azioni %}
+      {% if mostra_decisione_budget %}
+      <p class="t-mut" style="margin:0 0 10px;">L'analisi della {{ richiesta.funzione_competente_label }} è completa. Indica se l'importo è <b>a budget</b> o <b>extra budget</b> per proseguire (l'AI genererà i rischi), oppure rifiuta il progetto.</p>
+      {% if richiesta.costo_progetto_stimato is not None %}
+      <div class="dec-costo">Costo di progetto stimato: <b>€ {{ richiesta.costo_progetto_stimato|floatformat:2 }}</b></div>
+      {% endif %}
+      <form method="post" action="{% url 'flusso:decidi_budget' richiesta.pk %}" data-ai-wait="Calcolo AI dei rischi in corso…">
+        {% csrf_token %}
+        <label class="dec-opt"><input type="radio" name="esito_budget" value="A_BUDGET" required> A budget</label>
+        <label class="dec-opt"><input type="radio" name="esito_budget" value="EXTRA_BUDGET"> Extra budget</label>
+        <button type="submit" class="btn btn-positivo btn-sm" style="width:100%;justify-content:center;margin-top:10px;"><i class="ti ti-check"></i> Conferma e prosegui</button>
+      </form>
+      <form method="post" action="{% url 'flusso:esegui_azione' richiesta.pk %}" style="margin-top:14px;" onsubmit="return confirm('Rifiutare e archiviare definitivamente il progetto {{ richiesta.codice }}? Non proseguirà.');">
+        {% csrf_token %}
+        <textarea name="nota" rows="2" class="campo" placeholder="Motivazione del rifiuto (obbligatoria)…"></textarea>
+        <button type="submit" name="azione" value="rifiuta_progetto" class="btn btn-pericolo btn-sm" style="width:100%;justify-content:center;margin-top:8px;"><i class="ti ti-archive"></i> Rifiuta e archivia</button>
+      </form>
+      {% elif azioni %}
       <form method="post" action="{% url 'flusso:esegui_azione' richiesta.pk %}">
         {% csrf_token %}
         <div class="note-azione">
@@ -226,4 +418,93 @@
     </div>
   </aside>
 </div>
+
+<div id="ai-wait" class="ai-wait" hidden role="alertdialog" aria-live="assertive">
+  <div class="ai-wait-box">
+    <div class="ai-spinner" aria-hidden="true"></div>
+    <div class="ai-wait-txt">Calcolo AI dei rischi in corso…</div>
+    <div class="ai-wait-sub">Attendi qualche secondo, non chiudere né ricaricare la pagina.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('form[data-trk]').forEach(function(form){
+    var sel = form.querySelector('select[name$="-strategia"]');
+    var blkAz = form.querySelector('[data-trk-azioni]');
+    var blkRes = form.querySelector('[data-trk-residuo]');
+    function apply(){
+      var v = sel ? sel.value : 'ACCETTATO';
+      if(blkAz) blkAz.style.display = (v === 'MITIGATO') ? '' : 'none';
+      if(blkRes) blkRes.style.display = (v === 'MITIGATO' || v === 'TRASFERITO') ? '' : 'none';
+    }
+    if(sel) sel.addEventListener('change', apply);
+    apply();
+
+    var addBtn = form.querySelector('[data-add-row]');
+    var rows = form.querySelector('[data-formset-rows]');
+    var tpl = form.querySelector('template[data-empty-row]');
+    if(addBtn && rows && tpl){
+      addBtn.addEventListener('click', function(){
+        var prefix = rows.getAttribute('data-prefix');
+        var total = form.querySelector('input[name="'+prefix+'-TOTAL_FORMS"]');
+        var idx = parseInt(total.value, 10);
+        var html = tpl.innerHTML.replace(/__prefix__/g, idx).trim();
+        var wrap = document.createElement('div');
+        wrap.innerHTML = html;
+        rows.appendChild(wrap.firstElementChild);
+        total.value = idx + 1;
+      });
+    }
+  });
+})();
+
+(function(){
+  var cost = document.getElementById('id_costo_token_ai');
+  var per = document.getElementById('id_costo_token_periodicita');
+  var amb = document.getElementById('id_costo_token_ambito');
+  var box = document.querySelector('[data-annuo]');
+  if(!cost || !per || !box) return;
+  var out = box.querySelector('b');
+  var utenti = parseInt(box.getAttribute('data-utenti') || '0', 10);
+  function fmt(n){ return '€ ' + n.toLocaleString('it-IT', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+  function calc(){
+    var v = parseFloat((cost.value || '').replace(',', '.'));
+    if(isNaN(v)){ out.textContent = '—'; return; }
+    var p = per.value, annuo;
+    if(p === 'MENSILE'){ annuo = v * 12; }
+    else if(p === 'ANNUALE'){ annuo = v; }
+    else if(p === 'UNA_TANTUM'){ out.textContent = fmt(v) + ' una tantum (non ricorrente)'; return; }
+    else { out.textContent = 'indica la periodicità'; return; }
+    var ambVal = (amb && amb.value) ? amb.value : '';
+    var scope = ambVal ? ' · ' + amb.options[amb.selectedIndex].text.toLowerCase() : '';
+    var txt = fmt(annuo) + '/anno' + scope;
+    if((ambVal === 'UTENTE' || ambVal === 'TEAM') && utenti > 0){
+      txt += ' · totale ' + fmt(annuo * utenti) + '/anno (' + utenti + ' utenti)';
+    }
+    out.textContent = txt;
+  }
+  cost.addEventListener('input', calc);
+  cost.addEventListener('change', calc);
+  per.addEventListener('change', calc);
+  if(amb) amb.addEventListener('change', calc);
+  calc();
+})();
+
+(function(){
+  var ov = document.getElementById('ai-wait');
+  if(!ov) return;
+  var txt = ov.querySelector('.ai-wait-txt');
+  document.querySelectorAll('form[data-ai-wait]').forEach(function(f){
+    f.addEventListener('submit', function(e){
+      if(e.defaultPrevented) return;                              // una conferma ha annullato l'invio
+      if(f.dataset.aiSubmitting){ e.preventDefault(); return; }   // evita il doppio invio
+      f.dataset.aiSubmitting = '1';
+      var msg = f.getAttribute('data-ai-wait');
+      if(msg && txt) txt.textContent = msg;
+      ov.hidden = false;
+    });
+  });
+})();
+</script>
 {% endblock %}

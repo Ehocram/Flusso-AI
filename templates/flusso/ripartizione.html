@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block titolo %}Ripartizione effort · Progetti Digital Transformation{% endblock %}
+{% block contenuto %}
+<div class="page-head">
+  <div>
+    <h1>Ripartizione effort</h1>
+    <p class="sub">Come si distribuisce il carico dei progetti: sviluppo, analisi, test, compliance, infrastruttura e adozione, con le figure coinvolte (a livello di ruolo). Il totale ore di ogni progetto resta quello registrato in analisi: l'AI propone solo la suddivisione, sempre modificabile.</p>
+  </div>
+  <div class="ph-side"><span class="pill">{{ tot_effort }} h totali</span></div>
+</div>
+
+{% include "flusso/_filtro_tipo.html" %}
+<div class="rip-filtri">
+  {% for f in filtri %}
+  <a href="{% if f.chiave %}?fase={{ f.chiave }}{% else %}{% url 'flusso:ripartizione_effort' %}{% endif %}" class="rip-filtro {% if f.attivo %}attivo{% endif %}">{{ f.label }} <span class="c">{{ f.n }}</span></a>
+  {% endfor %}
+</div>
+
+<div class="rip-hero">
+  <div class="rip-hero-big">Sviluppo: <b>{{ ore_sviluppo }} h</b> <span class="pctx">({{ pct_sviluppo }}%)</span></div>
+  <div class="rip-hero-vs">Tutto il resto — analisi, test, compliance, infrastruttura, adozione — vale <b>{{ ore_resto }} h</b> ({{ pct_resto }}%).</div>
+  <div class="note">Calcolato su {{ tot_rip }} h ripartite{% if senza_ripartizione %} · <b>{{ senza_ripartizione }}</b> progetti ancora da ripartire{% endif %}{% if senza_effort %} · {{ senza_effort }} richieste senza effort (escluse){% endif %}.</div>
+</div>
+
+{% if tot_rip %}
+<div class="rip-agg">
+  <div class="card rip-agg-col">
+    <h2>Per attività</h2>
+    {% for a in agg_att %}
+    <div class="rip-bar-row">
+      <span class="rip-bar-lbl">{{ a.label }}</span>
+      <span class="rip-bar-track"><span class="rip-bar-fill {% if a.codice == 'SVILUPPO' %}dev{% endif %}" style="width: {{ a.pct }}%"></span></span>
+      <span class="rip-bar-val">{{ a.ore }} h · {{ a.pct }}%</span>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="card rip-agg-col">
+    <h2>Per figura coinvolta</h2>
+    {% for f in agg_fig %}
+    <div class="rip-bar-row">
+      <span class="rip-bar-lbl">{{ f.label }}</span>
+      <span class="rip-bar-track"><span class="rip-bar-fill fig" style="width: {{ f.pct }}%"></span></span>
+      <span class="rip-bar-val">{{ f.ore }} h · {{ f.pct }}%</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="sched-list" style="margin-top:16px;">
+  {% for riga in righe %}
+  <div class="rip-item" id="r{{ riga.r.pk }}">
+    <div class="sched-row">
+      <div class="sched-main">
+        <a href="{{ riga.r.get_absolute_url }}" class="sched-title"><b>{{ riga.r.codice }}</b> — {{ riga.r.titolo }}</a>
+        <div class="sched-meta">
+          <span class="stato-pill">{{ riga.r.stato_label }}</span> · effort <b>{{ riga.r.effort_ore }} h</b>
+          {% if riga.voci %}{% if riga.quadra %}<span class="rip-ok">quadra</span>{% else %}<span class="rip-ko">non quadra (Δ {{ riga.delta }} h)</span>{% endif %}{% else %}<span class="rip-na">senza ripartizione</span>{% endif %}
+        </div>
+        {% if riga.voci %}
+        <div class="rip-mini">
+          {% for v in riga.voci %}<span class="rip-chip {% if v.attivita == 'SVILUPPO' %}dev{% endif %}" title="{{ v.get_figura_display }}{% if not v.stimata_ai %} · modificata a mano{% endif %}">{{ v.get_attivita_display }} <b>{{ v.ore }}</b>{% if not v.stimata_ai %} ✎{% endif %}</span>{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% if puo_modificare %}
+      <div class="sched-form">
+        <form method="post" action="{% url 'flusso:genera_ripartizione' riga.r.pk %}" data-ai-wait="Ripartizione AI di {{ riga.r.codice }} in corso…">
+          {% csrf_token %}<input type="hidden" name="fase" value="{{ fase_attiva }}">
+          <button type="submit" class="btn btn-sm" title="L'AI propone la suddivisione: il totale resta {{ riga.r.effort_ore }} h.">{% if riga.voci %}Rigenera AI{% else %}Ripartisci con AI{% endif %}</button>
+        </form>
+        {% if not riga.voci %}
+        <form method="post" action="{% url 'flusso:crea_griglia_effort' riga.r.pk %}">
+          {% csrf_token %}<input type="hidden" name="fase" value="{{ fase_attiva }}">
+          <button type="submit" class="btn btn-sm">Griglia manuale</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% if riga.voci and puo_modificare %}
+    <details class="rip-edit">
+      <summary>Modifica voci ({{ riga.r.effort_ore }} h da quadrare)</summary>
+      <form method="post" action="{% url 'flusso:salva_ripartizione' riga.r.pk %}">
+        {% csrf_token %}<input type="hidden" name="fase" value="{{ fase_attiva }}">
+        <div class="rip-grid">
+          {% for v in riga.voci %}
+          <label class="sched-lbl">{{ v.get_attivita_display }}
+            <input type="number" min="0" name="ore_{{ v.id }}" value="{{ v.ore }}" class="campo rip-num">
+          </label>
+          <label class="sched-lbl">Figura
+            <select name="figura_{{ v.id }}" class="campo">
+              {% for c, l in fig_choices %}<option value="{{ c }}" {% if v.figura == c %}selected{% endif %}>{{ l }}</option>{% endfor %}
+            </select>
+          </label>
+          {% endfor %}
+        </div>
+        <div class="rip-foot">La somma deve fare <b>{{ riga.r.effort_ore }} h</b>. <button type="submit" class="btn btn-primario btn-sm">Salva</button></div>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+  {% empty %}
+  <div class="vuoto-box"><p>Nessun progetto con effort in ore in questa selezione. L'effort si registra nell'analisi della Funzione tecnica.</p></div>
+  {% endfor %}
+</div>
+
+<div id="ai-wait" class="ai-wait" hidden role="alertdialog" aria-live="assertive">
+  <div class="ai-wait-box">
+    <div class="ai-spinner" aria-hidden="true"></div>
+    <div class="ai-wait-txt">Ripartizione AI in corso…</div>
+    <div class="ai-wait-sub">Attendi qualche secondo, non chiudere né ricaricare la pagina.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var ov = document.getElementById('ai-wait');
+  if(!ov) return;
+  var txt = ov.querySelector('.ai-wait-txt');
+  document.querySelectorAll('form[data-ai-wait]').forEach(function(f){
+    f.addEventListener('submit', function(e){
+      if(e.defaultPrevented) return;
+      if(f.dataset.aiSubmitting){ e.preventDefault(); return; }
+      f.dataset.aiSubmitting = '1';
+      var msg = f.getAttribute('data-ai-wait');
+      if(msg && txt) txt.textContent = msg;
+      ov.hidden = false;
+    });
+  });
+})();
+</script>
+{% endblock %}

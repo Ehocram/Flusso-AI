@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block titolo %}Richieste · ISEO AI{% endblock %}
+{% block titolo %}Richieste · Progetti Digital Transformation{% endblock %}
 {% block contenuto %}
 <div class="page-head">
   <div>
@@ -11,6 +11,7 @@
   {% if user.is_owner %}<a href="{% url 'flusso:nuova' %}" class="btn btn-primario"><i class="ti ti-plus"></i> Nuova richiesta</a>{% endif %}
   {% endif %}
 </div>
+{% include "flusso/_filtro_tipo.html" %}
 
 <form class="filtri" method="get">
   <input type="text" name="q" value="{{ q }}" placeholder="Cerca titolo o descrizione…">

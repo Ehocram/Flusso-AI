@@ -8,12 +8,20 @@ class Ruolo(models.TextChoices):
     """Ruoli del processo."""
 
     AI_OFFICER = "AI_OFFICER", "Funzione AI"
+    APP_OFFICER = "APP_OFFICER", "Funzione Applicativa"
+    ITOPS_OFFICER = "ITOPS_OFFICER", "Funzione IT Operations"
     APPROVATORE = "APPROVATORE", "Approvatore"
     OWNER = "OWNER", "Owner di funzione"
     AUDITOR = "AUDITOR", "Auditor (sola lettura)"
     LEGALE = "LEGALE", "Funzione Legale"
     CISO = "CISO", "CISO (Sicurezza / NIS2)"
     DPO = "DPO", "DPO (Privacy / GDPR)"
+
+
+# Le tre "funzioni tecniche" hanno permessi identici nel processo: AI, Applicativa, IT Operations.
+RUOLI_FUNZIONE = (Ruolo.AI_OFFICER, Ruolo.APP_OFFICER, Ruolo.ITOPS_OFFICER)
+# Tipo di progetto di competenza di ciascuna funzione (valori di flusso.models.TipoProgetto).
+TIPO_PER_RUOLO = {Ruolo.AI_OFFICER: "AI", Ruolo.APP_OFFICER: "APPLICATION", Ruolo.ITOPS_OFFICER: "IT_OPERATION"}
 
 
 class Funzione(models.TextChoices):
@@ -66,10 +74,9 @@ class Utente(AbstractUser):
         return f"{nome} — {self.get_ruolo_display()}"
 
     def save(self, *args, **kwargs):
-        # Requisito operativo: la Funzione AI (AI Officer) è sempre amministratore
-        # pieno dell'applicazione, anche quando l'accesso avviene via SSO.
-        # Il ruolo AI_OFFICER implica quindi staff + superuser.
-        if self.ruolo == Ruolo.AI_OFFICER:
+        # Requisito operativo: le funzioni tecniche (AI, Applicativa, IT Operations)
+        # sono amministratori pieni dell'applicazione, anche via SSO: staff + superuser.
+        if self.ruolo in RUOLI_FUNZIONE:
             self.is_staff = True
             self.is_superuser = True
         super().save(*args, **kwargs)
@@ -80,8 +87,19 @@ class Utente(AbstractUser):
         return self.ruolo == Ruolo.OWNER
 
     @property
+    def is_funzione(self) -> bool:
+        """Membro di una funzione tecnica (AI, Applicativa, IT Operations): stessi permessi."""
+        return self.ruolo in RUOLI_FUNZIONE or self.is_superuser
+
+    @property
     def is_ai_officer(self) -> bool:
-        return self.ruolo == Ruolo.AI_OFFICER or self.is_superuser
+        """Alias storico di is_funzione (mantenuto per compatibilità)."""
+        return self.is_funzione
+
+    @property
+    def tipo_competenza(self):
+        """Tipo di progetto di competenza (AI/APPLICATION/IT_OPERATION) o None."""
+        return TIPO_PER_RUOLO.get(self.ruolo)
 
     @property
     def is_approvatore(self) -> bool:
@@ -114,7 +132,6 @@ class Utente(AbstractUser):
     @property
     def is_gestore(self) -> bool:
         """Visibilità completa su tutte le richieste (Auditor e presìdi inclusi, in sola lettura)."""
-        return self.ruolo in (
-            Ruolo.AI_OFFICER, Ruolo.APPROVATORE, Ruolo.AUDITOR,
-            Ruolo.LEGALE, Ruolo.CISO, Ruolo.DPO,
+        return self.ruolo in RUOLI_FUNZIONE + (
+            Ruolo.APPROVATORE, Ruolo.AUDITOR, Ruolo.LEGALE, Ruolo.CISO, Ruolo.DPO,
         ) or self.is_superuser

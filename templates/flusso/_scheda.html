@@ -3,7 +3,7 @@
 <article class="scheda">
   <div class="scheda-top">
     <span class="scheda-icona {{ r.funzione|classe_funzione }}"><i class="ti {{ r.funzione|icona_funzione }}"></i></span>
-    <span class="pill {{ r.funzione|classe_funzione }}">{{ r.get_funzione_display }}</span>
+    <span class="pill {{ r.funzione|classe_funzione }}">{{ r.get_funzione_display }}</span> <span class="pill tipo-pill" title="{{ r.get_tipo_display }}">{{ r.tipo_breve }}</span>
     <span class="pill-id">{{ r.codice }}</span>
     <span class="spazio"></span>
     <span class="stato {{ r.stato|classe_stato }}">{{ r.stato_label }}</span>
@@ -33,7 +33,7 @@
 
   <div class="savings savings-3">
     <div class="sav">
-      <span class="lab">Saving economico</span>
+      <span class="lab">Beneficio economico atteso</span>
       <span class="val {% if r.saving_economico_fmt is None %}tbd{% endif %}">{{ r.saving_economico_fmt|default:"—" }}</span>
       {% if r.saving_economico_note %}<span class="sav-note">{{ r.saving_economico_note }}</span>{% endif %}
     </div>

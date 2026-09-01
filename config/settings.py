@@ -1,5 +1,5 @@
 """
-Configurazione Django — ISEO AI · Gestione Flusso.
+Configurazione Django — Progetti Digital Transformation · ISEO.
 
 Le impostazioni sensibili sono lette da variabili d'ambiente (vedi .env.example).
 In assenza di configurazione il progetto parte in modalita' sviluppo su SQLite,
@@ -116,9 +116,12 @@ AUTH_USER_MODEL = "accounts.Utente"
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+     "OPTIONS": {"min_length": 12}},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+    {"NAME": "accounts.validators.ComplessitaPasswordValidator"},
+    {"NAME": "accounts.validators.ParoleVietatePasswordValidator"},
 ]
 
 LOGIN_URL = "login"

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block titolo %}ISEO AI · Gestione Flusso{% endblock %}</title>
+  <title>{% block titolo %}Progetti Digital Transformation · ISEO{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{% static 'img/favicon.svg' %}">
   <link rel="stylesheet" href="{% static 'css/tabler-icons.css' %}">
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
@@ -16,7 +16,7 @@
     <a href="{% url 'flusso:dashboard' %}" class="brand">
       <img src="{% static 'img/iseo-logo-mark.png' %}" class="brand-logo" alt="ISEO">
       <span class="brand-sep"></span>
-      <span class="brand-txt">Gestione Flusso<small>Comitato AI · Op 4</small></span>
+      <span class="brand-txt">Progetti Digital Transformation<small>ISEO Group</small></span>
     </a>
     <nav class="nav">
       {% url 'flusso:dashboard' as u_dash %}
@@ -30,10 +30,16 @@
       <a href="{{ u_kanban }}" class="{% if request.path == u_kanban %}attivo{% endif %}"><i class="ti ti-layout-kanban"></i> Board</a>
       {% url 'flusso:kpi' as u_kpi %}
       {% if user.is_gestore %}<a href="{{ u_kpi }}" class="{% if request.path == u_kpi %}attivo{% endif %}"><i class="ti ti-chart-arcs-3"></i> KPI</a>{% endif %}
+      {% url 'flusso:schedulazione' as u_sched %}
+      {% if user.is_gestore %}<a href="{{ u_sched }}" class="{% if request.path == u_sched %}attivo{% endif %}"><i class="ti ti-calendar-event"></i> Schedulazione</a>{% endif %}
+      {% url 'flusso:ripartizione_effort' as u_eff %}
+      {% if user.is_gestore %}<a href="{{ u_eff }}" class="{% if request.path == u_eff %}attivo{% endif %}"><i class="ti ti-chart-pie"></i> Effort</a>{% endif %}
+      {% url 'flusso:costi' as u_costi %}
+      {% if user.is_gestore %}<a href="{{ u_costi }}" class="{% if request.path == u_costi %}attivo{% endif %}"><i class="ti ti-coin-euro"></i> Costi</a>{% endif %}
       {% url 'flusso:rischio' as u_rischio %}
-      {% if user.is_ai_officer or user.is_legale or user.is_ciso or user.is_dpo %}<a href="{{ u_rischio }}" class="{% if request.path == u_rischio %}attivo{% endif %}"><i class="ti ti-scale"></i> Rischio &amp; Conformità</a>{% endif %}
-      {% if user.is_ai_officer %}{% url 'accounts:utenti' as u_utenti %}<a href="{{ u_utenti }}" class="{% if request.path == u_utenti %}attivo{% endif %}"><i class="ti ti-users"></i> Utenti</a>{% endif %}
-      {% if user.is_ai_officer %}{% url 'flusso:impostazioni_ai' as u_imp %}<a href="{{ u_imp }}" class="{% if request.path == u_imp %}attivo{% endif %}"><i class="ti ti-settings"></i> Impostazioni</a>{% endif %}
+      {% if user.is_funzione or user.is_legale or user.is_ciso or user.is_dpo %}<a href="{{ u_rischio }}" class="{% if request.path == u_rischio %}attivo{% endif %}"><i class="ti ti-scale"></i> Rischio &amp; Conformità</a>{% endif %}
+      {% if user.is_funzione %}{% url 'accounts:utenti' as u_utenti %}<a href="{{ u_utenti }}" class="{% if request.path == u_utenti %}attivo{% endif %}"><i class="ti ti-users"></i> Utenti</a>{% endif %}
+      {% if user.is_funzione %}{% url 'flusso:impostazioni_ai' as u_imp %}<a href="{{ u_imp }}" class="{% if request.path == u_imp %}attivo{% endif %}"><i class="ti ti-settings"></i> Impostazioni</a>{% endif %}
       {% if user.is_staff %}<a href="/admin/"><i class="ti ti-shield-lock"></i> Admin</a>{% endif %}
     </nav>
     <div class="topbar-right">

@@ -1,0 +1,6 @@
+{# Chip per tipo di richiesta (AI / Application / IT Operation); conservano gli altri parametri #}
+<div class="rip-filtri tipo-filtri">
+  {% for f in tipo_filtri %}
+  <a href="{{ f.href }}" class="rip-filtro {% if f.attivo %}attivo{% endif %}">{{ f.label }} <span class="c">{{ f.n }}</span></a>
+  {% endfor %}
+</div>

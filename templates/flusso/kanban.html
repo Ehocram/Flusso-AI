@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load flusso_extras %}
-{% block titolo %}Board · ISEO AI{% endblock %}
+{% block titolo %}Board · Progetti Digital Transformation{% endblock %}
 {% block contenuto %}
 <div class="page-head">
   <div>
@@ -9,6 +9,7 @@
     <p>Le richieste lungo le fasi: dalla raccolta al monitoraggio.</p>
   </div>
 </div>
+{% include "flusso/_filtro_tipo.html" %}
 
 <div class="board">
   {% for col in colonne %}
@@ -17,7 +18,7 @@
     {% for r in col.items %}
     <a href="{{ r.get_absolute_url }}" class="mini">
       <div class="m-top">
-        <span class="pill {{ r.funzione|classe_funzione }}" style="font-size:11px;padding:2px 8px;">{{ r.get_funzione_display }}</span>
+        <span class="pill {{ r.funzione|classe_funzione }}" style="font-size:11px;padding:2px 8px;">{{ r.get_funzione_display }}</span> <span class="pill tipo-pill" style="font-size:11px;padding:2px 8px;" title="{{ r.get_tipo_display }}">{{ r.tipo_breve }}</span>
         <span class="pill-id">{{ r.codice }}</span>
       </div>
       <div class="m-tit">{{ r.titolo }}</div>
