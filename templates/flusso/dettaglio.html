@@ -130,7 +130,7 @@
             <label for="{{ analisi_form.altri_costi_note.id_for_label }}">{{ analisi_form.altri_costi_note.label }}</label>
             {{ analisi_form.altri_costi_note }}
           </div>
-          {% if not richiesta.is_clone %}
+          {% if analisi_form.dettaglio_application %}
           <div class="f-row full">
             <label for="{{ analisi_form.dettaglio_application.id_for_label }}">Application</label>
             {{ analisi_form.dettaglio_application }}
@@ -147,6 +147,8 @@
               <label class="flag">{{ analisi_form.app_ifrs }} IFRS</label>
             </div>
           </div>
+          {% endif %}
+          {% if analisi_form.dettaglio_it_operation %}
           <div class="f-row full">
             <label for="{{ analisi_form.dettaglio_it_operation.id_for_label }}">IT Operation</label>
             {{ analisi_form.dettaglio_it_operation }}

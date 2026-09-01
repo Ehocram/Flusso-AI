@@ -500,6 +500,19 @@ class Richiesta(models.Model):
         return self.clone_di_id is not None
 
     @property
+    def tipi_scomponibili(self) -> list:
+        """Tipi di componente che questa scheda può generare.
+
+        Ci si scompone verso gli ALTRI tipi, mai verso il proprio (un progetto
+        Application non genera un'altra scheda Application) e mai da una scheda
+        già generata, per non creare catene di cloni.
+        """
+        if self.is_clone:
+            return []
+        return [t for t in (TipoProgetto.APPLICATION, TipoProgetto.IT_OPERATION)
+                if t != self.tipo]
+
+    @property
     def is_terminale(self) -> bool:
         return self.stato in STATI_TERMINALI
 

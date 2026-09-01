@@ -242,8 +242,9 @@ def clona_per_funzioni(richiesta, attore=None) -> list:
     from .models import Richiesta, TipoProgetto
     from .workflow import Stato
 
-    if richiesta.is_clone:
-        return []  # non si clona un clone
+    scomponibili = richiesta.tipi_scomponibili
+    if not scomponibili:
+        return []  # scheda già generata: niente catene di cloni
     creati = []
     classi = {
         TipoProgetto.APPLICATION: (richiesta.app_capex, richiesta.app_opex, richiesta.app_ifrs),
@@ -255,6 +256,8 @@ def clona_per_funzioni(richiesta, attore=None) -> list:
     }
     for tipo, testo in ((TipoProgetto.APPLICATION, richiesta.dettaglio_application),
                         (TipoProgetto.IT_OPERATION, richiesta.dettaglio_it_operation)):
+        if tipo not in scomponibili:
+            continue  # non ci si scompone nel proprio tipo
         testo = (testo or "").strip()
         if not testo or richiesta.cloni.filter(tipo=tipo).exists():
             continue

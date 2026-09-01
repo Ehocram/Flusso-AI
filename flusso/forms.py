@@ -42,6 +42,18 @@ class AnalisiAIForm(forms.ModelForm):
             for nome in ("costo_token_ai", "costo_token_periodicita", "costo_token_ambito",
                          "ai_autonomia", "ai_deployment"):
                 self.fields.pop(nome, None)
+        # Una scheda non si scompone nel proprio tipo (né si scompone affatto se è
+        # già una scheda generata): via i campi della componente non pertinente.
+        scomponibili = getattr(self.instance, "tipi_scomponibili", None)
+        if scomponibili is not None:
+            if TipoProgetto.APPLICATION not in scomponibili:
+                for nome in ("dettaglio_application", "costo_application",
+                             "app_capex", "app_opex", "app_ifrs"):
+                    self.fields.pop(nome, None)
+            if TipoProgetto.IT_OPERATION not in scomponibili:
+                for nome in ("dettaglio_it_operation", "costo_it_operation",
+                             "ops_capex", "ops_opex", "ops_ifrs"):
+                    self.fields.pop(nome, None)
             if "altri_costi" in self.fields:
                 self.fields["altri_costi"].label = "Costo del progetto (€)"
                 self.fields["altri_costi"].widget.attrs["placeholder"] = "€ (licenze, hardware, servizi…)"
