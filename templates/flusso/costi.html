@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block titolo %}Costi · ISEO AI{% endblock %}
+{% block titolo %}Costi · Progetti Digital Transformation{% endblock %}
 {% block contenuto %}
 <div class="page-head">
   <div>
@@ -9,6 +9,7 @@
   <div class="ph-side"><span class="pill">€ {{ tot|floatformat:0 }} / anno</span></div>
 </div>
 
+{% include "flusso/_filtro_tipo.html" %}
 <div class="rip-filtri">
   {% for f in filtri %}
   <a href="?fase={{ f.chiave }}" class="rip-filtro {% if f.attivo %}attivo{% endif %}">{{ f.label }} <span class="c">{{ f.n }}</span></a>

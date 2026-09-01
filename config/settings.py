@@ -1,5 +1,5 @@
 """
-Configurazione Django — ISEO AI · Gestione Flusso.
+Configurazione Django — Progetti Digital Transformation · ISEO.
 
 Le impostazioni sensibili sono lette da variabili d'ambiente (vedi .env.example).
 In assenza di configurazione il progetto parte in modalita' sviluppo su SQLite,

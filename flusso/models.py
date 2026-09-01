@@ -176,6 +176,21 @@ class AmbitoCosto(models.TextChoices):
     COMPLESSIVO = "COMPLESSIVO", "Complessivo"
 
 
+class TipoProgetto(models.TextChoices):
+    """Tipo di richiesta, flaggato dall'owner: determina la funzione tecnica competente."""
+
+    AI = "AI", "AI — Intelligenza Artificiale (registro AI Act)"
+    APPLICATION = "APPLICATION", "Application — nuovi software, implementazioni ERP…"
+    IT_OPERATION = "IT_OPERATION", "IT Operation"
+
+
+FUNZIONE_PER_TIPO = {
+    TipoProgetto.AI: "Funzione AI",
+    TipoProgetto.APPLICATION: "Funzione Applicativa",
+    TipoProgetto.IT_OPERATION: "Funzione IT Operations",
+}
+
+
 class AutonomiaAI(models.TextChoices):
     """Grado di autonomia della soluzione AI (rilevante per l'AI Act)."""
 
@@ -205,6 +220,11 @@ class Richiesta(models.Model):
     numero = models.PositiveIntegerField(unique=True, editable=False, db_index=True)
 
     # --- Campi della scheda (rettangolo slide 8-9) ---------------------------
+    tipo = models.CharField(
+        max_length=16, choices=TipoProgetto.choices, default=TipoProgetto.AI, db_index=True,
+        verbose_name="Tipo di richiesta",
+        help_text="AI (perimetro registro AI Act), Application (software/ERP) o IT Operation.",
+    )
     funzione = models.CharField("Funzione", max_length=10, choices=Funzione.choices)
     titolo = models.CharField("Titolo (case study)", max_length=140)
     tipo_soluzione = models.CharField(
@@ -446,6 +466,33 @@ class Richiesta(models.Model):
         return self.stato in STATI_MODIFICA_BLOCCATA
 
     @property
+    def tipo_breve(self) -> str:
+        """Etichetta corta del tipo per pill e chip."""
+        return {"AI": "AI", "APPLICATION": "Application", "IT_OPERATION": "IT Operation"}.get(self.tipo, self.tipo)
+
+    @property
+    def funzione_competente_label(self) -> str:
+        """Nome della funzione tecnica competente in base al tipo (AI/Applicativa/IT Ops)."""
+        return FUNZIONE_PER_TIPO.get(self.tipo, "Funzione tecnica")
+
+    def azzera_per_bozza(self):
+        """Al rientro in bozza: via decisione budget, date e validazioni dei rischi.
+
+        Le categorie di rischio proposte restano (sono un'analisi, non una decisione);
+        tornano «da validare» perché i presìdi devono riesaminare ciò che cambia.
+        """
+        self.esito_budget = ""
+        self.data_inizio = None
+        self.data_consegna_prevista = None
+        self.save(update_fields=["esito_budget", "data_inizio", "data_consegna_prevista"])
+        for c in self.classificazioni.all():
+            if c.stato in (StatoRischio.VALIDATO, StatoRischio.MODIFICATO):
+                c.stato = StatoRischio.PROPOSTO_AI if c.categoria else StatoRischio.DA_ANALIZZARE
+                c.validato_da = None
+                c.validato_il = None
+                c.save(update_fields=["stato", "validato_da", "validato_il"])
+
+    @property
     def is_bozza(self) -> bool:
         return self.stato == Stato.BOZZA
 
@@ -455,7 +502,8 @@ class Richiesta(models.Model):
 
     @property
     def stato_label(self) -> str:
-        return self.get_stato_display()
+        """Etichetta di stato con il nome della funzione competente (es. «Inviata alla Funzione Applicativa»)."""
+        return self.get_stato_display().replace("Funzione tecnica", self.funzione_competente_label)
 
     @property
     def costo_totale_stimato(self):
@@ -786,7 +834,7 @@ class Richiesta(models.Model):
         evento = Transizione.objects.create(
             richiesta=self,
             azione=azione,
-            etichetta=t.label,
+            etichetta=t.per(self).label,
             stato_da=stato_da,
             stato_a=t.a,
             attore=attore,
@@ -1337,7 +1385,7 @@ class AttivitaEffort(models.TextChoices):
 class FiguraEffort(models.TextChoices):
     """Figure coinvolte, a livello di RUOLO (mai persone nominate)."""
 
-    FUNZIONE_AI = "FUNZIONE_AI", "Funzione AI"
+    FUNZIONE_AI = "FUNZIONE_AI", "Funzione tecnica"
     OWNER = "OWNER", "Owner / delegati"
     INFRA = "INFRA", "IT / Infrastruttura"
     PRESIDI = "PRESIDI", "Presìdi (CISO/DPO/Legale)"

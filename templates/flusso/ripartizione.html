@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block titolo %}Ripartizione effort · ISEO AI{% endblock %}
+{% block titolo %}Ripartizione effort · Progetti Digital Transformation{% endblock %}
 {% block contenuto %}
 <div class="page-head">
   <div>
@@ -9,6 +9,7 @@
   <div class="ph-side"><span class="pill">{{ tot_effort }} h totali</span></div>
 </div>
 
+{% include "flusso/_filtro_tipo.html" %}
 <div class="rip-filtri">
   {% for f in filtri %}
   <a href="{% if f.chiave %}?fase={{ f.chiave }}{% else %}{% url 'flusso:ripartizione_effort' %}{% endif %}" class="rip-filtro {% if f.attivo %}attivo{% endif %}">{{ f.label }} <span class="c">{{ f.n }}</span></a>
@@ -100,7 +101,7 @@
     {% endif %}
   </div>
   {% empty %}
-  <div class="vuoto-box"><p>Nessun progetto con effort in ore in questa selezione. L'effort si registra nell'analisi della Funzione AI.</p></div>
+  <div class="vuoto-box"><p>Nessun progetto con effort in ore in questa selezione. L'effort si registra nell'analisi della Funzione tecnica.</p></div>
   {% endfor %}
 </div>
 

@@ -171,6 +171,7 @@ def _estrai_json(testo: str):
 
 def _descrizione_progetto(richiesta) -> str:
     righe = [
+        f"Tipo di richiesta: {richiesta.get_tipo_display()}",
         f"Funzione aziendale richiedente: {richiesta.get_funzione_display()}",
         f"Titolo: {richiesta.titolo}",
     ]

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load flusso_extras %}
-{% block titolo %}Dashboard · ISEO AI{% endblock %}
+{% block titolo %}Dashboard · Progetti Digital Transformation{% endblock %}
 {% block contenuto %}
 <div class="page-head">
   <div>
@@ -9,6 +9,7 @@
     <p>Stato delle esigenze/opportunità AI di Gruppo e azioni in carico al tuo ruolo.</p>
   </div>
 </div>
+{% include "flusso/_filtro_tipo.html" %}
 
 <div class="kpi-row">
   <div class="kpi"><div class="n">{{ totale }}</div><div class="l">Richieste totali</div></div>

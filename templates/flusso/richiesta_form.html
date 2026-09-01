@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block titolo %}{% if nuova %}Nuova richiesta{% else %}Modifica richiesta{% endif %} · ISEO AI{% endblock %}
+{% block titolo %}{% if nuova %}Nuova richiesta{% else %}Modifica richiesta{% endif %} · Progetti Digital Transformation{% endblock %}
 {% block contenuto %}
 <div class="page-head">
   <div>
     <div class="eyebrow">Raccolta esigenze/opportunità</div>
     <h1>{% if nuova %}Nuova richiesta AI{% else %}Modifica {{ richiesta.codice }}{% endif %}</h1>
-    <p>Compila la scheda dell'esigenza/opportunità. Resta in bozza finché non la invii alla Funzione AI.</p>
+    <p>Compila la scheda dell'esigenza/opportunità. Resta in bozza finché non la invii alla funzione tecnica competente per il tipo scelto (AI, Applicativa o IT Operations).</p>
   </div>
 </div>
 
@@ -14,6 +14,12 @@
     {% csrf_token %}
     {% if form.non_field_errors %}<div class="msg msg-error">{{ form.non_field_errors }}</div>{% endif %}
     <div class="form-grid">
+      <div class="f-row full">
+        <label for="{{ form.tipo.id_for_label }}">Tipo di richiesta</label>
+        {{ form.tipo }}
+        <div class="help">AI = rientra nel perimetro del registro AI Act · Application = nuovi software, implementazioni ERP… · IT Operation = infrastruttura e operations. Determina la funzione tecnica che la prenderà in carico.</div>
+        {% if form.tipo.errors %}<div class="err">{{ form.tipo.errors|striptags }}</div>{% endif %}
+      </div>
       <div class="f-row">
         <label for="{{ form.funzione.id_for_label }}">Funzione</label>
         {{ form.funzione }}
@@ -38,11 +44,11 @@
         {{ form.descrizione }}
         {% if form.descrizione.errors %}<div class="err">{{ form.descrizione.errors|striptags }}</div>{% endif %}
       </div>
-      <div class="f-row full"><div class="metric-hint"><i class="ti ti-wallet"></i> Indica quanti utenti useranno il software: serve alla Funzione AI per stimare il costo. <b>Il budget lo deciderai più avanti</b>: dopo la stima del costo ti verrà chiesto se l'importo è <b>a budget</b> o <b>extra budget</b>.</div></div>
+      <div class="f-row full"><div class="metric-hint"><i class="ti ti-wallet"></i> Indica quanti utenti useranno il software: serve alla Funzione tecnica per stimare il costo. <b>Il budget lo deciderai più avanti</b>: dopo la stima del costo ti verrà chiesto se l'importo è <b>a budget</b> o <b>extra budget</b>.</div></div>
       <div class="f-row full">
         <label for="{{ form.numero_utenti.id_for_label }}">Numero utenti previsti</label>
         {{ form.numero_utenti }}
-        <div class="help">Quanti utenti useranno il tool (usato dalla Funzione AI per il calcolo del costo).</div>
+        <div class="help">Quanti utenti useranno il tool (usato dalla funzione tecnica per il calcolo del costo).</div>
       </div>
       <div class="f-row full"><div class="metric-hint"><i class="ti ti-robot"></i> Se lasci vuoti «incremento qualitativo» ed «efficienza», li stima l'AI in base alla descrizione (sempre modificabili).</div></div>
       <div class="f-row full metric">

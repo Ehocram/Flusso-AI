@@ -40,7 +40,7 @@
     {% if beneficio_form %}
     <form method="post" action="{% url 'flusso:aggiorna_beneficio' richiesta.pk %}" class="card benef-form" style="margin-top:18px;">
       {% csrf_token %}
-      <div class="benef-head"><i class="ti ti-pencil" style="color:var(--rosso)"></i> Beneficio e incrementi attesi <span class="benef-sub">— modificabili dall'owner e dalla Funzione AI</span></div>
+      <div class="benef-head"><i class="ti ti-pencil" style="color:var(--rosso)"></i> Beneficio e incrementi attesi <span class="benef-sub">— modificabili dall'owner e dalla Funzione tecnica</span></div>
       <div class="form-grid">
         <div class="f-row full">
           <label for="{{ beneficio_form.saving_economico.id_for_label }}">Beneficio economico (€/anno)</label>
@@ -72,7 +72,7 @@
     {% endif %}
 
     <div class="card" style="margin-top:18px;">
-      <h2><i class="ti ti-clipboard-data" style="vertical-align:-2px;color:var(--rosso)"></i> Analisi Funzione AI</h2>
+      <h2><i class="ti ti-clipboard-data" style="vertical-align:-2px;color:var(--rosso)"></i> Analisi {{ richiesta.funzione_competente_label }}</h2>
       {% if analisi_form %}
       {# Modificabile dall'AI Officer #}
       <form method="post" action="{% url 'flusso:compila_analisi_ai' richiesta.pk %}" class="analisi-ai-form" data-ai-wait="Compilazione AI dell'analisi in corso…">
@@ -193,7 +193,7 @@
       </div>
       {% endif %}
       {% else %}
-      <div class="vuoto" style="padding:10px 4px;">Analisi non ancora compilata dalla Funzione AI.</div>
+      <div class="vuoto" style="padding:10px 4px;">Analisi non ancora compilata dalla {{ richiesta.funzione_competente_label }}.</div>
       {% endif %}
     </div>
 
@@ -355,7 +355,7 @@
     <div class="card">
       <h2><i class="ti ti-arrow-guide" style="vertical-align:-2px;color:var(--rosso)"></i> Azioni</h2>
       {% if mostra_decisione_budget %}
-      <p class="t-mut" style="margin:0 0 10px;">L'analisi della Funzione AI è completa. Indica se l'importo è <b>a budget</b> o <b>extra budget</b> per proseguire (l'AI genererà i rischi), oppure rifiuta il progetto.</p>
+      <p class="t-mut" style="margin:0 0 10px;">L'analisi della {{ richiesta.funzione_competente_label }} è completa. Indica se l'importo è <b>a budget</b> o <b>extra budget</b> per proseguire (l'AI genererà i rischi), oppure rifiuta il progetto.</p>
       {% if richiesta.costo_progetto_stimato is not None %}
       <div class="dec-costo">Costo di progetto stimato: <b>€ {{ richiesta.costo_progetto_stimato|floatformat:2 }}</b></div>
       {% endif %}

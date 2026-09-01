@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block titolo %}Rischio & Conformità · ISEO AI{% endblock %}
+{% block titolo %}Rischio & Conformità · Progetti Digital Transformation{% endblock %}
 {% block contenuto %}
 <div class="page-head">
   <div>
@@ -9,7 +9,7 @@
   </div>
 </div>
 
-{% if user.is_ai_officer and not config.abilitato %}
+{% if user.is_funzione and not config.abilitato %}
 <div class="msg msg-error"><i class="ti ti-alert-triangle"></i> Analisi AI non abilitata: attivala nelle <a href="{% url 'flusso:impostazioni_ai' %}">Impostazioni AI</a>. Le classificazioni vengono generate all'import dei dati e alla presa in carico delle nuove richieste; in alternativa, da ogni scheda con «Analizza le tre dimensioni con l'AI».</div>
 {% endif %}
 

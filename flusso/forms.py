@@ -44,6 +44,7 @@ class RichiestaForm(forms.ModelForm):
     class Meta:
         model = Richiesta
         fields = [
+            "tipo",
             "funzione",
             "titolo",
             "tipo_soluzione",

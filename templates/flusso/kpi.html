@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block titolo %}KPI · ISEO AI{% endblock %}
+{% block titolo %}KPI · Progetti Digital Transformation{% endblock %}
 
 {% block contenuto %}
 <div class="kpi">
@@ -188,7 +188,7 @@
         {% else %}
           <span class="ai-badge ghost">Analisi AI</span>
         {% endif %}
-        {% if user.is_ai_officer %}
+        {% if user.is_funzione %}
         <a href="{% url 'flusso:impostazioni_ai' %}" class="btn btn-sm"><i class="ti ti-settings"></i> Impostazioni</a>
         <form method="post" action="{% url 'flusso:genera_analisi_kpi' %}">
           {% csrf_token %}
@@ -207,11 +207,11 @@
       <div class="ai-empty">
         <i class="ti ti-message-2-cog"></i>
         {% if not config.configurata %}
-          <p>Per attivare la lettura esecutiva, la Funzione AI deve impostare la <b>API key</b> e il <b>modello</b> nelle <b>Impostazioni AI</b> (oppure la variabile d'ambiente <code>ANTHROPIC_API_KEY</code>).</p>
+          <p>Per attivare la lettura esecutiva, la Funzione tecnica deve impostare la <b>API key</b> e il <b>modello</b> nelle <b>Impostazioni AI</b> (oppure la variabile d'ambiente <code>ANTHROPIC_API_KEY</code>).</p>
         {% elif not config.abilitato %}
           <p>L'analisi AI è configurata ma non attiva. Abilitala nelle <b>Impostazioni AI</b>.</p>
         {% else %}
-          <p>Tutto pronto.{% if user.is_ai_officer %} Premi <b>Genera analisi</b> per la prima lettura esecutiva.{% else %} La Funzione AI può generare la lettura esecutiva.{% endif %}</p>
+          <p>Tutto pronto.{% if user.is_funzione %} Premi <b>Genera analisi</b> per la prima lettura esecutiva.{% else %} La Funzione tecnica può generare la lettura esecutiva.{% endif %}</p>
         {% endif %}
       </div>
     {% endif %}
