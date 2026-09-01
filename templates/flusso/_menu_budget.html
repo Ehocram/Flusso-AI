@@ -1,0 +1,19 @@
+{# Sottomenu dei fogli di budget: principali + fogli di supporto #}
+<div class="bdg-menu">
+  <div class="bdg-menu-riga">
+    <span class="bdg-menu-lab">Fogli principali</span>
+    {% for f in menu.principali %}
+    <a href="{{ f.get_absolute_url }}" class="bdg-tab {% if menu.attiva == f.chiave %}attivo{% endif %}">{% if f.tipo == 'EXTRA' %}Extra Budget{% else %}Budget{% endif %} <span class="anno">{{ f.anno }}</span></a>
+    {% empty %}<span class="t-mut">nessun foglio importato</span>{% endfor %}
+  </div>
+  {% if menu.supporto %}
+  <details class="bdg-altri" {% if menu.attiva and menu.attiva not in ' ' %}{% endif %}>
+    <summary>Altri fogli del workbook ({{ menu.supporto|length }})</summary>
+    <div class="bdg-menu-riga">
+      {% for f in menu.supporto %}
+      <a href="{{ f.get_absolute_url }}" class="bdg-tab piccolo {% if menu.attiva == f.chiave %}attivo{% endif %}">{{ f.nome }}</a>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+</div>

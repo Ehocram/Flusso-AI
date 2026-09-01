@@ -801,3 +801,52 @@ body.auth { background: #080a10; overflow-x: hidden; }
 .area-link a { color: var(--rosso); text-decoration: none; }
 .area-link a:hover { text-decoration: underline; }
 .savings-1 { grid-template-columns: 1fr; }
+
+/* ===== Fogli budget (griglia stile Excel) ===== */
+.anno-big { font-size: 15px; color: var(--testo-2); font-weight: 500; }
+.bdg-menu { margin-bottom: 12px; }
+.bdg-menu-riga { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.bdg-menu-lab { font-size: 12px; color: var(--testo-2); text-transform: uppercase; letter-spacing: .4px; margin-right: 4px; }
+.bdg-tab { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--bordo); background: var(--bianco);
+  color: var(--inchiostro); text-decoration: none; font-size: 13.5px; font-weight: 600; }
+.bdg-tab .anno { font-weight: 400; color: var(--testo-2); font-size: 12px; }
+.bdg-tab:hover { border-color: var(--rosso); }
+.bdg-tab.attivo { background: var(--rosso); border-color: var(--rosso); color: #fff; }
+.bdg-tab.attivo .anno { color: rgba(255,255,255,.8); }
+.bdg-tab.piccolo { font-size: 12.5px; padding: 5px 10px; font-weight: 500; }
+.bdg-altri { margin-top: 8px; }
+.bdg-altri summary { cursor: pointer; font-size: 12.5px; color: var(--testo-2); margin-bottom: 8px; }
+.bdg-cerca { display: flex; gap: 8px; margin: 12px 0; max-width: 520px; }
+.bdg-wrap { overflow: auto; max-height: 72vh; border: 1px solid var(--bordo); border-radius: var(--r-card); background: var(--bianco); }
+.bdg-tab { border-collapse: separate; border-spacing: 0; font-size: 12.5px; width: max-content; min-width: 100%; }
+table.bdg-tab th, table.bdg-tab td { border-right: 1px solid var(--bordo); border-bottom: 1px solid var(--bordo);
+  padding: 5px 8px; white-space: nowrap; vertical-align: middle; }
+table.bdg-tab thead th { position: sticky; top: 0; z-index: 3; background: #f4f6f9; font-weight: 700;
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+table.bdg-tab td { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+table.bdg-tab .bdg-n { position: sticky; left: 0; z-index: 2; background: #f4f6f9; color: var(--testo-2);
+  text-align: right; min-width: 46px; }
+table.bdg-tab thead .bdg-n { z-index: 4; }
+tr.bdg-progetto td { background: #fff7f7; }
+tr.bdg-progetto .bdg-n { background: #fbe9e9; color: var(--rosso); }
+.bdg-cella { width: 100%; min-width: 90px; border: 1px solid transparent; background: transparent;
+  font-size: 12.5px; padding: 2px 4px; border-radius: 4px; }
+.bdg-cella:focus { border-color: var(--rosso); background: #fff; outline: none; }
+.bdg-az { position: sticky; right: 0; background: #f4f6f9; z-index: 2; }
+
+/* ===== Selettore anno e nuova voce ===== */
+.bdg-anni { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 12px; }
+.bdg-anno { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--bordo); background: var(--bianco);
+  color: var(--inchiostro); text-decoration: none; font-size: 13px; font-weight: 700; cursor: pointer; }
+.bdg-anno:hover { border-color: var(--rosso); }
+.bdg-anno.attivo { background: var(--rosso); border-color: var(--rosso); color: #fff; }
+.bdg-anno .oggi { font-weight: 400; font-size: 11px; opacity: .75; }
+.bdg-anno.nuovo { border-style: dashed; color: var(--testo-2); }
+.bdg-regola { font-size: 12.5px; margin-left: 6px; }
+.bdg-nuova { background: var(--bianco); border: 1px solid var(--bordo); border-radius: var(--r-card); padding: 12px 16px; margin-bottom: 12px; }
+.bdg-nuova summary { cursor: pointer; font-size: 13.5px; font-weight: 600; }
+.bdg-nuova-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; align-items: end; margin-top: 12px; }
+.bdg-nuova-form .full { grid-column: 1 / -1; }
+.flag-comp { margin-top: 8px; gap: 14px; }
+.flag-lab { font-size: 12.5px; color: var(--testo-2); }
+.help-inline { font-weight: 400; font-size: 12px; color: var(--testo-2); }

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block titolo %}Budget · Progetti Digital Transformation{% endblock %}
+{% block contenuto %}
+<div class="page-head"><div><h1>Budget</h1><p class="sub">Fogli di budget ed extra budget, a righe come nel file Excel.</p></div></div>
+{% include "flusso/_menu_budget.html" %}
+<div class="vuoto-box">
+  <p><b>Nessun foglio importato.</b> I workbook si caricano una volta dal server, conservando tutti i fogli e le colonne:</p>
+  <p class="t-mut" style="margin-top:10px;font-family:ui-monospace,monospace;font-size:12.5px;">python manage.py importa_budget --budget /percorso/Budget_2026_V5.xlsx --extra /percorso/Extra_Budget_2026.xlsx --anno 2026</p>
+  <p class="t-mut">L'import è ripetibile: le righe generate dai progetti approvati vengono conservate.</p>
+</div>
+{% endblock %}

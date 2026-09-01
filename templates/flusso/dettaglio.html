@@ -113,7 +113,7 @@
             <span class="help">Copertura sul budget IT: a budget o extra budget.</span>
           </div>
           <div class="f-row full">
-            <label>Classificazione economica</label>
+            <label>Classificazione economica {% if richiesta.tipo == "AI" %}<span class="help-inline">(del progetto AI)</span>{% endif %}</label>
             <div class="flag-row">
               <label class="flag">{{ analisi_form.is_capex }} Capex</label>
               <label class="flag">{{ analisi_form.is_opex }} Opex</label>
@@ -133,11 +133,23 @@
             <label for="{{ analisi_form.dettaglio_application.id_for_label }}">Application</label>
             {{ analisi_form.dettaglio_application }}
             <span class="help">Se compilato, al salvataggio viene creata la scheda «{{ richiesta.codice }} Application» per la Funzione Applicativa (una sola volta).</span>
+            <div class="flag-row flag-comp">
+              <span class="flag-lab">Classificazione Application:</span>
+              <label class="flag">{{ analisi_form.app_capex }} Capex</label>
+              <label class="flag">{{ analisi_form.app_opex }} Opex</label>
+              <label class="flag">{{ analisi_form.app_ifrs }} IFRS</label>
+            </div>
           </div>
           <div class="f-row full">
             <label for="{{ analisi_form.dettaglio_it_operation.id_for_label }}">IT Operation</label>
             {{ analisi_form.dettaglio_it_operation }}
             <span class="help">Se compilato, al salvataggio viene creata la scheda «{{ richiesta.codice }} IT Operation» per la Funzione IT Operations.</span>
+            <div class="flag-row flag-comp">
+              <span class="flag-lab">Classificazione IT Operation:</span>
+              <label class="flag">{{ analisi_form.ops_capex }} Capex</label>
+              <label class="flag">{{ analisi_form.ops_opex }} Opex</label>
+              <label class="flag">{{ analisi_form.ops_ifrs }} IFRS</label>
+            </div>
           </div>
           {% endif %}
           {% if richiesta.tipo == "AI" %}

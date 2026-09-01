@@ -8,6 +8,7 @@ questi controlli, non la loro fonte.
 """
 
 import os
+from decimal import Decimal, InvalidOperation
 from collections import Counter
 
 from accounts.models import Funzione
@@ -26,7 +27,9 @@ from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, BeneficioForm, Impo
                     PianificazioneForm, RichiestaForm, SalForm, TrattamentoRischioForm,
                     ValidazioneRischioForm)
 from .kpi import calcola_kpi, riepilogo_aree
-from .models import (AttivitaEffort, ClassificazioneRischio, ConfigurazioneAI, TipoProgetto,
+from .models import (AttivitaEffort, ClassificazioneRischio, ConfigurazioneAI, FoglioBudget,
+                     Priorita,
+                     RigaBudget, TipoFoglio, TipoProgetto,
                      DIMENSIONE_PER_RUOLO, DIMENSIONI_PER_RUOLO, FiguraEffort, ORDINE_ATTIVITA, VoceEffort,
                      EsitoBudget, PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
                      StatoRischio, TipoRischio)
@@ -847,6 +850,155 @@ def costi(request):
     })
 
 
+
+def _puo_budget(utente) -> bool:
+    """Budget ed Extra Budget: funzioni tecniche (AI, Applicativa, IT Operations) e CISO."""
+    return utente.is_funzione or utente.is_ciso
+
+
+def _puo_righe_budget(utente) -> bool:
+    """Chi puo' inserire e modificare le righe: funzioni tecniche e CISO.
+
+    Il CISO ha voci di budget proprie (sicurezza, consulenze, servizi gestiti):
+    le inserisce e le corregge direttamente, come le funzioni tecniche.
+    """
+    return utente.is_funzione or utente.is_ciso
+
+
+def _menu_budget(chiave_attiva=None):
+    """Voci del sottomenu Budget: i due fogli principali + i fogli di supporto."""
+    fogli = list(FoglioBudget.objects.all())
+    principali = [f for f in fogli if f.is_principale]
+    supporto = [f for f in fogli if not f.is_principale]
+    return {"principali": principali, "supporto": supporto, "attiva": chiave_attiva}
+
+
+@login_required
+def budget_indice(request):
+    """Apre il foglio Budget; se non è stato importato mostra le istruzioni."""
+    if not _puo_budget(request.user):
+        return HttpResponseForbidden("Pagina riservata alle funzioni tecniche e al CISO.")
+    foglio = (FoglioBudget.objects.filter(tipo=TipoFoglio.BUDGET).order_by("-anno").first()
+              or FoglioBudget.objects.filter(tipo=TipoFoglio.EXTRA).order_by("-anno").first()
+              or FoglioBudget.objects.first())
+    if foglio is None:
+        return render(request, "flusso/budget_vuoto.html", {"menu": _menu_budget()})
+    return redirect(foglio)
+
+
+@login_required
+def budget_foglio(request, chiave):
+    """Un foglio di budget a righe, come in Excel (intestazioni e colonne originali)."""
+    if not _puo_budget(request.user):
+        return HttpResponseForbidden("Pagina riservata alle funzioni tecniche e al CISO.")
+    foglio = get_object_or_404(FoglioBudget, chiave=chiave)
+    n_col = len(foglio.intestazioni)
+    q = (request.GET.get("q") or "").strip()
+    righe = foglio.righe.select_related("richiesta").all()
+    if q:
+        minuscolo = q.lower()
+        righe = [r for r in righe
+                 if any(minuscolo in str(v).lower() for v in r.dati)]
+    else:
+        righe = list(righe)
+    corpo = [{"r": r, "celle": r.celle(n_col)} for r in righe]
+    da_progetto = sum(1 for r in righe if r.da_progetto)
+    anni = list(FoglioBudget.objects.filter(tipo=foglio.tipo)
+                .order_by("-anno").values_list("anno", flat=True)) if foglio.is_principale else []
+    from datetime import date
+    anno_corrente = date.today().year
+    prossimi = [a for a in (anno_corrente, anno_corrente + 1) if a not in anni]
+    return render(request, "flusso/budget_foglio.html", {
+        "foglio": foglio, "intestazioni": foglio.intestazioni, "corpo": corpo,
+        "menu": _menu_budget(foglio.chiave), "q": q, "anni": anni, "anni_creabili": prossimi,
+        "totale": foglio.righe.count(), "mostrate": len(corpo), "da_progetto": da_progetto,
+        "puo_modificare": _puo_righe_budget(request.user),
+        "puo_creare_foglio": request.user.is_funzione,
+        "funzioni": Funzione.choices, "tipi": TipoProgetto.choices,
+        "anno_corrente": anno_corrente,
+    })
+
+
+@login_required
+@require_POST
+def crea_foglio_anno(request, chiave):
+    """Apre il foglio di un anno non ancora esistente, con le stesse colonne."""
+    modello = get_object_or_404(FoglioBudget, chiave=chiave)
+    if not request.user.is_funzione:
+        return HttpResponseForbidden("Solo le funzioni tecniche possono creare un foglio.")
+    try:
+        anno = int(request.POST.get("anno", ""))
+    except (TypeError, ValueError):
+        messages.error(request, "Anno non valido.")
+        return redirect(modello)
+    foglio = servizi.foglio_budget(modello.tipo, anno, crea=True)
+    if foglio is None:
+        messages.error(request, "Nessun foglio di riferimento da cui ereditare le colonne.")
+        return redirect(modello)
+    messages.success(request, f"Foglio {foglio.nome} {anno} disponibile.")
+    return redirect(foglio)
+
+
+@login_required
+@require_POST
+def nuova_riga_budget(request, chiave):
+    """Inserimento manuale di una riga: crea in automatico il progetto collegato."""
+    foglio = get_object_or_404(FoglioBudget, chiave=chiave)
+    if not _puo_righe_budget(request.user):
+        return HttpResponseForbidden("Solo le funzioni tecniche e il CISO possono inserire righe.")
+    titolo = (request.POST.get("titolo") or "").strip()
+    funzione = request.POST.get("funzione") or ""
+    tipo_progetto = request.POST.get("tipo_progetto") or TipoProgetto.AI
+    priorita = request.POST.get("priorita") or "MEDIA"
+    note = (request.POST.get("note") or "").strip()
+    importo_txt = (request.POST.get("importo") or "").replace(",", ".").strip()
+    if not titolo or funzione not in dict(Funzione.choices):
+        messages.error(request, "Servono almeno la descrizione della voce e l'area richiedente.")
+        return redirect(foglio)
+    importo = None
+    if importo_txt:
+        try:
+            importo = Decimal(importo_txt)
+        except InvalidOperation:
+            messages.error(request, "Importo non valido.")
+            return redirect(foglio)
+    dati = [""] * len(foglio.intestazioni)
+    for chiave_col, valore in (
+            (("Priorità", "PRIORITY"), dict(Priorita.choices).get(priorita, "")),
+            (("Area",), dict(Funzione.choices).get(funzione, "")),
+            (("Note", "NOTE"), note),
+    ):
+        i = foglio.indice_colonna(*chiave_col)
+        if i is not None and valore:
+            dati[i] = valore
+    if importo is not None:
+        for nome in ("ESTIMATED AMOUNT", "OPX Imp. tot."):
+            i = foglio.indice_colonna(nome)
+            if i is not None:
+                dati[i] = float(importo)
+                break
+    riga, richiesta = servizi.crea_progetto_da_riga(
+        foglio, dati, attore=request.user, titolo=titolo, funzione=funzione,
+        tipo_progetto=tipo_progetto, priorita=priorita, importo=importo, note=note)
+    messages.success(request, f"Riga inserita e progetto {richiesta.codice} creato: "
+                              f"è in carico alla {richiesta.funzione_competente_label}.")
+    return redirect(foglio.get_absolute_url() + f"#r{riga.pk}")
+
+
+@login_required
+@require_POST
+def salva_riga_budget(request, pk):
+    """Modifica manuale di una riga di budget (solo funzioni tecniche)."""
+    riga = get_object_or_404(RigaBudget, pk=pk)
+    if not _puo_righe_budget(request.user):
+        return HttpResponseForbidden("Solo le funzioni tecniche e il CISO possono modificare le righe.")
+    n_col = len(riga.foglio.intestazioni)
+    riga.dati = [request.POST.get(f"c{i}", "") for i in range(n_col)]
+    riga.save(update_fields=["dati", "aggiornata_il"])
+    messages.success(request, "Riga aggiornata.")
+    return redirect(riga.foglio.get_absolute_url() + f"#r{riga.pk}")
+
+
 @login_required
 @require_POST
 def aggiorna_sal(request, pk):
@@ -1017,6 +1169,10 @@ def _segna_pronta_se_validata(richiesta, attore) -> bool:
         try:
             richiesta.applica("presenta_approvazione", attore=attore,
                               nota="Avanzamento automatico: tutte le dimensioni di rischio validate.")
+            try:
+                servizi.copia_in_budget(richiesta, attore=attore)
+            except Exception:
+                pass  # la riga di budget non deve bloccare l'avanzamento della pratica
             return True
         except Exception:
             return False

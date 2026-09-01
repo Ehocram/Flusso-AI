@@ -329,6 +329,14 @@ class Richiesta(models.Model):
         "IT Operation", blank=True,
         help_text="Componente IT Operation. Se compilato genera una scheda dedicata per la Funzione IT Operations.",
     )
+    # Classificazione economica della componente Application / IT Operation: puo'
+    # essere diversa da quella del progetto AI e viene ereditata dalla scheda generata.
+    app_capex = models.BooleanField("Capex (Application)", default=False)
+    app_opex = models.BooleanField("Opex (Application)", default=False)
+    app_ifrs = models.BooleanField("IFRS (Application)", default=False)
+    ops_capex = models.BooleanField("Capex (IT Operation)", default=False)
+    ops_opex = models.BooleanField("Opex (IT Operation)", default=False)
+    ops_ifrs = models.BooleanField("IFRS (IT Operation)", default=False)
     is_capex = models.BooleanField("Capex", default=False)
     is_opex = models.BooleanField("Opex", default=False)
     is_ifrs = models.BooleanField("IFRS", default=False)
@@ -1477,3 +1485,89 @@ class VoceEffort(models.Model):
 
     def __str__(self):
         return f"{self.richiesta_id} {self.attivita} {self.ore}h"
+
+
+class TipoFoglio(models.TextChoices):
+    """Ruolo di un foglio nel workbook di budget."""
+
+    BUDGET = "BUDGET", "Budget"
+    EXTRA = "EXTRA", "Extra Budget"
+    SUPPORTO = "SUPPORTO", "Foglio di supporto"
+
+
+class FoglioBudget(models.Model):
+    """Un foglio del workbook di budget, replicato a righe come in Excel.
+
+    Le intestazioni sono conservate cosi' come sono nel file di origine: il
+    modello e' generico proprio per non perdere colonne quando il workbook cambia.
+    """
+
+    chiave = models.SlugField(max_length=60, unique=True)
+    nome = models.CharField(max_length=80)
+    tipo = models.CharField(max_length=12, choices=TipoFoglio.choices, default=TipoFoglio.SUPPORTO)
+    anno = models.PositiveIntegerField(default=2026)
+    intestazioni = models.JSONField(default=list)
+    ordine = models.PositiveIntegerField(default=0)
+    note = models.CharField(max_length=300, blank=True)
+    aggiornato_il = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Foglio budget"
+        verbose_name_plural = "Fogli budget"
+        ordering = ["ordine", "nome"]
+
+    def __str__(self):
+        return f"{self.nome} ({self.anno})"
+
+    def get_absolute_url(self):
+        return reverse("flusso:budget_foglio", args=[self.chiave])
+
+    @property
+    def is_principale(self) -> bool:
+        return self.tipo in (TipoFoglio.BUDGET, TipoFoglio.EXTRA)
+
+    def indice_colonna(self, *nomi):
+        """Posizione della prima intestazione che corrisponde (confronto tollerante)."""
+        norm = [str(h or "").strip().lower() for h in self.intestazioni]
+        for nome in nomi:
+            n = nome.strip().lower()
+            for i, h in enumerate(norm):
+                if h == n:
+                    return i
+            for i, h in enumerate(norm):
+                if h and (h.startswith(n) or n.startswith(h)):
+                    return i
+        return None
+
+
+class RigaBudget(models.Model):
+    """Una riga di un foglio di budget: valori posizionali, come in Excel.
+
+    Le righe generate da una richiesta approvata restano collegate al progetto
+    (campo `richiesta`), cosi' si riconoscono e non si duplicano.
+    """
+
+    foglio = models.ForeignKey(FoglioBudget, on_delete=models.CASCADE, related_name="righe")
+    ordine = models.PositiveIntegerField(default=0, db_index=True)
+    dati = models.JSONField(default=list)
+    richiesta = models.ForeignKey(Richiesta, null=True, blank=True, on_delete=models.SET_NULL,
+                                  related_name="righe_budget")
+    da_progetto = models.BooleanField(default=False)
+    creata_il = models.DateTimeField(auto_now_add=True)
+    aggiornata_il = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Riga budget"
+        verbose_name_plural = "Righe budget"
+        ordering = ["ordine", "id"]
+
+    def valore(self, indice):
+        if indice is None or indice >= len(self.dati):
+            return ""
+        v = self.dati[indice]
+        return "" if v is None else v
+
+    def celle(self, n_colonne):
+        """Valori allineati al numero di colonne del foglio (riempie i buchi)."""
+        d = list(self.dati)[:n_colonne]
+        return d + [""] * (n_colonne - len(d))

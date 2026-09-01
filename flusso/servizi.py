@@ -245,6 +245,10 @@ def clona_per_funzioni(richiesta, attore=None) -> list:
     if richiesta.is_clone:
         return []  # non si clona un clone
     creati = []
+    classi = {
+        TipoProgetto.APPLICATION: (richiesta.app_capex, richiesta.app_opex, richiesta.app_ifrs),
+        TipoProgetto.IT_OPERATION: (richiesta.ops_capex, richiesta.ops_opex, richiesta.ops_ifrs),
+    }
     for tipo, testo in ((TipoProgetto.APPLICATION, richiesta.dettaglio_application),
                         (TipoProgetto.IT_OPERATION, richiesta.dettaglio_it_operation)):
         testo = (testo or "").strip()
@@ -261,6 +265,11 @@ def clona_per_funzioni(richiesta, attore=None) -> list:
             priorita=richiesta.priorita,
             entity=richiesta.entity,
             descrizione=testo,
+            # Classificazione economica propria della componente (modificabile poi
+            # dalla funzione competente nella sua analisi).
+            is_capex=classi[tipo][0],
+            is_opex=classi[tipo][1],
+            is_ifrs=classi[tipo][2],
         )
         # Entra subito nella coda della funzione competente, con traccia in audit.
         clone.applica("invia", attore=attore,
@@ -268,3 +277,163 @@ def clona_per_funzioni(richiesta, attore=None) -> list:
                            f"di {richiesta.codice} — {richiesta.titolo}.")
         creati.append(clone)
     return creati
+
+
+def _riga_da_richiesta(foglio, richiesta):
+    """Costruisce la riga di budget mappando i campi del progetto sulle colonne del foglio.
+
+    La mappatura e' per NOME di colonna: se una colonna non esiste nel workbook
+    importato, semplicemente non viene valorizzata (nessun dato inventato).
+    """
+    dati = [""] * len(foglio.intestazioni)
+
+    def scrivi(valore, *nomi):
+        i = foglio.indice_colonna(*nomi)
+        if i is not None and valore not in (None, ""):
+            dati[i] = valore
+
+    etichetta = f"{richiesta.codice} {richiesta.titolo}"
+    scrivi(etichetta, "#ID", "ITEM ID", "ID")
+    scrivi(etichetta, "Descrizione", "DESCRIPTION")
+    scrivi(richiesta.titolo, "Fase+Desc", "BUDGET ITEM")
+    scrivi(richiesta.get_priorita_display(), "Priorità", "PRIORITY")
+    scrivi(richiesta.get_tipo_display(), "Tipologia", "ITEM TYPE")
+    scrivi(richiesta.get_funzione_display(), "Area")
+    nome_owner = (richiesta.proponente.get_full_name() or richiesta.proponente.username)
+    scrivi(nome_owner, "Owner", "REFERENCE PERSON")
+    scrivi(nome_owner, "BUDGET RESPONSIBLE")
+    scrivi(richiesta.get_entity_display(), "Compete soc.", "Pagato da soc.")
+    if richiesta.is_capex and not richiesta.is_opex:
+        scrivi("CPX", "CPX/OPX")
+    elif richiesta.is_opex and not richiesta.is_capex:
+        scrivi("OPX", "CPX/OPX")
+    if richiesta.is_ifrs:
+        scrivi("IFRS", "IFRS")
+    costo = richiesta.costo_progetto_stimato
+    if costo is not None:
+        importo = float(costo)
+        scrivi(importo, "ESTIMATED AMOUNT")
+        scrivi(importo, "CPX Inv." if richiesta.is_capex else "OPX Imp. tot.")
+    if richiesta.effort_ore:
+        scrivi(round(richiesta.effort_ore / 8, 1), "EFFORT IT (GG)")
+    if richiesta.data_inizio:
+        scrivi(richiesta.data_inizio.isoformat(), "Due date")
+    scrivi(richiesta.funzione_competente_label, "Rich.")
+    scrivi("Progetto Digital Transformation — compliance validata dal CISO", "Note", "NOTE")
+    return dati
+
+
+def copia_in_budget(richiesta, attore=None, anno=None):
+    """Copia il progetto nelle righe del foglio di budget corretto.
+
+    Va sul foglio Extra Budget se la copertura e' extra budget, altrimenti sul
+    foglio Budget. Mantiene «ID xx + titolo» come identificativo di riga. Se il
+    progetto e' gia' presente la riga viene AGGIORNATA, non duplicata.
+    Ritorna (riga, creata) oppure (None, False) se il foglio non e' stato importato.
+    """
+    from django.db.models import Max
+
+    from .models import RigaBudget, TipoFoglio
+
+    esistente = RigaBudget.objects.filter(richiesta=richiesta).select_related("foglio").first()
+    extra = (richiesta.budget_it == "EXTRA_BUDGET"
+             or richiesta.esito_budget == "EXTRA_BUDGET")
+    tipo = TipoFoglio.EXTRA if extra else TipoFoglio.BUDGET
+    # Budget -> esercizio successivo; Extra budget -> esercizio in corso.
+    anno = anno or anno_destinazione(extra)
+    foglio = foglio_budget(tipo, anno, crea=True)
+    if foglio is None:
+        return None, False
+    dati = _riga_da_richiesta(foglio, richiesta)
+    if esistente:
+        if esistente.foglio_id != foglio.id:  # la copertura è cambiata: riga spostata
+            esistente.foglio = foglio
+        esistente.dati = dati
+        esistente.save(update_fields=["foglio", "dati", "aggiornata_il"])
+        return esistente, False
+    ultimo = foglio.righe.aggregate(m=Max("ordine"))["m"] or 0
+    riga = RigaBudget.objects.create(foglio=foglio, ordine=ultimo + 10, dati=dati,
+                                     richiesta=richiesta, da_progetto=True)
+    return riga, True
+
+
+def foglio_budget(tipo, anno, crea=False):
+    """Foglio di un certo tipo (BUDGET/EXTRA) per un dato anno.
+
+    Se manca e crea=True lo genera vuoto, ereditando le intestazioni dal foglio
+    piu' recente dello stesso tipo: cosi' a inizio anno le voci trovano gia' il
+    foglio dell'anno successivo, con la struttura del workbook in uso.
+    """
+    import re
+    import unicodedata
+
+    from .models import FoglioBudget
+
+    foglio = FoglioBudget.objects.filter(tipo=tipo, anno=anno).first()
+    if foglio or not crea:
+        return foglio
+    modello = FoglioBudget.objects.filter(tipo=tipo).order_by("-anno").first()
+    if modello is None:
+        return None  # nessun workbook importato: fail loudly a monte
+    base = unicodedata.normalize("NFKD", modello.nome).encode("ascii", "ignore").decode()
+    base = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-") or "foglio"
+    prefisso = "xb-" if tipo == "EXTRA" else ""
+    return FoglioBudget.objects.create(
+        chiave=f"{prefisso}{base}-{anno}"[:60], nome=modello.nome, tipo=tipo, anno=anno,
+        intestazioni=list(modello.intestazioni), ordine=modello.ordine,
+        note=f"Creato automaticamente da {modello.nome} {modello.anno}.",
+    )
+
+
+def anno_destinazione(extra: bool, oggi=None) -> int:
+    """Anno di destinazione di una voce approvata.
+
+    Regola: quello che si mette a BUDGET finanzia l'esercizio successivo (il
+    budget dell'anno prossimo, si compila durante tutto l'anno in corso); quello
+    che va in EXTRA BUDGET incide sull'anno in corso.
+    """
+    from datetime import date
+
+    oggi = oggi or date.today()
+    return oggi.year if extra else oggi.year + 1
+
+
+def crea_progetto_da_riga(foglio, dati_riga, attore, titolo, funzione, tipo_progetto,
+                          priorita="MEDIA", importo=None, note=""):
+    """Riga inserita a mano nel budget: crea il progetto corrispondente e li collega.
+
+    La voce di budget e il progetto sono due facce della stessa cosa: la riga
+    nasce nel foglio, il progetto entra nel flusso (in coda alla funzione
+    competente) con la copertura gia' coerente col foglio di origine.
+    Ritorna (riga, richiesta).
+    """
+    from .models import BudgetIT, Richiesta, RigaBudget, TipoFoglio
+    from .workflow import Stato
+
+    extra = foglio.tipo == TipoFoglio.EXTRA
+    richiesta = Richiesta.objects.create(
+        titolo=titolo,
+        descrizione=note or f"Voce inserita nel foglio {foglio.nome} {foglio.anno}.",
+        funzione=funzione,
+        tipo=tipo_progetto,
+        priorita=priorita,
+        proponente=attore,
+        altri_costi=importo,
+        budget_it=BudgetIT.EXTRA_BUDGET if extra else BudgetIT.BUDGET,
+    )
+    richiesta.applica(
+        "invia", attore=attore,
+        nota=f"Progetto generato dalla riga inserita nel foglio {foglio.nome} {foglio.anno}.")
+    dati = list(dati_riga)
+    i_id = foglio.indice_colonna("#ID", "ITEM ID", "ID")
+    i_desc = foglio.indice_colonna("Descrizione", "DESCRIPTION")
+    etichetta = f"{richiesta.codice} {richiesta.titolo}"
+    if i_id is not None:
+        dati[i_id] = etichetta
+    if i_desc is not None and not str(dati[i_desc]).strip():
+        dati[i_desc] = etichetta
+    from django.db.models import Max
+    ultimo = foglio.righe.aggregate(m=Max("ordine"))["m"] or 0
+    riga = RigaBudget.objects.create(foglio=foglio, ordine=ultimo + 10, dati=dati,
+                                     richiesta=richiesta, da_progetto=True)
+    return riga, richiesta

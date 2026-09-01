@@ -17,7 +17,8 @@ class AnalisiAIForm(forms.ModelForm):
             "is_capex", "is_opex", "is_ifrs", "budget_it",
             "costo_token_ai", "costo_token_periodicita",
             "costo_token_ambito", "altri_costi", "altri_costi_note",
-            "dettaglio_application", "dettaglio_it_operation",
+            "dettaglio_application", "app_capex", "app_opex", "app_ifrs",
+            "dettaglio_it_operation", "ops_capex", "ops_opex", "ops_ifrs",
         ]
         widgets = {
             "analisi_fattibilita": forms.Textarea(attrs={"rows": 4, "placeholder": "Valutazione di fattibilità, approccio, rischi, dipendenze…"}),
