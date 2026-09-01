@@ -71,10 +71,13 @@ CATEGORIE_RISCHIO = {
 }
 
 # Ruolo (processo) che valida/modifica ciascuna dimensione.
-RUOLO_VALIDATORE = {"AIACT": "LEGALE", "NIS2": "CISO", "GDPR": "DPO"}
-ETICHETTA_VALIDATORE = {"AIACT": "Funzione Legale", "NIS2": "CISO", "GDPR": "DPO"}
+# Presidio unico di compliance: il CISO valida tutte e tre le dimensioni
+# (AI Act, NIS2, GDPR). La validazione separata del DPO e' stata eliminata.
+RUOLO_VALIDATORE = {"AIACT": "CISO", "NIS2": "CISO", "GDPR": "CISO"}
+ETICHETTA_VALIDATORE = {"AIACT": "CISO", "NIS2": "CISO", "GDPR": "CISO"}
+DIMENSIONI_PER_RUOLO = {"CISO": ["AIACT", "NIS2", "GDPR"]}
 # Mappa inversa: ruolo del presidio -> dimensione di rischio di sua competenza.
-DIMENSIONE_PER_RUOLO = {ruolo: dim for dim, ruolo in RUOLO_VALIDATORE.items()}
+DIMENSIONE_PER_RUOLO = {"CISO": "AIACT"}  # compat: prima dimensione del presidio
 
 
 def obblighi_in_voci(testo) -> list:
@@ -176,6 +179,31 @@ class AmbitoCosto(models.TextChoices):
     COMPLESSIVO = "COMPLESSIVO", "Complessivo"
 
 
+class Priorita(models.TextChoices):
+    ALTA = "ALTA", "Alta"
+    MEDIA = "MEDIA", "Media"
+    BASSA = "BASSA", "Bassa"
+
+
+class Entity(models.TextChoices):
+    """Entita' legale/geografica di riferimento del progetto."""
+
+    HD = "HD", "HD"
+    ROMANIA = "ROMANIA", "Romania"
+    SPAGNA = "SPAGNA", "Spagna"
+    FRANCIA = "FRANCIA", "Francia"
+    GERMANIA = "GERMANIA", "Germania"
+    EXTRA_UE = "EXTRA_UE", "Extra UE"
+    ALL = "ALL", "All"
+
+
+class BudgetIT(models.TextChoices):
+    """Copertura sul budget IT (collegata alle schede budget/extra budget)."""
+
+    BUDGET = "BUDGET", "Budget"
+    EXTRA_BUDGET = "EXTRA_BUDGET", "Extra Budget"
+
+
 class TipoProgetto(models.TextChoices):
     """Tipo di richiesta, flaggato dall'owner: determina la funzione tecnica competente."""
 
@@ -225,6 +253,23 @@ class Richiesta(models.Model):
         verbose_name="Tipo di richiesta",
         help_text="AI (perimetro registro AI Act), Application (software/ERP) o IT Operation.",
     )
+    priorita = models.CharField(
+        "Priorità", max_length=8, choices=Priorita.choices, default=Priorita.MEDIA, db_index=True,
+        help_text="Priorità attribuita dall'owner.",
+    )
+    entity = models.CharField(
+        "Entity", max_length=12, choices=Entity.choices, blank=True,
+        help_text="Entità di riferimento; se indicata dall'owner viene riportata nell'analisi.",
+    )
+    data_necessita = models.DateField(
+        "Entro quando serve", null=True, blank=True,
+        help_text="Data entro cui l'owner ha bisogno della soluzione: guida la pianificazione.",
+    )
+    clone_di = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="cloni",
+        editable=False, help_text="Scheda AI di origine, se questa è una scheda clonata.",
+    )
+
     funzione = models.CharField("Funzione", max_length=10, choices=Funzione.choices)
     titolo = models.CharField("Titolo (case study)", max_length=140)
     tipo_soluzione = models.CharField(
@@ -276,6 +321,41 @@ class Richiesta(models.Model):
     )
     altri_costi = models.DecimalField("Altri costi (€)", max_digits=10, decimal_places=2, null=True, blank=True)
     altri_costi_note = models.CharField("Dettaglio altri costi", max_length=200, blank=True)
+    costo_owner = models.DecimalField(
+        "Costo a carico dell'owner (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Costi sul budget dell'owner: consulenti esterni, servizi, licenze già a suo carico.",
+    )
+    dettaglio_application = models.TextField(
+        "Application", blank=True,
+        help_text="Componente applicativa (nuovi software, ERP…). Se compilato genera una scheda dedicata per la Funzione Applicativa.",
+    )
+    dettaglio_it_operation = models.TextField(
+        "IT Operation", blank=True,
+        help_text="Componente IT Operation. Se compilato genera una scheda dedicata per la Funzione IT Operations.",
+    )
+    # Classificazione economica della componente Application / IT Operation: puo'
+    # essere diversa da quella del progetto AI e viene ereditata dalla scheda generata.
+    costo_application = models.DecimalField(
+        "Costo componente Application (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Costo della componente applicativa: viene riportato sulla scheda generata.",
+    )
+    costo_it_operation = models.DecimalField(
+        "Costo componente IT Operation (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Costo della componente IT Operation: viene riportato sulla scheda generata.",
+    )
+    app_capex = models.BooleanField("Capex (Application)", default=False)
+    app_opex = models.BooleanField("Opex (Application)", default=False)
+    app_ifrs = models.BooleanField("IFRS (Application)", default=False)
+    ops_capex = models.BooleanField("Capex (IT Operation)", default=False)
+    ops_opex = models.BooleanField("Opex (IT Operation)", default=False)
+    ops_ifrs = models.BooleanField("IFRS (IT Operation)", default=False)
+    is_capex = models.BooleanField("Capex", default=False)
+    is_opex = models.BooleanField("Opex", default=False)
+    is_ifrs = models.BooleanField("IFRS", default=False)
+    budget_it = models.CharField(
+        "Budget IT", max_length=16, choices=BudgetIT.choices, blank=True,
+        help_text="Copertura sul budget IT: a budget o extra budget.",
+    )
 
     # --- Budget (compilato dall'owner) --------------------------------------
     budget_massimo = models.DecimalField(
@@ -308,58 +388,18 @@ class Richiesta(models.Model):
     aggiornata_il = models.DateTimeField(auto_now=True)
 
     def applica_analisi_ai(self, dati: dict) -> list:
-        """Mappa l'output di ai_client.genera_analisi_completa sui campi dell'analisi e salva.
+        """Applica l'output di ai_client.genera_analisi_completa: SOLO la fattibilità.
 
-        Tutti i valori restano modificabili: e' una precompilazione, non un vincolo.
-        Ritorna l'elenco dei campi effettivamente aggiornati.
+        Il bottone «AI» redige la bozza di analisi; effort, tipo di AI, infrastruttura,
+        costi, benefici e percentuali restano compilati dalla persona (sono i valori su
+        cui poi decidono owner e presìdi). Ritorna i campi aggiornati.
         """
-        from decimal import Decimal, InvalidOperation
-
-        def _dec(v):
-            if v is None or v == "":
-                return None
-            try:
-                return Decimal(str(v))
-            except (InvalidOperation, ValueError, TypeError):
-                return None
-
-        def _intero(v):
-            d = _dec(v)
-            return int(d) if d is not None else None
-
-        campi = []
         fatt = (dati.get("fattibilita") or "").strip()
-        if fatt:
-            self.analisi_fattibilita = fatt
-            campi.append("analisi_fattibilita")
-        aut = dati.get("autonomia")
-        if aut in dict(AutonomiaAI.choices):
-            self.ai_autonomia = aut
-            campi.append("ai_autonomia")
-        dep = dati.get("deployment")
-        if dep in dict(DeploymentAI.choices):
-            self.ai_deployment = dep
-            campi.append("ai_deployment")
-        eff = _intero(dati.get("effort_ore"))
-        if eff is not None and eff >= 0:
-            self.effort_ore = eff
-            campi.append("effort_ore")
-        costo = _dec(dati.get("costo_token_mensile_per_utente"))
-        if costo is not None and costo > 0:
-            self.costo_token_ai = costo
-            self.costo_token_ai_stimato = True
-            if not self.costo_token_periodicita:
-                self.costo_token_periodicita = PeriodicitaCosto.MENSILE
-            if not self.costo_token_ambito:
-                self.costo_token_ambito = AmbitoCosto.UTENTE
-            campi += ["costo_token_ai", "costo_token_ai_stimato",
-                      "costo_token_periodicita", "costo_token_ambito"]
-        # Beneficio economico e incrementi (efficienza/qualita) NON sono toccati qui:
-        # restano di competenza dell'owner (proposti solo alla creazione della richiesta,
-        # vedi applica_stima_incrementi). Il bottone AI compila solo i campi tecnici.
-        if campi:
-            self.save(update_fields=sorted(set(campi)))
-        return campi
+        if not fatt:
+            return []
+        self.analisi_fattibilita = fatt
+        self.save(update_fields=["analisi_fattibilita"])
+        return ["analisi_fattibilita"]
 
     # --- Ripartizione dell'effort sulle attività -----------------------------
     @property
@@ -450,7 +490,27 @@ class Richiesta(models.Model):
     # --- Proprieta' di comodo per i template --------------------------------
     @property
     def codice(self) -> str:
+        """ID della scheda; le schede clonate mostrano l'ID di origine + il tipo."""
+        if self.clone_di_id:
+            return f"{self.clone_di.codice} {self.tipo_breve}"
         return f"ID {self.numero:02d}"
+
+    @property
+    def is_clone(self) -> bool:
+        return self.clone_di_id is not None
+
+    @property
+    def tipi_scomponibili(self) -> list:
+        """Tipi di componente che questa scheda può generare.
+
+        Ci si scompone verso gli ALTRI tipi, mai verso il proprio (un progetto
+        Application non genera un'altra scheda Application) e mai da una scheda
+        già generata, per non creare catene di cloni.
+        """
+        if self.is_clone:
+            return []
+        return [t for t in (TipoProgetto.APPLICATION, TipoProgetto.IT_OPERATION)
+                if t != self.tipo]
 
     @property
     def is_terminale(self) -> bool:
@@ -583,9 +643,34 @@ class Richiesta(models.Model):
             parti.append(base)
         if self.altri_costi is not None:
             parti.append(self.altri_costi)
+        if self.costo_owner is not None:
+            parti.append(self.costo_owner)
         if not parti:
             return None
         return sum(parti)
+
+    @property
+    def costo_cloni(self):
+        """Somma dei costi delle schede collegate (Application / IT Operation)."""
+        if self.is_clone:
+            return None
+        parti = [c.costo_progetto_stimato for c in self.cloni.all()
+                 if c.costo_progetto_stimato is not None]
+        return sum(parti) if parti else None
+
+    @property
+    def costo_iniziativa(self):
+        """Costo complessivo dell'iniziativa: questa scheda + le schede collegate.
+
+        Serve a leggere il totale reale di un progetto scomposto su piu' funzioni;
+        negli aggregati di portafoglio si continua a contare ogni scheda una volta
+        sola, per non duplicare gli importi.
+        """
+        proprio = self.costo_progetto_stimato
+        cloni = self.costo_cloni
+        if proprio is None and cloni is None:
+            return None
+        return (proprio or 0) + (cloni or 0)
 
     @property
     def costo_progetto_motivo_incompleto(self):
@@ -597,7 +682,7 @@ class Richiesta(models.Model):
         """
         if self.costo_progetto_stimato is not None:
             return None
-        if self.costo_token_ai is None and self.altri_costi is None:
+        if self.costo_token_ai is None and self.altri_costi is None and self.costo_owner is None:
             return ("manca il costo del progetto: indica il costo token AI e/o gli altri "
                     "costi (0 se il progetto non ha costi).")
         if (self.costo_token_ai is not None
@@ -1425,3 +1510,89 @@ class VoceEffort(models.Model):
 
     def __str__(self):
         return f"{self.richiesta_id} {self.attivita} {self.ore}h"
+
+
+class TipoFoglio(models.TextChoices):
+    """Ruolo di un foglio nel workbook di budget."""
+
+    BUDGET = "BUDGET", "Budget"
+    EXTRA = "EXTRA", "Extra Budget"
+    SUPPORTO = "SUPPORTO", "Foglio di supporto"
+
+
+class FoglioBudget(models.Model):
+    """Un foglio del workbook di budget, replicato a righe come in Excel.
+
+    Le intestazioni sono conservate cosi' come sono nel file di origine: il
+    modello e' generico proprio per non perdere colonne quando il workbook cambia.
+    """
+
+    chiave = models.SlugField(max_length=60, unique=True)
+    nome = models.CharField(max_length=80)
+    tipo = models.CharField(max_length=12, choices=TipoFoglio.choices, default=TipoFoglio.SUPPORTO)
+    anno = models.PositiveIntegerField(default=2026)
+    intestazioni = models.JSONField(default=list)
+    ordine = models.PositiveIntegerField(default=0)
+    note = models.CharField(max_length=300, blank=True)
+    aggiornato_il = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Foglio budget"
+        verbose_name_plural = "Fogli budget"
+        ordering = ["ordine", "nome"]
+
+    def __str__(self):
+        return f"{self.nome} ({self.anno})"
+
+    def get_absolute_url(self):
+        return reverse("flusso:budget_foglio", args=[self.chiave])
+
+    @property
+    def is_principale(self) -> bool:
+        return self.tipo in (TipoFoglio.BUDGET, TipoFoglio.EXTRA)
+
+    def indice_colonna(self, *nomi):
+        """Posizione della prima intestazione che corrisponde (confronto tollerante)."""
+        norm = [str(h or "").strip().lower() for h in self.intestazioni]
+        for nome in nomi:
+            n = nome.strip().lower()
+            for i, h in enumerate(norm):
+                if h == n:
+                    return i
+            for i, h in enumerate(norm):
+                if h and (h.startswith(n) or n.startswith(h)):
+                    return i
+        return None
+
+
+class RigaBudget(models.Model):
+    """Una riga di un foglio di budget: valori posizionali, come in Excel.
+
+    Le righe generate da una richiesta approvata restano collegate al progetto
+    (campo `richiesta`), cosi' si riconoscono e non si duplicano.
+    """
+
+    foglio = models.ForeignKey(FoglioBudget, on_delete=models.CASCADE, related_name="righe")
+    ordine = models.PositiveIntegerField(default=0, db_index=True)
+    dati = models.JSONField(default=list)
+    richiesta = models.ForeignKey(Richiesta, null=True, blank=True, on_delete=models.SET_NULL,
+                                  related_name="righe_budget")
+    da_progetto = models.BooleanField(default=False)
+    creata_il = models.DateTimeField(auto_now_add=True)
+    aggiornata_il = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Riga budget"
+        verbose_name_plural = "Righe budget"
+        ordering = ["ordine", "id"]
+
+    def valore(self, indice):
+        if indice is None or indice >= len(self.dati):
+            return ""
+        v = self.dati[indice]
+        return "" if v is None else v
+
+    def celle(self, n_colonne):
+        """Valori allineati al numero di colonne del foglio (riempie i buchi)."""
+        d = list(self.dati)[:n_colonne]
+        return d + [""] * (n_colonne - len(d))

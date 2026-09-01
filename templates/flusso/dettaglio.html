@@ -50,6 +50,7 @@
           <label for="{{ beneficio_form.saving_economico_note.id_for_label }}">Nota beneficio</label>
           {{ beneficio_form.saving_economico_note }}
         </div>
+{% if beneficio_form.incremento_qualitativo %}
         <div class="f-row">
           <label for="{{ beneficio_form.incremento_qualitativo.id_for_label }}">Incremento qualitativo (%)</label>
           {{ beneficio_form.incremento_qualitativo }}
@@ -66,6 +67,7 @@
           <label for="{{ beneficio_form.incremento_efficienza_note.id_for_label }}">Nota efficienza</label>
           {{ beneficio_form.incremento_efficienza_note }}
         </div>
+        {% endif %}
       </div>
       <div style="margin-top:12px;"><button type="submit" class="btn btn-primario btn-sm"><i class="ti ti-device-floppy"></i> Salva beneficio</button></div>
     </form>
@@ -87,6 +89,7 @@
           {{ analisi_form.analisi_fattibilita }}
         </div>
         <div class="form-grid">
+{% if richiesta.tipo == "AI" %}
           <div class="f-row">
             <label for="{{ analisi_form.ai_autonomia.id_for_label }}">Tipo di AI</label>
             {{ analisi_form.ai_autonomia }}
@@ -97,18 +100,73 @@
             {{ analisi_form.ai_deployment }}
             <span class="help">API cloud, LLM locale on-premise o ibrido — impatta GDPR/NIS2.</span>
           </div>
+          {% endif %}
           <div class="f-row">
             <label for="{{ analisi_form.effort_ore.id_for_label }}">Effort (ore)</label>
             {{ analisi_form.effort_ore }}
           </div>
           <div class="f-row">
-            <label for="{{ analisi_form.altri_costi.id_for_label }}">Altri costi (€)</label>
+            <label for="{{ analisi_form.entity.id_for_label }}">Entity</label>
+            {{ analisi_form.entity }}
+          </div>
+          <div class="f-row">
+            <label for="{{ analisi_form.budget_it.id_for_label }}">Budget IT</label>
+            {{ analisi_form.budget_it }}
+            <span class="help">Copertura sul budget IT: a budget o extra budget.</span>
+          </div>
+          <div class="f-row full">
+            <label>Classificazione economica {% if richiesta.tipo == "AI" %}<span class="help-inline">(del progetto AI)</span>{% endif %}</label>
+            <div class="flag-row">
+              <label class="flag">{{ analisi_form.is_capex }} Capex</label>
+              <label class="flag">{{ analisi_form.is_opex }} Opex</label>
+              <label class="flag">{{ analisi_form.is_ifrs }} IFRS</label>
+            </div>
+          </div>
+          <div class="f-row">
+            <label for="{{ analisi_form.altri_costi.id_for_label }}">{{ analisi_form.altri_costi.label }}</label>
             {{ analisi_form.altri_costi }}
           </div>
           <div class="f-row full">
-            <label for="{{ analisi_form.altri_costi_note.id_for_label }}">Dettaglio altri costi</label>
+            <label for="{{ analisi_form.altri_costi_note.id_for_label }}">{{ analisi_form.altri_costi_note.label }}</label>
             {{ analisi_form.altri_costi_note }}
           </div>
+          {% if analisi_form.dettaglio_application %}
+          <div class="f-row full">
+            <label for="{{ analisi_form.dettaglio_application.id_for_label }}">Application</label>
+            {{ analisi_form.dettaglio_application }}
+            <span class="help">Se compilato, al salvataggio viene creata la scheda «{{ richiesta.codice }} Application» per la Funzione Applicativa (una sola volta).</span>
+            <div class="comp-costo">
+              <label for="{{ analisi_form.costo_application.id_for_label }}">Costo Application (€)</label>
+              {{ analisi_form.costo_application }}
+              <span class="help">Riportato come costo di progetto sulla scheda «{{ richiesta.codice }} Application».</span>
+            </div>
+            <div class="flag-row flag-comp">
+              <span class="flag-lab">Classificazione Application:</span>
+              <label class="flag">{{ analisi_form.app_capex }} Capex</label>
+              <label class="flag">{{ analisi_form.app_opex }} Opex</label>
+              <label class="flag">{{ analisi_form.app_ifrs }} IFRS</label>
+            </div>
+          </div>
+          {% endif %}
+          {% if analisi_form.dettaglio_it_operation %}
+          <div class="f-row full">
+            <label for="{{ analisi_form.dettaglio_it_operation.id_for_label }}">IT Operation</label>
+            {{ analisi_form.dettaglio_it_operation }}
+            <span class="help">Se compilato, al salvataggio viene creata la scheda «{{ richiesta.codice }} IT Operation» per la Funzione IT Operations.</span>
+            <div class="comp-costo">
+              <label for="{{ analisi_form.costo_it_operation.id_for_label }}">Costo IT Operation (€)</label>
+              {{ analisi_form.costo_it_operation }}
+              <span class="help">Riportato come costo di progetto sulla scheda «{{ richiesta.codice }} IT Operation».</span>
+            </div>
+            <div class="flag-row flag-comp">
+              <span class="flag-lab">Classificazione IT Operation:</span>
+              <label class="flag">{{ analisi_form.ops_capex }} Capex</label>
+              <label class="flag">{{ analisi_form.ops_opex }} Opex</label>
+              <label class="flag">{{ analisi_form.ops_ifrs }} IFRS</label>
+            </div>
+          </div>
+          {% endif %}
+          {% if richiesta.tipo == "AI" %}
           <div class="f-row full">
             <label for="{{ analisi_form.costo_token_ai.id_for_label }}">Costi token AI (€){% if richiesta.costo_token_ai_stimato %} <span class="badge-ai"><i class="ti ti-robot"></i> Stima AI · modificabile</span>{% endif %}</label>
             <div class="costo-token-row ctr-3">
@@ -118,6 +176,10 @@
             </div>
             <span class="help">Importo (lascia vuoto = stima AI al salvataggio) · periodicità · ambito. Utenti previsti (dall'owner): <b>{{ richiesta.numero_utenti|default:"non indicato" }}</b> — usato per il totale.</span>
             <div class="help" data-annuo data-utenti="{{ richiesta.numero_utenti|default:0 }}" style="margin-top:6px;">Costo token annualizzato: <b>—</b></div>
+          </div>
+          {% endif %}
+          <div class="f-row full">
+            <div class="metric-hint"><i class="ti ti-wallet"></i> Costo a carico dell'owner: <b>{% if richiesta.costo_owner is not None %}€ {{ richiesta.costo_owner|floatformat:2 }}{% else %}non indicato{% endif %}</b> — incluso nel costo di progetto.{% if richiesta.costo_cloni %} Schede collegate: <b>€ {{ richiesta.costo_cloni|floatformat:2 }}</b>. Totale iniziativa: <b>€ {{ richiesta.costo_iniziativa|floatformat:2 }}</b>.{% endif %}</div>
           </div>
         </div>
         {% if richiesta.esito_budget %}
@@ -156,8 +218,8 @@
       {# Sola lettura per gli altri ruoli #}
       {% if richiesta.analisi_fattibilita %}<p class="analisi-fatt">{{ richiesta.analisi_fattibilita }}</p>{% endif %}
       <div class="analisi-grid">
-        <div class="dato"><span class="lab">Tipo di AI</span><span class="val">{{ richiesta.get_ai_autonomia_display|default:"—" }}</span></div>
-        <div class="dato"><span class="lab">Infrastruttura</span><span class="val">{{ richiesta.get_ai_deployment_display|default:"—" }}</span></div>
+{% if richiesta.tipo == "AI" %}<div class="dato"><span class="lab">Tipo di AI</span><span class="val">{{ richiesta.get_ai_autonomia_display|default:"—" }}</span></div>
+        <div class="dato"><span class="lab">Infrastruttura</span><span class="val">{{ richiesta.get_ai_deployment_display|default:"—" }}</span></div>{% endif %}
         <div class="dato"><span class="lab">Effort</span><span class="val">{% if richiesta.effort_ore %}{{ richiesta.effort_ore }} h{% else %}—{% endif %}</span></div>
         <div class="dato"><span class="lab">Inizio lavori</span><span class="val">{{ richiesta.data_inizio|date:"d/m/Y"|default:"—" }}</span></div>
         <div class="dato"><span class="lab">Consegna prevista</span><span class="val">{{ richiesta.data_consegna_prevista|date:"d/m/Y"|default:"—" }}</span></div>
@@ -169,6 +231,15 @@
         <div class="dato tot"><span class="lab">Totale stimato</span><span class="val">{% if richiesta.costo_totale_stimato is not None %}€ {{ richiesta.costo_totale_stimato|floatformat:2 }}{% else %}—{% endif %}</span></div>
       </div>
       {% if richiesta.altri_costi_note %}<div class="t-mut" style="margin-top:8px;">Dettaglio altri costi: {{ richiesta.altri_costi_note }}</div>{% endif %}
+      <div class="analisi-grid" style="margin-top:10px;">
+        <div class="dato"><span class="lab">Entity</span><span class="val">{{ richiesta.get_entity_display|default:"—" }}</span></div>
+        <div class="dato"><span class="lab">Budget IT</span><span class="val">{{ richiesta.get_budget_it_display|default:"—" }}</span></div>
+        <div class="dato"><span class="lab">Entro quando serve</span><span class="val">{{ richiesta.data_necessita|date:"d/m/Y"|default:"—" }}</span></div>
+        <div class="dato"><span class="lab">Costo owner</span><span class="val">{% if richiesta.costo_owner is not None %}€ {{ richiesta.costo_owner|floatformat:2 }}{% else %}—{% endif %}</span></div>
+        <div class="dato"><span class="lab">Classificazione</span><span class="val">{% if richiesta.is_capex %}Capex {% endif %}{% if richiesta.is_opex %}Opex {% endif %}{% if richiesta.is_ifrs %}IFRS{% endif %}{% if not richiesta.is_capex and not richiesta.is_opex and not richiesta.is_ifrs %}—{% endif %}</span></div>
+      </div>
+      {% if richiesta.dettaglio_application %}<div class="t-mut" style="margin-top:8px;">Application: {{ richiesta.dettaglio_application }}</div>{% endif %}
+      {% if richiesta.dettaglio_it_operation %}<div class="t-mut" style="margin-top:4px;">IT Operation: {{ richiesta.dettaglio_it_operation }}</div>{% endif %}
       {% if richiesta.esito_budget %}
       <div class="bgt {{ richiesta.esito_budget_css }}" style="margin-top:12px;">
         <div class="bgt-head"><i class="ti ti-user-check"></i> Decisione dell'owner <span class="bgt-stato">{{ richiesta.get_esito_budget_display }}</span></div>

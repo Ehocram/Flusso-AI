@@ -36,6 +36,8 @@
       {% if user.is_gestore %}<a href="{{ u_eff }}" class="{% if request.path == u_eff %}attivo{% endif %}"><i class="ti ti-chart-pie"></i> Effort</a>{% endif %}
       {% url 'flusso:costi' as u_costi %}
       {% if user.is_gestore %}<a href="{{ u_costi }}" class="{% if request.path == u_costi %}attivo{% endif %}"><i class="ti ti-coin-euro"></i> Costi</a>{% endif %}
+      {% url 'flusso:budget' as u_budget %}
+      {% if user.is_funzione or user.is_ciso %}<a href="{{ u_budget }}" class="{% if '/budget/' in request.path %}attivo{% endif %}"><i class="ti ti-table"></i> Budget</a>{% endif %}
       {% url 'flusso:rischio' as u_rischio %}
       {% if user.is_funzione or user.is_legale or user.is_ciso or user.is_dpo %}<a href="{{ u_rischio }}" class="{% if request.path == u_rischio %}attivo{% endif %}"><i class="ti ti-scale"></i> Rischio &amp; Conformità</a>{% endif %}
       {% if user.is_funzione %}{% url 'accounts:utenti' as u_utenti %}<a href="{{ u_utenti }}" class="{% if request.path == u_utenti %}attivo{% endif %}"><i class="ti ti-users"></i> Utenti</a>{% endif %}

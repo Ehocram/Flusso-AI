@@ -21,6 +21,16 @@
         {% if form.tipo.errors %}<div class="err">{{ form.tipo.errors|striptags }}</div>{% endif %}
       </div>
       <div class="f-row">
+        <label for="{{ form.priorita.id_for_label }}">Priorità</label>
+        {{ form.priorita }}
+        {% if form.priorita.errors %}<div class="err">{{ form.priorita.errors|striptags }}</div>{% endif %}
+      </div>
+      <div class="f-row">
+        <label for="{{ form.entity.id_for_label }}">Entity</label>
+        {{ form.entity }}
+        <div class="help">Entità di riferimento; se indicata viene riportata nell'analisi.</div>
+      </div>
+      <div class="f-row">
         <label for="{{ form.funzione.id_for_label }}">Funzione</label>
         {{ form.funzione }}
         {% if form.funzione.errors %}<div class="err">{{ form.funzione.errors|striptags }}</div>{% endif %}
@@ -44,22 +54,35 @@
         {{ form.descrizione }}
         {% if form.descrizione.errors %}<div class="err">{{ form.descrizione.errors|striptags }}</div>{% endif %}
       </div>
-      <div class="f-row full"><div class="metric-hint"><i class="ti ti-wallet"></i> Indica quanti utenti useranno il software: serve alla Funzione tecnica per stimare il costo. <b>Il budget lo deciderai più avanti</b>: dopo la stima del costo ti verrà chiesto se l'importo è <b>a budget</b> o <b>extra budget</b>.</div></div>
-      <div class="f-row full">
+      <div class="f-row full"><div class="metric-hint"><i class="ti ti-wallet"></i> Indica quanti utenti useranno il software e i costi già a tuo carico. <b>Il budget lo deciderai più avanti</b>: dopo la stima del costo ti verrà chiesto se l'importo è <b>a budget</b> o <b>extra budget</b>.</div></div>
+      <div class="f-row">
         <label for="{{ form.numero_utenti.id_for_label }}">Numero utenti previsti</label>
         {{ form.numero_utenti }}
-        <div class="help">Quanti utenti useranno il tool (usato dalla funzione tecnica per il calcolo del costo).</div>
+        <div class="help">Quanti utenti useranno la soluzione: serve dove il costo è per utente (token AI, dispositivi, licenze).</div>
+        {% if form.numero_utenti.errors %}<div class="err">{{ form.numero_utenti.errors|striptags }}</div>{% endif %}
       </div>
-      <div class="f-row full"><div class="metric-hint"><i class="ti ti-robot"></i> Se lasci vuoti «incremento qualitativo» ed «efficienza», li stima l'AI in base alla descrizione (sempre modificabili).</div></div>
-      <div class="f-row full metric">
+      <div class="f-row">
+        <label for="{{ form.data_necessita.id_for_label }}">Entro quando serve <span class="obbl">obbligatorio</span></label>
+        {{ form.data_necessita }}
+        <div class="help">Seleziona dal calendario la data entro cui hai bisogno della soluzione: guida la pianificazione dei lavori.</div>
+        {% if form.data_necessita.errors %}<div class="err">{{ form.data_necessita.errors|striptags }}</div>{% endif %}
+      </div>
+      <div class="f-row solo-ai">
+        <label for="{{ form.costo_owner.id_for_label }}">Costo a carico tuo (€) <span class="obbl">obbligatorio per i progetti AI</span></label>
+        {{ form.costo_owner }}
+        <div class="help">Costi sul tuo budget: consulenti esterni per l'implementazione, servizi, licenze già a tuo carico. Indica <b>0</b> se non ne prevedi. Si somma ai costi della Funzione tecnica e a quelli delle eventuali schede Application / IT Operation.</div>
+        {% if form.costo_owner.errors %}<div class="err">{{ form.costo_owner.errors|striptags }}</div>{% endif %}
+      </div>
+      <div class="f-row full solo-ai"><div class="metric-hint"><i class="ti ti-robot"></i> Se lasci vuoti «incremento qualitativo» ed «efficienza», li stima l'AI in base alla descrizione (sempre modificabili).</div></div>
+      <div class="f-row full metric solo-ai">
         <label for="{{ form.saving_economico.id_for_label }}">Beneficio economico atteso (€)</label>
         <div class="metric-row">{{ form.saving_economico }}{{ form.saving_economico_note }}</div>
       </div>
-      <div class="f-row full metric">
+      <div class="f-row full metric solo-ai">
         <label for="{{ form.incremento_qualitativo.id_for_label }}">Incremento qualitativo (%)</label>
         <div class="metric-row">{{ form.incremento_qualitativo }}{{ form.incremento_qualitativo_note }}</div>
       </div>
-      <div class="f-row full metric">
+      <div class="f-row full metric solo-ai">
         <label for="{{ form.incremento_efficienza.id_for_label }}">Incremento efficienza (%)</label>
         <div class="metric-row">{{ form.incremento_efficienza }}{{ form.incremento_efficienza_note }}</div>
       </div>
@@ -70,4 +93,17 @@
     </div>
   </form>
 </div>
+
+<script>
+(function(){
+  var sel = document.getElementById("{{ form.tipo.auto_id }}");
+  if(!sel) return;
+  function aggiorna(){
+    var ai = sel.value === "AI";
+    document.querySelectorAll(".solo-ai").forEach(function(el){ el.style.display = ai ? "" : "none"; });
+  }
+  sel.addEventListener("change", aggiorna);
+  aggiorna();
+})();
+</script>
 {% endblock %}

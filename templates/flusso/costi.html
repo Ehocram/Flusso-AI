@@ -16,6 +16,16 @@
   {% endfor %}
 </div>
 
+<div class="tipo-cards">
+  {% for sc in schede_tipo %}
+  <a href="{{ sc.href }}" class="tipo-card {% if sc.attiva %}attiva{% endif %}">
+    <div class="tc-nome">{{ sc.nome }} <span class="tc-n">{{ sc.n }} progett{{ sc.n|pluralize:"o,i" }}</span></div>
+    <div class="tc-big">€ {{ sc.tot|floatformat:0 }}<span class="tc-anno">/anno</span></div>
+    <div class="tc-sub">A budget <b>€ {{ sc.a_budget|floatformat:0 }}</b> · extra <b>€ {{ sc.extra|floatformat:0 }}</b>{% if sc.da_definire %} · da definire € {{ sc.da_definire|floatformat:0 }}{% endif %}{% if sc.incompleti %} · <span class="tc-warn">{{ sc.incompleti }} non determinabil{{ sc.incompleti|pluralize:"e,i" }}</span>{% endif %}</div>
+  </a>
+  {% endfor %}
+</div>
+
 <div class="rip-hero">
   <div class="rip-hero-big">Totale stimato: <b>€ {{ tot|floatformat:0 }}</b> / anno <span class="pctx">su {{ n_progetti }} progett{{ n_progetti|pluralize:"o,i" }}</span></div>
   <div class="rip-hero-vs">Token AI: <b>€ {{ tot_token|floatformat:0 }}</b> · Altri costi: <b>€ {{ tot_altri|floatformat:0 }}</b></div>

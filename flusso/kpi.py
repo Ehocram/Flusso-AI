@@ -11,12 +11,14 @@ from decimal import Decimal
 from accounts.models import Funzione
 from django.db.models import Avg, Count, Sum
 
-from .models import Richiesta, Transizione
+from .models import (AutonomiaAI, ClassificazioneRischio, DeploymentAI, Richiesta,
+                     StatoRischio, StrategiaTrattamento, Transizione)
 from .workflow import FASI, Stato
 
 _COLORI_FASE = {
     "in_coda": "#9aa0a6",
     "in_analisi": "#1d6fb8",
+    "pronte": "#7a4fb0",
     "in_approvazione": "#e0a800",
     "approvati": "#1f8a4c",
     "chiusi": "#5b5d63",
@@ -24,11 +26,12 @@ _COLORI_FASE = {
 _ETICHETTE_FASE = {
     "in_coda": "In coda",
     "in_analisi": "In analisi",
+    "pronte": "Pronte per approvazione",
     "in_approvazione": "In approvazione",
     "approvati": "Approvati / attivi",
     "chiusi": "Chiusi",
 }
-_ORDINE_FASE = ["in_coda", "in_analisi", "in_approvazione", "approvati", "chiusi"]
+_ORDINE_FASE = ["in_coda", "in_analisi", "pronte", "in_approvazione", "approvati", "chiusi"]
 _RAGGIO = 52
 
 
@@ -49,9 +52,18 @@ def _segmenti_donut(coppie):
     return segs, round(circ, 2)
 
 
-def calcola_kpi() -> dict:
+def calcola_kpi(tipo=None) -> dict:
+    """KPI di portafoglio; con tipo (AI / APPLICATION / IT_OPERATION) si restringe a quel perimetro."""
     qs = Richiesta.objects.all()
+    if tipo:
+        qs = qs.filter(tipo=tipo)
     tot = qs.count()
+    # Base "portafoglio approvato": tutte le metriche di valore e di governance si
+    # calcolano SOLO sui progetti approvati dalla Direzione, così restano attendibili
+    # (a valore nullo finché non ci sono progetti approvati). L'unica eccezione è
+    # "rischi da validare", che resta un contatore di pipeline (azione per i presìdi).
+    approvati_qs = qs.filter(stato__in=[Stato.APPROVATA, Stato.ATTIVO,
+                                        Stato.MONITORAGGIO, Stato.COMPLETATO])
 
     per_stato = {s.value: 0 for s in Stato}
     for row in qs.values("stato").annotate(n=Count("id")):
@@ -63,7 +75,8 @@ def calcola_kpi() -> dict:
     respinti = per_stato[Stato.RESPINTA]
     approvati = per_stato[Stato.APPROVATA] + attivi + completati
     in_approvazione = per_stato[Stato.IN_APPROVAZIONE]
-    in_pipeline = per_fase["in_coda"] + per_fase["in_analisi"] + per_fase["in_approvazione"]
+    in_pipeline = (per_fase["in_coda"] + per_fase["in_analisi"]
+                   + per_fase["pronte"] + per_fase["in_approvazione"])
     decisi = approvati + respinti
     tasso_appr = round(100 * approvati / decisi) if decisi else None
 
@@ -71,13 +84,57 @@ def calcola_kpi() -> dict:
     sal_medio = round(sal_qs.aggregate(a=Avg("sal"))["a"] or 0)
 
     investimento = sum((r.costo_totale_stimato or Decimal(0))
-                       for r in qs.only("costo_token_ai", "altri_costi"))
-    effort = qs.aggregate(s=Sum("effort_ore"))["s"] or 0
+                       for r in approvati_qs.only("costo_token_ai", "altri_costi"))
+    effort = approvati_qs.aggregate(s=Sum("effort_ore"))["s"] or 0
 
-    # Metriche di valore e di avanzamento temporale
-    saving_eco_tot = qs.aggregate(s=Sum("saving_economico"))["s"] or 0
-    _iq = qs.aggregate(a=Avg("incremento_qualitativo"))["a"]
-    _ie = qs.aggregate(a=Avg("incremento_efficienza"))["a"]
+    # --- Costo token annuo del portafoglio approvato + mix infrastruttura/autonomia -
+    costo_annuo_token = sum((r.costo_token_annuo_totale or Decimal(0)) for r in approvati_qs)
+
+    def _distrib(campo, scelte):
+        cont = {c: 0 for c, _ in scelte}
+        for row in approvati_qs.exclude(**{campo: ""}).values(campo).annotate(n=Count("id")):
+            cont[row[campo]] = row["n"]
+        etich = dict(scelte)
+        return [{"code": c, "label": etich[c], "n": cont[c]} for c, _ in scelte if cont[c]]
+
+    infra = _distrib("ai_deployment", DeploymentAI.choices)
+    autonomia = _distrib("ai_autonomia", AutonomiaAI.choices)
+
+    # --- Governance del rischio ----------------------------------------------
+    # "Rischi da validare" è l'unico contatore di pipeline (azione per i presìdi):
+    # conta tutte le proposte AI in attesa, anche su progetti non ancora approvati.
+    rischi_da_validare = ClassificazioneRischio.objects.filter(
+        richiesta__in=qs, stato=StatoRischio.PROPOSTO_AI).count()
+    # Gli altri due si riferiscono al solo portafoglio approvato.
+    residui_da_convalidare = ClassificazioneRischio.objects.filter(
+        richiesta__in=approvati_qs,
+        strategia__in=[StrategiaTrattamento.MITIGATO, StrategiaTrattamento.TRASFERITO],
+        residuo_convalidato=False).count()
+    progetti_rischio_pronti = 0
+    for r in approvati_qs.prefetch_related("classificazioni"):
+        cl = {c.tipo: c for c in r.classificazioni.all()}
+        if all(cl.get(t) and cl[t].validato for t in ("AIACT", "NIS2", "GDPR")):
+            progetti_rischio_pronti += 1
+
+    # --- Budget del portafoglio APPROVATO dalla Direzione --------------------
+    costo_a_budget, costo_extra_budget = Decimal(0), Decimal(0)
+    progetti_extra_budget = 0
+    for r in approvati_qs:
+        contrib = r.contributo_budget
+        if contrib:
+            a_b, ex = contrib
+            costo_a_budget += a_b
+            costo_extra_budget += ex
+            if ex > 0:
+                progetti_extra_budget += 1
+    costo_annuo_approvati = costo_a_budget + costo_extra_budget
+    saving_eco_approvati = approvati_qs.aggregate(s=Sum("saving_economico"))["s"] or 0
+
+    # Metriche di valore: sui soli progetti approvati (saving_eco_tot coincide con
+    # saving_eco_approvati: il portafoglio approvato è l'unica base attendibile).
+    saving_eco_tot = saving_eco_approvati
+    _iq = approvati_qs.aggregate(a=Avg("incremento_qualitativo"))["a"]
+    _ie = approvati_qs.aggregate(a=Avg("incremento_efficienza"))["a"]
     incr_qual_medio = round(_iq, 1) if _iq is not None else None
     incr_eff_medio = round(_ie, 1) if _ie is not None else None
 
@@ -121,7 +178,7 @@ def calcola_kpi() -> dict:
 
     # lead time medio: da 'invia' a 'approva' (giorni), dall'audit trail
     inv_t, app_t = {}, {}
-    for t in Transizione.objects.filter(azione__in=["invia", "approva"]).values(
+    for t in Transizione.objects.filter(richiesta__in=qs, azione__in=["invia", "approva"]).values(
             "richiesta_id", "azione", "creata_il"):
         (inv_t if t["azione"] == "invia" else app_t).setdefault(t["richiesta_id"], t["creata_il"])
     deltas = [(app_t[i] - inv_t[i]).days for i in app_t if i in inv_t]
@@ -135,6 +192,12 @@ def calcola_kpi() -> dict:
         "saving_eco_tot": saving_eco_tot, "incr_qual_medio": incr_qual_medio,
         "incr_eff_medio": incr_eff_medio, "ritardo_tot": ritardo_tot,
         "progetti_in_ritardo": progetti_in_ritardo,
+        "costo_annuo_token": costo_annuo_token, "infra": infra, "autonomia": autonomia,
+        "rischi_da_validare": rischi_da_validare, "residui_da_convalidare": residui_da_convalidare,
+        "progetti_rischio_pronti": progetti_rischio_pronti,
+        "costo_a_budget": costo_a_budget, "costo_extra_budget": costo_extra_budget,
+        "costo_annuo_approvati": costo_annuo_approvati, "saving_eco_approvati": saving_eco_approvati,
+        "progetti_extra_budget": progetti_extra_budget,
         "per_fase": per_fase, "aree": aree, "donut": donut, "donut_circ": circ,
         "funnel": funnel, "gauge": gauge, "attivi_sal": attivi_sal,
     }
@@ -155,11 +218,20 @@ def riassunto_per_ai(kpi: dict, includi_titoli: bool = False) -> str:
         f"Tasso di approvazione: {tasso}",
         f"SAL medio progetti attivi: {kpi['sal_medio']}%",
         f"Lead time medio invio→approvazione: {lead}",
-        f"Effort stimato totale: {kpi['effort']} ore",
-        f"Investimento stimato: € {kpi['investimento']}",
-        f"Saving economico atteso (totale): € {kpi['saving_eco_tot']}",
-        f"Incremento qualitativo medio: {kpi['incr_qual_medio'] if kpi['incr_qual_medio'] is not None else 'n/d'}%",
-        f"Incremento efficienza medio: {kpi['incr_eff_medio'] if kpi['incr_eff_medio'] is not None else 'n/d'}%",
+        f"Effort stimato (progetti approvati): {kpi['effort']} ore",
+        f"Investimento stimato (progetti approvati): € {kpi['investimento']}",
+        f"Costo token annuo (progetti approvati): € {kpi['costo_annuo_token']}",
+        "Infrastruttura prevista: " + (", ".join(f"{d['label']} {d['n']}" for d in kpi["infra"]) or "n/d"),
+        "Tipo di AI (autonomia): " + (", ".join(f"{d['label']} {d['n']}" for d in kpi["autonomia"]) or "n/d"),
+        f"Rischi da validare dai presìdi: {kpi['rischi_da_validare']}",
+        f"Rischi residui da convalidare: {kpi['residui_da_convalidare']}",
+        f"Progetti con le tre validazioni di rischio complete: {kpi['progetti_rischio_pronti']}",
+        f"Portafoglio APPROVATO dalla Direzione: costo annuo € {kpi['costo_annuo_approvati']}, "
+        f"di cui a budget € {kpi['costo_a_budget']} ed extra budget € {kpi['costo_extra_budget']} "
+        f"({kpi['progetti_extra_budget']} progetti fuori dal solo budget)",
+        f"Beneficio economico atteso (progetti approvati): € {kpi['saving_eco_approvati']}",
+        f"Incremento qualitativo medio (approvati): {kpi['incr_qual_medio'] if kpi['incr_qual_medio'] is not None else 'n/d'}%",
+        f"Incremento efficienza medio (approvati): {kpi['incr_eff_medio'] if kpi['incr_eff_medio'] is not None else 'n/d'}%",
         f"Progetti in ritardo: {kpi['progetti_in_ritardo']} (totale {kpi['ritardo_tot']} giorni di ritardo)",
         f"Aree coinvolte: {kpi['aree_coinvolte']} su 7",
         "Distribuzione per fase: " + ", ".join(f"{f['label']} {f['n']}" for f in kpi["funnel"]),
@@ -169,3 +241,52 @@ def riassunto_per_ai(kpi: dict, includi_titoli: bool = False) -> str:
         righe.append("Progetti attivi: "
                      + "; ".join(f"{p['titolo']} (SAL {p['sal']}%)" for p in kpi["attivi_sal"]))
     return "\n".join(righe)
+
+
+def riepilogo_aree():
+    """Riepilogo per area tecnica: AI, Application, IT Operation.
+
+    Recupera i valori dalle analisi delle singole schede (effort in ore e costo di
+    progetto, quest'ultimo comprensivo di token, altri costi e costo a carico
+    dell'owner). Ogni scheda conta una volta sola: le schede Application e IT
+    Operation generate da un progetto AI portano i propri numeri nella loro area.
+    """
+    from decimal import Decimal
+    from .models import TipoProgetto, VoceEffort
+
+    nomi = {"AI": "AI", "APPLICATION": "Application", "IT_OPERATION": "IT Operation"}
+    aree = []
+    for codice, _ in TipoProgetto.choices:
+        qs = Richiesta.objects.filter(tipo=codice)
+        costo = Decimal(0)
+        a_budget = extra = Decimal(0)
+        n_costo, n_incompleti = 0, 0
+        for r in qs:
+            c = r.costo_progetto_stimato
+            if c is None:
+                if r.costo_token_ai is not None or r.altri_costi is not None or r.costo_owner is not None:
+                    n_incompleti += 1
+                continue
+            costo += c
+            n_costo += 1
+            rip = r.ripartizione_budget
+            if rip:
+                a_budget += rip["a_budget"]
+                extra += rip["extra"]
+        voci = VoceEffort.objects.filter(richiesta__in=qs)
+        ore_rip = voci.aggregate(t=Sum("ore"))["t"] or 0
+        sviluppo = voci.filter(attivita="SVILUPPO").aggregate(t=Sum("ore"))["t"] or 0
+        approvati = qs.filter(stato__in=[Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO])
+        aree.append({
+            "codice": codice, "nome": nomi[codice],
+            "n": qs.count(),
+            "n_attivi": approvati.count(),
+            "in_approvazione": qs.filter(stato__in=[Stato.PRONTA_APPROVAZIONE,
+                                                    Stato.IN_APPROVAZIONE]).count(),
+            "effort": qs.aggregate(t=Sum("effort_ore"))["t"] or 0,
+            "ore_ripartite": ore_rip, "sviluppo": sviluppo,
+            "pct_sviluppo": round(sviluppo * 100 / ore_rip) if ore_rip else 0,
+            "costo": costo, "a_budget": a_budget, "extra": extra,
+            "n_costo": n_costo, "incompleti": n_incompleti,
+        })
+    return aree

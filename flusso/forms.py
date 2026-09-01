@@ -3,7 +3,7 @@
 from django import forms
 from django.forms import inlineformset_factory
 
-from .models import (AzioneTrattamento, CATEGORIE_RISCHIO, ClassificazioneRischio,
+from .models import (AzioneTrattamento, CATEGORIE_RISCHIO, ClassificazioneRischio, TipoProgetto,
                      ConfigurazioneAI, Richiesta)
 
 
@@ -13,9 +13,12 @@ class AnalisiAIForm(forms.ModelForm):
     class Meta:
         model = Richiesta
         fields = [
-            "analisi_fattibilita", "ai_autonomia", "ai_deployment", "effort_ore",
+            "analisi_fattibilita", "entity", "ai_autonomia", "ai_deployment", "effort_ore",
+            "is_capex", "is_opex", "is_ifrs", "budget_it",
             "costo_token_ai", "costo_token_periodicita",
             "costo_token_ambito", "altri_costi", "altri_costi_note",
+            "dettaglio_application", "costo_application", "app_capex", "app_opex", "app_ifrs",
+            "dettaglio_it_operation", "costo_it_operation", "ops_capex", "ops_opex", "ops_ifrs",
         ]
         widgets = {
             "analisi_fattibilita": forms.Textarea(attrs={"rows": 4, "placeholder": "Valutazione di fattibilità, approccio, rischi, dipendenze…"}),
@@ -23,11 +26,41 @@ class AnalisiAIForm(forms.ModelForm):
             "costo_token_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ (vuoto = stima AI)"}),
             "altri_costi": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
             "altri_costi_note": forms.TextInput(attrs={"placeholder": "es. licenze, infrastruttura on-prem"}),
+            "dettaglio_application": forms.Textarea(attrs={"rows": 2, "placeholder": "Componente applicativa (software, ERP…): se compilata genera una scheda per la Funzione Applicativa"}),
+            "dettaglio_it_operation": forms.Textarea(attrs={"rows": 2, "placeholder": "Componente IT Operation: se compilata genera una scheda per la Funzione IT Operations"}),
+            "costo_application": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ costo della componente"}),
+            "costo_it_operation": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ costo della componente"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for nome in ("ai_autonomia", "ai_deployment", "costo_token_periodicita", "costo_token_ambito"):
+        # I costi token sono specifici dei progetti AI: sulle schede Application e
+        # IT Operation il costo si indica nel campo dedicato «Costo del progetto».
+        if getattr(self.instance, "tipo", TipoProgetto.AI) != TipoProgetto.AI:
+            # Su Application / IT Operation i campi specifici dell'AI non si applicano:
+            # tipo di AI, infrastruttura e costi token restano fuori dal form.
+            for nome in ("costo_token_ai", "costo_token_periodicita", "costo_token_ambito",
+                         "ai_autonomia", "ai_deployment"):
+                self.fields.pop(nome, None)
+        # Una scheda non si scompone nel proprio tipo (né si scompone affatto se è
+        # già una scheda generata): via i campi della componente non pertinente.
+        scomponibili = getattr(self.instance, "tipi_scomponibili", None)
+        if scomponibili is not None:
+            if TipoProgetto.APPLICATION not in scomponibili:
+                for nome in ("dettaglio_application", "costo_application",
+                             "app_capex", "app_opex", "app_ifrs"):
+                    self.fields.pop(nome, None)
+            if TipoProgetto.IT_OPERATION not in scomponibili:
+                for nome in ("dettaglio_it_operation", "costo_it_operation",
+                             "ops_capex", "ops_opex", "ops_ifrs"):
+                    self.fields.pop(nome, None)
+            if "altri_costi" in self.fields:
+                self.fields["altri_costi"].label = "Costo del progetto (€)"
+                self.fields["altri_costi"].widget.attrs["placeholder"] = "€ (licenze, hardware, servizi…)"
+            if "altri_costi_note" in self.fields:
+                self.fields["altri_costi_note"].label = "Dettaglio costo"
+        for nome in ("ai_autonomia", "ai_deployment", "costo_token_periodicita",
+                     "costo_token_ambito", "entity", "budget_it"):
             if nome in self.fields:
                 self.fields[nome].choices = (
                     [("", "— non specificato —")]
@@ -45,12 +78,16 @@ class RichiestaForm(forms.ModelForm):
         model = Richiesta
         fields = [
             "tipo",
+            "priorita",
+            "entity",
             "funzione",
             "titolo",
             "tipo_soluzione",
             "descrizione",
             "referente_area",
             "numero_utenti",
+            "data_necessita",
+            "costo_owner",
             "saving_economico",
             "saving_economico_note",
             "incremento_qualitativo",
@@ -63,6 +100,8 @@ class RichiestaForm(forms.ModelForm):
             "titolo": forms.TextInput(attrs={"placeholder": "Es. Knowledge management"}),
             "tipo_soluzione": forms.TextInput(attrs={"placeholder": "Es. Assistente AI interno"}),
             "numero_utenti": forms.NumberInput(attrs={"min": 1, "placeholder": "n. utenti che useranno il tool"}),
+            "costo_owner": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ (es. consulenti esterni)"}),
+            "data_necessita": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "saving_economico": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
             "incremento_qualitativo": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "% (vuoto = stima AI)"}),
             "incremento_efficienza": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "% (vuoto = stima AI)"}),
@@ -73,6 +112,12 @@ class RichiestaForm(forms.ModelForm):
 
     def __init__(self, *args, funzione_owner=None, **kwargs):
         super().__init__(*args, **kwargs)
+        # Il numero utenti resta facoltativo su tutti i tipi: serve dove il costo
+        # e' per utente (token AI, ma anche acquisti IT Operation per utente).
+        if "numero_utenti" in self.fields:
+            self.fields["numero_utenti"].required = False
+        if "data_necessita" in self.fields:
+            self.fields["data_necessita"].required = True
         # Un owner invia richieste solo per la propria funzione: campo bloccato.
         if funzione_owner:
             self.fields["funzione"].initial = funzione_owner
@@ -80,6 +125,26 @@ class RichiestaForm(forms.ModelForm):
         for campo in self.fields.values():
             css = campo.widget.attrs.get("class", "")
             campo.widget.attrs["class"] = (css + " campo").strip()
+
+    def clean(self):
+        """Campi riservati al perimetro AI: costo a carico dell'owner e incrementi attesi."""
+        dati = super().clean()
+        if dati.get("tipo") == TipoProgetto.AI:
+            if dati.get("costo_owner") is None:
+                self.add_error("costo_owner",
+                               "Obbligatorio per i progetti AI: indica i costi a tuo carico "
+                               "(0 se non ne prevedi).")
+        else:
+            dati["costo_owner"] = None
+            # Incremento qualitativo/efficienza non si applicano fuori dai progetti AI:
+            # non sono mostrati e non vengono stimati.
+            for campo in ("saving_economico", "incremento_qualitativo",
+                          "incremento_efficienza"):
+                dati[campo] = None
+            for campo in ("saving_economico_note", "incremento_qualitativo_note",
+                          "incremento_efficienza_note"):
+                dati[campo] = ""
+        return dati
 
 
 class SalForm(forms.Form):
@@ -274,6 +339,10 @@ class BeneficioForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if getattr(self.instance, "tipo", TipoProgetto.AI) != TipoProgetto.AI:
+            for nome in ("incremento_qualitativo", "incremento_qualitativo_note",
+                         "incremento_efficienza", "incremento_efficienza_note"):
+                self.fields.pop(nome, None)
         for campo in self.fields.values():
             css = campo.widget.attrs.get("class", "")
             campo.widget.attrs["class"] = (css + " campo").strip()

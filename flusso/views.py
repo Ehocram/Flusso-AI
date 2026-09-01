@@ -8,6 +8,7 @@ questi controlli, non la loro fonte.
 """
 
 import os
+from decimal import Decimal, InvalidOperation
 from collections import Counter
 
 from accounts.models import Funzione
@@ -25,9 +26,11 @@ from .ai_client import genera_analisi, prova_connessione
 from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, BeneficioForm, ImpostazioniAIForm,
                     PianificazioneForm, RichiestaForm, SalForm, TrattamentoRischioForm,
                     ValidazioneRischioForm)
-from .kpi import calcola_kpi
-from .models import (AttivitaEffort, ClassificazioneRischio, ConfigurazioneAI, TipoProgetto,
-                     DIMENSIONE_PER_RUOLO, FiguraEffort, ORDINE_ATTIVITA, VoceEffort,
+from .kpi import calcola_kpi, riepilogo_aree
+from .models import (AttivitaEffort, ClassificazioneRischio, ConfigurazioneAI, FoglioBudget,
+                     Priorita,
+                     RigaBudget, TipoFoglio, TipoProgetto,
+                     DIMENSIONE_PER_RUOLO, DIMENSIONI_PER_RUOLO, FiguraEffort, ORDINE_ATTIVITA, VoceEffort,
                      EsitoBudget, PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
                      StatoRischio, TipoRischio)
 from .notifiche import notifica_transizione
@@ -48,12 +51,11 @@ def _puo_validare(utente, tipo) -> bool:
     """True SOLO se l'utente è il presidio competente per quella dimensione.
 
     Separazione dei compiti: validare il rischio è un atto di governance legato
-    al ruolo (Funzione Legale → AI Act, CISO → NIS2, DPO → GDPR), non un
-    privilegio amministrativo. La Funzione tecnica (che è superuser per gestire
-    l'applicazione) e ogni altro superuser NON possono quindi validare al posto
-    del presidio: la validazione resta sempre dei tre presìdi competenti.
+    al ruolo, non un privilegio amministrativo. Il CISO è il presidio unico di
+    compliance (AI Act, NIS2, GDPR). La Funzione tecnica (che è superuser per
+    gestire l'applicazione) e ogni altro superuser NON possono validare al suo posto.
     """
-    return {"AIACT": utente.is_legale, "NIS2": utente.is_ciso, "GDPR": utente.is_dpo}.get(tipo, False)
+    return utente.is_ciso and tipo in ("AIACT", "NIS2", "GDPR")
 
 
 
@@ -85,6 +87,63 @@ def _filtro_tipo(request, qs):
               for c, _ in TipoProgetto.choices]
     return tipo, chips
 
+
+def _href_tipo(request, val):
+    q = request.GET.copy()
+    q["tipo"] = val
+    return "?" + q.urlencode()
+
+
+_NOMI_TIPO = {"AI": "AI", "APPLICATION": "Application", "IT_OPERATION": "IT Operation"}
+
+
+def _schede_effort(request, qs_tutti, tipo_attivo):
+    """Schede effort per tipo (AI/Application/IT Operation) sul perimetro dato."""
+    schede = []
+    for codice, _ in TipoProgetto.choices:
+        sub = qs_tutti.filter(tipo=codice)
+        voci = VoceEffort.objects.filter(richiesta__in=sub)
+        tot_rip = voci.aggregate(t=Sum("ore"))["t"] or 0
+        svil = voci.filter(attivita=AttivitaEffort.SVILUPPO).aggregate(t=Sum("ore"))["t"] or 0
+        schede.append({
+            "codice": codice, "nome": _NOMI_TIPO[codice], "n": sub.count(),
+            "ore": sub.aggregate(t=Sum("effort_ore"))["t"] or 0, "ripartite": tot_rip,
+            "sviluppo": svil, "pct_sviluppo": round(svil * 100 / tot_rip) if tot_rip else 0,
+            "resto": tot_rip - svil,
+            "senza_rip": sub.annotate(nv=Count("voci_effort")).filter(nv=0).count(),
+            "href": _href_tipo(request, codice), "attiva": tipo_attivo == codice,
+        })
+    return schede
+
+
+def _schede_costi(request, qs_tutti, tipo_attivo):
+    """Schede costi per tipo sul perimetro dato (stessa logica della pagina Costi)."""
+    from decimal import Decimal as _D
+    schede = []
+    for codice, _ in TipoProgetto.choices:
+        tot = a_budget = extra = da_def = _D(0)
+        n = n_inc = 0
+        for r in qs_tutti.filter(tipo=codice):
+            n += 1
+            costo = r.costo_progetto_stimato
+            if costo is None:
+                if r.costo_token_ai is not None or r.altri_costi is not None:
+                    n_inc += 1
+                continue
+            tot += costo
+            rip = r.ripartizione_budget
+            if rip:
+                a_budget += rip["a_budget"]
+                extra += rip["extra"]
+            else:
+                da_def += costo
+        schede.append({
+            "codice": codice, "nome": _NOMI_TIPO[codice], "n": n, "tot": tot,
+            "a_budget": a_budget, "extra": extra, "da_definire": da_def, "incompleti": n_inc,
+            "href": _href_tipo(request, codice), "attiva": tipo_attivo == codice,
+        })
+    return schede
+
 @login_required
 def dashboard(request):
     qs = _richieste_visibili(request.user)
@@ -115,7 +174,8 @@ def dashboard(request):
     # Presidio (Legale/CISO/DPO): rischi della propria dimensione in attesa di validazione.
     rischi_da_validare, dimensione_presidio = [], ""
     if request.user.is_validatore_rischio:
-        dim = DIMENSIONE_PER_RUOLO.get(request.user.ruolo)
+        dims = DIMENSIONI_PER_RUOLO.get(request.user.ruolo, [])
+        dim = dims[0] if dims else None
         if dim:
             dimensione_presidio = dict(TipoRischio.choices).get(dim, dim)
             rischi_da_validare = list(
@@ -201,7 +261,9 @@ def dettaglio(request, pk):
     ) else None
     analisi_form = AnalisiAIForm(instance=richiesta) if (request.user.is_funzione and not bloccata) else None
     # Beneficio economico e incrementi: modificabili da owner e Funzione tecnica fino al blocco.
-    puo_beneficio = (not bloccata) and (
+    # Il beneficio atteso è una misura del perimetro AI: sulle schede Application /
+    # IT Operation non viene chiesto (il valore sta sul progetto AI di origine).
+    puo_beneficio = (not bloccata) and richiesta.tipo == TipoProgetto.AI and (
         request.user.is_funzione or richiesta.proponente_id == request.user.id
     )
     beneficio_form = BeneficioForm(instance=richiesta) if puo_beneficio else None
@@ -327,6 +389,21 @@ def esegui_azione(request, pk):
     # GATE: l'invio all'owner per la decisione di budget richiede il costo stimato.
     # In caso di blocco il motivo è puntuale (es. ambito per-utente senza numero utenti).
     if azione == "invia_a_budget":
+        if richiesta.tipo != TipoProgetto.AI:
+            messages.error(request, "La decisione di budget dell'owner riguarda i soli progetti AI. "
+                                    "Su Application / IT Operation la copertura si indica nel campo «Budget IT» dell'analisi.")
+            return redirect(richiesta)
+        # Il costo token e il tipo di AI devono essere compilati: sono ciò su cui
+        # l'owner decide. Nessun invio "al buio".
+        mancano = []
+        if richiesta.costo_token_ai is None:
+            mancano.append("il costo token AI")
+        if not richiesta.ai_autonomia:
+            mancano.append("il tipo di AI")
+        if mancano:
+            messages.error(request, "Non posso inviare all'owner: manca " + " e ".join(mancano)
+                                    + ". Completa l'analisi e riprova.")
+            return redirect(richiesta)
         motivo = richiesta.costo_progetto_motivo_incompleto
         if motivo:
             messages.error(request, "Non posso inviare all'owner: " + motivo)
@@ -418,30 +495,53 @@ def aggiorna_analisi(request, pk):
                 richiesta.costo_token_ai_stimato = False
                 richiesta.save(update_fields=["costo_token_ai_stimato"])
         # Importo mancante: prova a stimarlo con l'AI (una volta), se c'è abbastanza contesto.
-        stimato = servizi.stima_costo_token_se_serve(richiesta, attore=request.user)
+        # La stima token vale solo per i progetti AI: su Application / IT Operation
+        # il costo lo indica la funzione nel campo dedicato.
+        stimato = (servizi.stima_costo_token_se_serve(richiesta, attore=request.user)
+                   if richiesta.tipo == TipoProgetto.AI else False)
         msg = ("Analisi aggiornata. Importo token proposto dall'AI: "
                f"€ {richiesta.costo_token_ai} (modificabile)." if stimato
                else f"Analisi della {richiesta.funzione_competente_label} aggiornata.")
-        # Costo zero: nessuna approvazione di budget dall'owner. La Funzione tecnica genera
-        # subito i rischi al salvataggio dell'analisi e il budget è automaticamente «a budget».
-        if (richiesta.stato == Stato.IN_QUALIFICA and not richiesta.esito_budget
-                and richiesta.costo_progetto_stimato == 0):
-            richiesta.esito_budget = EsitoBudget.A_BUDGET
+        # Casi senza decisione di budget dell'owner:
+        #  - progetti AI a costo zero (nulla da approvare);
+        #  - progetti Application / IT Operation: la copertura è il campo «Budget IT»
+        #    compilato dalla funzione, l'owner non entra nel merito dei costi IT.
+        # In entrambi i casi si generano subito i rischi e si prosegue.
+        salta_budget, nota_budget = False, ""
+        if richiesta.stato == Stato.IN_QUALIFICA and not richiesta.esito_budget:
+            if richiesta.tipo != TipoProgetto.AI:
+                if richiesta.budget_it:
+                    richiesta.esito_budget = (EsitoBudget.A_BUDGET
+                                              if richiesta.budget_it == "BUDGET"
+                                              else EsitoBudget.EXTRA_BUDGET)
+                    salta_budget = True
+                    nota_budget = (f" Copertura IT: {richiesta.get_budget_it_display()} "
+                                   "(nessuna decisione di budget dell'owner sui progetti non AI).")
+                else:
+                    msg += (" Indica il «Budget IT» (Budget / Extra Budget) per far proseguire "
+                            "la pratica: su Application / IT Operation sostituisce la decisione dell'owner.")
+            elif richiesta.costo_progetto_stimato == 0:
+                richiesta.esito_budget = EsitoBudget.A_BUDGET
+                salta_budget = True
+                nota_budget = " Costo zero: nessuna approvazione di budget richiesta."
+        if salta_budget:
             richiesta.save(update_fields=["esito_budget"])
             res = servizi.classifica_tutti_i_rischi(richiesta, attore=request.user)
             if res["ok"]:
                 dims = ", ".join(_NOMI_RISCHIO[x] for x in res["ok"])
-                msg += (" Costo zero: nessuna approvazione di budget richiesta. "
-                        f"Rischio stimato dall'AI per: {dims}. "
-                        "Da validare da Legale (AI Act), CISO (NIS2) e DPO (GDPR).")
+                msg += nota_budget + f" Rischio stimato dall'AI per: {dims}. Da validare dal CISO."
             else:
-                msg += (" Costo zero: nessuna approvazione di budget richiesta. "
-                        "Rischi da completare (classificazione AI non riuscita su alcune dimensioni).")
+                msg += nota_budget + (" Rischi da completare (classificazione AI non riuscita "
+                                      "su alcune dimensioni).")
         else:
             rip = richiesta.ripartizione_budget
             if rip:
                 msg += (f" Costo € {rip['costo']:.2f}: a budget € {rip['a_budget']:.2f}, "
                         f"extra budget € {rip['extra']:.2f} ({richiesta.budget_stato_label}).")
+        cloni = servizi.clona_per_funzioni(richiesta, attore=request.user)
+        if cloni:
+            elenco = ", ".join(f"{c.codice} ({c.get_tipo_display()})" for c in cloni)
+            msg += f" Create le schede dedicate: {elenco}, ora in carico alla funzione competente."
         messages.success(request, msg)
     else:
         messages.error(request, "Controlla i dati dell'analisi: alcuni valori non sono validi.")
@@ -462,7 +562,8 @@ def compila_analisi_ai(request, pk):
     if ok:
         messages.success(
             request,
-            "Analisi precompilata dall'AI. Verifica i campi, modificali se serve e salva con «Salva analisi».",
+            "Analisi di fattibilità redatta dall'AI. Rivedila, completa i campi tecnici "
+            "(tipo di AI, effort, costi) e salva con «Salva analisi».",
         )
     else:
         messages.error(request, f"Compilazione AI non riuscita: {errore}")
@@ -498,13 +599,17 @@ def schedulazione(request):
     """Pianificazione dei soli progetti approvati (date utili ai KPI, modificabili a mano)."""
     if not request.user.is_gestore:
         return HttpResponseForbidden("Pagina riservata.")
-    qs = (Richiesta.objects
-          .filter(stato__in=[Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO, Stato.COMPLETATO])
+    base = Richiesta.objects.filter(stato__in=[Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO, Stato.COMPLETATO])
+    tipo_attivo, tipo_filtri = _filtro_tipo(request, base)
+    if tipo_attivo:
+        base = base.filter(tipo=tipo_attivo)
+    qs = (base
           .select_related("proponente")
           .order_by("data_inizio", "creata_il"))
     puo_modificare = request.user.is_funzione
     righe = [{"r": r, "form": PianificazioneForm(instance=r) if puo_modificare else None} for r in qs]
     return render(request, "flusso/schedulazione.html", {
+        "tipo_filtri": tipo_filtri, "tipo_attivo": tipo_attivo,
         "righe": righe, "puo_modificare": puo_modificare, "totale": qs.count(),
     })
 
@@ -542,8 +647,8 @@ def ripartizione_effort(request):
     """
     if not request.user.is_gestore:
         return HttpResponseForbidden("Pagina riservata.")
-    base_qs = (Richiesta.objects.filter(effort_ore__gt=0)
-               .select_related("proponente").prefetch_related("voci_effort")
+    base_tutti = Richiesta.objects.filter(effort_ore__gt=0)
+    base_qs = (base_tutti.select_related("proponente").prefetch_related("voci_effort")
                .order_by("-effort_ore", "-creata_il"))
     tipo_attivo, tipo_filtri = _filtro_tipo(request, base_qs)
     if tipo_attivo:
@@ -558,9 +663,12 @@ def ripartizione_effort(request):
     fase = request.GET.get("fase") or ""
     if fase in FASI:
         qs = base_qs.filter(stato__in=FASI[fase])
+        qs_tutti_tipi = base_tutti.filter(stato__in=FASI[fase])
     else:
         fase = ""
         qs = base_qs
+        qs_tutti_tipi = base_tutti
+    schede_tipo = _schede_effort(request, qs_tutti_tipi, tipo_attivo)
     filtri = ([{"chiave": "", "label": "Tutto", "n": base_qs.count(), "attivo": fase == ""}]
               + [{"chiave": k, "label": etichette_fase[k], "n": conteggi.get(k, 0),
                   "attivo": fase == k} for k in FASI])
@@ -593,7 +701,7 @@ def ripartizione_effort(request):
         "senza_ripartizione": sum(1 for x in righe if not x["voci"]),
         "senza_effort": Richiesta.objects.exclude(effort_ore__gt=0).count(),
         "fig_choices": FiguraEffort.choices,
-        "filtri": filtri, "fase_attiva": fase,
+        "filtri": filtri, "fase_attiva": fase, "schede_tipo": schede_tipo,
     })
 
 
@@ -677,7 +785,8 @@ def costi(request):
     if not request.user.is_gestore:
         return HttpResponseForbidden("Pagina riservata.")
     from decimal import Decimal as _D
-    base_qs = Richiesta.objects.select_related("proponente")
+    base_tutti = Richiesta.objects.select_related("proponente")
+    base_qs = base_tutti
     tipo_attivo, tipo_filtri = _filtro_tipo(request, base_qs)
     if tipo_attivo:
         base_qs = base_qs.filter(tipo=tipo_attivo)
@@ -689,12 +798,13 @@ def costi(request):
     conteggi = Counter(fase_per_stato.get(st) for st in base_qs.values_list("stato", flat=True))
     fase = request.GET.get("fase")
     if fase == "tutte":
-        qs = base_qs
+        qs, qs_tutti_tipi = base_qs, base_tutti
     elif fase in FASI:
-        qs = base_qs.filter(stato__in=FASI[fase])
+        qs, qs_tutti_tipi = base_qs.filter(stato__in=FASI[fase]), base_tutti.filter(stato__in=FASI[fase])
     else:
         fase = "in_approvazione"  # default: la coda della Direzione
-        qs = base_qs.filter(stato__in=FASI[fase])
+        qs, qs_tutti_tipi = base_qs.filter(stato__in=FASI[fase]), base_tutti.filter(stato__in=FASI[fase])
+    schede_tipo = _schede_costi(request, qs_tutti_tipi, tipo_attivo)
     filtri = ([{"chiave": "tutte", "label": "Tutto", "n": base_qs.count(), "attivo": fase == "tutte"}]
               + [{"chiave": k, "label": etichette_fase[k], "n": conteggi.get(k, 0),
                   "attivo": fase == k} for k in FASI])
@@ -734,12 +844,186 @@ def costi(request):
          for k, v in per_funzione.items()], key=lambda x: -x["costo"])
     return render(request, "flusso/costi.html", {
         "tipo_filtri": tipo_filtri, "tipo_attivo": tipo_attivo,
-        "righe": righe, "filtri": filtri, "fase_attiva": fase,
+        "righe": righe, "filtri": filtri, "fase_attiva": fase, "schede_tipo": schede_tipo,
         "tot": tot, "tot_token": tot_token, "tot_altri": tot_altri,
         "tot_a_budget": tot_a_budget, "tot_extra": tot_extra,
         "tot_da_definire": tot_da_definire, "n_incompleti": n_incompleti,
         "agg_funzioni": agg_funzioni, "n_progetti": len(righe),
     })
+
+
+
+def _puo_budget(utente) -> bool:
+    """Budget ed Extra Budget: funzioni tecniche (AI, Applicativa, IT Operations) e CISO."""
+    return utente.is_funzione or utente.is_ciso
+
+
+def _puo_righe_budget(utente) -> bool:
+    """Chi puo' inserire e modificare le righe: funzioni tecniche e CISO.
+
+    Il CISO ha voci di budget proprie (sicurezza, consulenze, servizi gestiti):
+    le inserisce e le corregge direttamente, come le funzioni tecniche.
+    """
+    return utente.is_funzione or utente.is_ciso
+
+
+def _menu_budget(chiave_attiva=None):
+    """Voci del sottomenu Budget: i due fogli principali + i fogli di supporto."""
+    fogli = list(FoglioBudget.objects.all())
+    principali = [f for f in fogli if f.is_principale]
+    supporto = [f for f in fogli if not f.is_principale]
+    return {"principali": principali, "supporto": supporto, "attiva": chiave_attiva}
+
+
+@login_required
+def budget_indice(request):
+    """Apre il foglio Budget; se non è stato importato mostra le istruzioni."""
+    if not _puo_budget(request.user):
+        return HttpResponseForbidden("Pagina riservata alle funzioni tecniche e al CISO.")
+    foglio = (FoglioBudget.objects.filter(tipo=TipoFoglio.BUDGET).order_by("-anno").first()
+              or FoglioBudget.objects.filter(tipo=TipoFoglio.EXTRA).order_by("-anno").first()
+              or FoglioBudget.objects.first())
+    if foglio is None:
+        from datetime import date
+        anno = date.today().year
+        return render(request, "flusso/budget_vuoto.html", {
+            "menu": _menu_budget(), "anno_corrente": anno, "anno_budget": anno + 1,
+            "puo_creare_foglio": request.user.is_funzione,
+        })
+    return redirect(foglio)
+
+
+@login_required
+def budget_foglio(request, chiave):
+    """Un foglio di budget a righe, come in Excel (intestazioni e colonne originali)."""
+    if not _puo_budget(request.user):
+        return HttpResponseForbidden("Pagina riservata alle funzioni tecniche e al CISO.")
+    foglio = get_object_or_404(FoglioBudget, chiave=chiave)
+    n_col = len(foglio.intestazioni)
+    q = (request.GET.get("q") or "").strip()
+    righe = foglio.righe.select_related("richiesta").all()
+    if q:
+        minuscolo = q.lower()
+        righe = [r for r in righe
+                 if any(minuscolo in str(v).lower() for v in r.dati)]
+    else:
+        righe = list(righe)
+    corpo = [{"r": r, "celle": r.celle(n_col)} for r in righe]
+    da_progetto = sum(1 for r in righe if r.da_progetto)
+    anni = list(FoglioBudget.objects.filter(tipo=foglio.tipo)
+                .order_by("-anno").values_list("anno", flat=True)) if foglio.is_principale else []
+    from datetime import date
+    anno_corrente = date.today().year
+    prossimi = [a for a in (anno_corrente, anno_corrente + 1) if a not in anni]
+    return render(request, "flusso/budget_foglio.html", {
+        "foglio": foglio, "intestazioni": foglio.intestazioni, "corpo": corpo,
+        "menu": _menu_budget(foglio.chiave), "q": q, "anni": anni, "anni_creabili": prossimi,
+        "totale": foglio.righe.count(), "mostrate": len(corpo), "da_progetto": da_progetto,
+        "puo_modificare": _puo_righe_budget(request.user),
+        "puo_creare_foglio": request.user.is_funzione,
+        "funzioni": Funzione.choices, "tipi": TipoProgetto.choices,
+        "anno_corrente": anno_corrente,
+    })
+
+
+@login_required
+@require_POST
+def crea_foglio_vuoto(request):
+    """Partenza pulita: crea un foglio Budget o Extra Budget senza importare nulla."""
+    if not request.user.is_funzione:
+        return HttpResponseForbidden("Solo le funzioni tecniche possono creare un foglio.")
+    tipo = request.POST.get("tipo")
+    try:
+        anno = int(request.POST.get("anno", ""))
+    except (TypeError, ValueError):
+        anno = None
+    if tipo not in (TipoFoglio.BUDGET, TipoFoglio.EXTRA) or not anno:
+        messages.error(request, "Tipo o anno non validi.")
+        return redirect("flusso:budget")
+    foglio = servizi.foglio_budget(tipo, anno, crea=True)
+    messages.success(request, f"Foglio «{foglio.nome} {anno}» creato con le colonne di base: "
+                              "aggiungi voci a mano o importa il workbook per estenderlo.")
+    return redirect(foglio)
+
+
+@login_required
+@require_POST
+def crea_foglio_anno(request, chiave):
+    """Apre il foglio di un anno non ancora esistente, con le stesse colonne."""
+    modello = get_object_or_404(FoglioBudget, chiave=chiave)
+    if not request.user.is_funzione:
+        return HttpResponseForbidden("Solo le funzioni tecniche possono creare un foglio.")
+    try:
+        anno = int(request.POST.get("anno", ""))
+    except (TypeError, ValueError):
+        messages.error(request, "Anno non valido.")
+        return redirect(modello)
+    foglio = servizi.foglio_budget(modello.tipo, anno, crea=True)
+    if foglio is None:
+        messages.error(request, "Nessun foglio di riferimento da cui ereditare le colonne.")
+        return redirect(modello)
+    messages.success(request, f"Foglio {foglio.nome} {anno} disponibile.")
+    return redirect(foglio)
+
+
+@login_required
+@require_POST
+def nuova_riga_budget(request, chiave):
+    """Inserimento manuale di una riga: crea in automatico il progetto collegato."""
+    foglio = get_object_or_404(FoglioBudget, chiave=chiave)
+    if not _puo_righe_budget(request.user):
+        return HttpResponseForbidden("Solo le funzioni tecniche e il CISO possono inserire righe.")
+    titolo = (request.POST.get("titolo") or "").strip()
+    funzione = request.POST.get("funzione") or ""
+    tipo_progetto = request.POST.get("tipo_progetto") or TipoProgetto.AI
+    priorita = request.POST.get("priorita") or "MEDIA"
+    note = (request.POST.get("note") or "").strip()
+    importo_txt = (request.POST.get("importo") or "").replace(",", ".").strip()
+    if not titolo or funzione not in dict(Funzione.choices):
+        messages.error(request, "Servono almeno la descrizione della voce e l'area richiedente.")
+        return redirect(foglio)
+    importo = None
+    if importo_txt:
+        try:
+            importo = Decimal(importo_txt)
+        except InvalidOperation:
+            messages.error(request, "Importo non valido.")
+            return redirect(foglio)
+    dati = [""] * len(foglio.intestazioni)
+    for chiave_col, valore in (
+            (("Priorità", "PRIORITY"), dict(Priorita.choices).get(priorita, "")),
+            (("Area",), dict(Funzione.choices).get(funzione, "")),
+            (("Note", "NOTE"), note),
+    ):
+        i = foglio.indice_colonna(*chiave_col)
+        if i is not None and valore:
+            dati[i] = valore
+    if importo is not None:
+        for nome in ("ESTIMATED AMOUNT", "OPX Imp. tot."):
+            i = foglio.indice_colonna(nome)
+            if i is not None:
+                dati[i] = float(importo)
+                break
+    riga, richiesta = servizi.crea_progetto_da_riga(
+        foglio, dati, attore=request.user, titolo=titolo, funzione=funzione,
+        tipo_progetto=tipo_progetto, priorita=priorita, importo=importo, note=note)
+    messages.success(request, f"Riga inserita e progetto {richiesta.codice} creato: "
+                              f"è in carico alla {richiesta.funzione_competente_label}.")
+    return redirect(foglio.get_absolute_url() + f"#r{riga.pk}")
+
+
+@login_required
+@require_POST
+def salva_riga_budget(request, pk):
+    """Modifica manuale di una riga di budget (solo funzioni tecniche)."""
+    riga = get_object_or_404(RigaBudget, pk=pk)
+    if not _puo_righe_budget(request.user):
+        return HttpResponseForbidden("Solo le funzioni tecniche e il CISO possono modificare le righe.")
+    n_col = len(riga.foglio.intestazioni)
+    riga.dati = [request.POST.get(f"c{i}", "") for i in range(n_col)]
+    riga.save(update_fields=["dati", "aggiornata_il"])
+    messages.success(request, "Riga aggiornata.")
+    return redirect(riga.foglio.get_absolute_url() + f"#r{riga.pk}")
 
 
 @login_required
@@ -764,9 +1048,11 @@ def kpi(request):
     """Cruscotto KPI del portafoglio. Visibile ai ruoli con visibilità completa."""
     if not request.user.is_gestore:
         return HttpResponseForbidden("Pagina riservata.")
-    dati = calcola_kpi()
+    tipo_attivo, tipo_filtri = _filtro_tipo(request, Richiesta.objects.all())
+    dati = calcola_kpi(tipo=tipo_attivo)
     config = ConfigurazioneAI.load()
-    return render(request, "flusso/kpi.html", {"k": dati, "config": config})
+    return render(request, "flusso/kpi.html", {"k": dati, "config": config, "aree": riepilogo_aree(),
+                                               "tipo_filtri": tipo_filtri, "tipo_attivo": tipo_attivo})
 
 
 @login_required
@@ -857,6 +1143,9 @@ def rischio(request):
         return HttpResponseForbidden("Pagina riservata alla Funzione tecnica e ai presìdi (Legale, CISO, DPO).")
     voci = (Richiesta.objects.select_related("proponente")
             .prefetch_related("classificazioni").order_by("numero"))
+    tipo_attivo, tipo_filtri = _filtro_tipo(request, voci)
+    if tipo_attivo:
+        voci = voci.filter(tipo=tipo_attivo)
     righe, pronti = [], 0
     da_validare = {"AIACT": 0, "NIS2": 0, "GDPR": 0}
     for r in voci:
@@ -872,6 +1161,7 @@ def rischio(request):
         righe.append({"r": r, "aiact": classi.get("AIACT"), "nis2": classi.get("NIS2"),
                       "gdpr": classi.get("GDPR"), "validati": validati, "pronto": pronto})
     return render(request, "flusso/rischio.html", {
+        "tipo_filtri": tipo_filtri, "tipo_attivo": tipo_attivo,
         "righe": righe, "totale": len(righe), "pronti": pronti,
         "da_validare": da_validare, "config": ConfigurazioneAI.load(),
     })
@@ -906,6 +1196,10 @@ def _segna_pronta_se_validata(richiesta, attore) -> bool:
         try:
             richiesta.applica("presenta_approvazione", attore=attore,
                               nota="Avanzamento automatico: tutte le dimensioni di rischio validate.")
+            try:
+                servizi.copia_in_budget(richiesta, attore=attore)
+            except Exception:
+                pass  # la riga di budget non deve bloccare l'avanzamento della pratica
             return True
         except Exception:
             return False

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block titolo %}{{ foglio.nome }} · Budget{% endblock %}
+{% block contenuto %}
+<div class="page-head">
+  <div>
+    <h1>{% if foglio.tipo == 'EXTRA' %}Extra Budget{% elif foglio.tipo == 'BUDGET' %}Budget{% else %}{{ foglio.nome }}{% endif %} <span class="anno-big">{{ foglio.anno }}</span></h1>
+    <p class="sub">Foglio «{{ foglio.nome }}» — {{ intestazioni|length }} colonne, {{ totale }} righe{% if da_progetto %} · <b>{{ da_progetto }}</b> generate dai progetti approvati{% endif %}. Struttura e intestazioni sono quelle del file Excel di origine.</p>
+  </div>
+  <div class="ph-side"><span class="pill">{{ mostrate }} / {{ totale }}</span></div>
+</div>
+
+{% include "flusso/_menu_budget.html" %}
+
+{% if foglio.is_principale %}
+<div class="bdg-anni">
+  <span class="bdg-menu-lab">Anno</span>
+  {% for f in menu.principali %}{% if f.tipo == foglio.tipo %}
+  <a href="{{ f.get_absolute_url }}" class="bdg-anno {% if f.anno == foglio.anno %}attivo{% endif %}">{{ f.anno }}{% if f.anno == anno_corrente %} <span class="oggi">in corso</span>{% endif %}</a>
+  {% endif %}{% endfor %}
+  {% if puo_creare_foglio %}{% for a in anni_creabili %}
+  <form method="post" action="{% url 'flusso:crea_foglio_anno' foglio.chiave %}" style="display:inline;">
+    {% csrf_token %}<input type="hidden" name="anno" value="{{ a }}">
+    <button type="submit" class="bdg-anno nuovo" title="Crea il foglio {{ a }} con le stesse colonne">+ {{ a }}</button>
+  </form>
+  {% endfor %}{% endif %}
+  <span class="t-mut bdg-regola">{% if foglio.tipo == 'BUDGET' %}Le voci messe a <b>budget</b> entrano nel budget dell'anno successivo ({{ anno_corrente|add:1 }}).{% else %}Le voci in <b>extra budget</b> incidono sull'anno in corso ({{ anno_corrente }}).{% endif %}</span>
+</div>
+
+{% if puo_modificare %}
+<details class="bdg-nuova">
+  <summary><i class="ti ti-plus"></i> Inserisci una voce a mano (crea anche il progetto collegato)</summary>
+  <form method="post" action="{% url 'flusso:nuova_riga_budget' foglio.chiave %}" class="bdg-nuova-form">
+    {% csrf_token %}
+    <label class="sched-lbl">Descrizione voce<input type="text" name="titolo" class="campo" required placeholder="es. Rinnovo licenze CAD"></label>
+    <label class="sched-lbl">Area richiedente<select name="funzione" class="campo">{% for c, l in funzioni %}<option value="{{ c }}">{{ l }}</option>{% endfor %}</select></label>
+    <label class="sched-lbl">Tipo progetto<select name="tipo_progetto" class="campo">{% for c, l in tipi %}<option value="{{ c }}">{{ l }}</option>{% endfor %}</select></label>
+    <label class="sched-lbl">Priorità<select name="priorita" class="campo"><option value="ALTA">Alta</option><option value="MEDIA" selected>Media</option><option value="BASSA">Bassa</option></select></label>
+    <label class="sched-lbl">Importo (€)<input type="text" name="importo" class="campo" placeholder="es. 4500"></label>
+    <label class="sched-lbl full">Note<input type="text" name="note" class="campo" placeholder="Contesto della voce (diventa la descrizione del progetto)"></label>
+    <button type="submit" class="btn btn-primario btn-sm">Inserisci e crea progetto</button>
+  </form>
+</details>
+{% endif %}
+{% endif %}
+
+<form method="get" class="bdg-cerca">
+  <input type="search" name="q" value="{{ q }}" placeholder="Cerca in tutte le colonne…" class="campo">
+  <button type="submit" class="btn btn-sm"><i class="ti ti-search"></i> Cerca</button>
+  {% if q %}<a href="{{ foglio.get_absolute_url }}" class="btn btn-sm">Azzera</a>{% endif %}
+</form>
+
+<div class="bdg-wrap">
+  <table class="bdg-tab">
+    <thead>
+      <tr>
+        <th class="bdg-n">#</th>
+        {% for h in intestazioni %}<th title="{{ h }}">{{ h }}</th>{% endfor %}
+        {% if puo_modificare %}<th class="bdg-az">Azioni</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for riga in corpo %}
+      <tr id="r{{ riga.r.pk }}" class="{% if riga.r.da_progetto %}bdg-progetto{% endif %}">
+        <td class="bdg-n">{{ forloop.counter }}{% if riga.r.da_progetto %} <i class="ti ti-robot" title="Riga generata dal progetto"></i>{% endif %}</td>
+        {% if puo_modificare %}
+          {% for c in riga.celle %}<td><input form="f{{ riga.r.pk }}" type="text" name="c{{ forloop.counter0 }}" value="{{ c }}" class="bdg-cella"></td>{% endfor %}
+          <td class="bdg-az">
+            <form method="post" id="f{{ riga.r.pk }}" action="{% url 'flusso:salva_riga_budget' riga.r.pk %}">{% csrf_token %}</form>
+            <button type="submit" form="f{{ riga.r.pk }}" class="btn btn-sm">Salva</button>
+            {% if riga.r.richiesta %}<a href="{{ riga.r.richiesta.get_absolute_url }}" class="btn btn-sm">Scheda</a>{% endif %}
+          </td>
+        {% else %}
+          {% for c in riga.celle %}<td>{{ c }}</td>{% endfor %}
+        {% endif %}
+      </tr>
+      {% empty %}
+      <tr><td colspan="{{ intestazioni|length|add:2 }}" class="t-mut" style="padding:18px;">Nessuna riga{% if q %} per «{{ q }}»{% endif %}.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
