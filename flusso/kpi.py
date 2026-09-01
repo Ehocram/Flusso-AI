@@ -52,8 +52,11 @@ def _segmenti_donut(coppie):
     return segs, round(circ, 2)
 
 
-def calcola_kpi() -> dict:
+def calcola_kpi(tipo=None) -> dict:
+    """KPI di portafoglio; con tipo (AI / APPLICATION / IT_OPERATION) si restringe a quel perimetro."""
     qs = Richiesta.objects.all()
+    if tipo:
+        qs = qs.filter(tipo=tipo)
     tot = qs.count()
     # Base "portafoglio approvato": tutte le metriche di valore e di governance si
     # calcolano SOLO sui progetti approvati dalla Direzione, così restano attendibili
@@ -101,7 +104,7 @@ def calcola_kpi() -> dict:
     # "Rischi da validare" è l'unico contatore di pipeline (azione per i presìdi):
     # conta tutte le proposte AI in attesa, anche su progetti non ancora approvati.
     rischi_da_validare = ClassificazioneRischio.objects.filter(
-        stato=StatoRischio.PROPOSTO_AI).count()
+        richiesta__in=qs, stato=StatoRischio.PROPOSTO_AI).count()
     # Gli altri due si riferiscono al solo portafoglio approvato.
     residui_da_convalidare = ClassificazioneRischio.objects.filter(
         richiesta__in=approvati_qs,
@@ -175,7 +178,7 @@ def calcola_kpi() -> dict:
 
     # lead time medio: da 'invia' a 'approva' (giorni), dall'audit trail
     inv_t, app_t = {}, {}
-    for t in Transizione.objects.filter(azione__in=["invia", "approva"]).values(
+    for t in Transizione.objects.filter(richiesta__in=qs, azione__in=["invia", "approva"]).values(
             "richiesta_id", "azione", "creata_il"):
         (inv_t if t["azione"] == "invia" else app_t).setdefault(t["richiesta_id"], t["creata_il"])
     deltas = [(app_t[i] - inv_t[i]).days for i in app_t if i in inv_t]
@@ -238,3 +241,52 @@ def riassunto_per_ai(kpi: dict, includi_titoli: bool = False) -> str:
         righe.append("Progetti attivi: "
                      + "; ".join(f"{p['titolo']} (SAL {p['sal']}%)" for p in kpi["attivi_sal"]))
     return "\n".join(righe)
+
+
+def riepilogo_aree():
+    """Riepilogo per area tecnica: AI, Application, IT Operation.
+
+    Recupera i valori dalle analisi delle singole schede (effort in ore e costo di
+    progetto, quest'ultimo comprensivo di token, altri costi e costo a carico
+    dell'owner). Ogni scheda conta una volta sola: le schede Application e IT
+    Operation generate da un progetto AI portano i propri numeri nella loro area.
+    """
+    from decimal import Decimal
+    from .models import TipoProgetto, VoceEffort
+
+    nomi = {"AI": "AI", "APPLICATION": "Application", "IT_OPERATION": "IT Operation"}
+    aree = []
+    for codice, _ in TipoProgetto.choices:
+        qs = Richiesta.objects.filter(tipo=codice)
+        costo = Decimal(0)
+        a_budget = extra = Decimal(0)
+        n_costo, n_incompleti = 0, 0
+        for r in qs:
+            c = r.costo_progetto_stimato
+            if c is None:
+                if r.costo_token_ai is not None or r.altri_costi is not None or r.costo_owner is not None:
+                    n_incompleti += 1
+                continue
+            costo += c
+            n_costo += 1
+            rip = r.ripartizione_budget
+            if rip:
+                a_budget += rip["a_budget"]
+                extra += rip["extra"]
+        voci = VoceEffort.objects.filter(richiesta__in=qs)
+        ore_rip = voci.aggregate(t=Sum("ore"))["t"] or 0
+        sviluppo = voci.filter(attivita="SVILUPPO").aggregate(t=Sum("ore"))["t"] or 0
+        approvati = qs.filter(stato__in=[Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO])
+        aree.append({
+            "codice": codice, "nome": nomi[codice],
+            "n": qs.count(),
+            "n_attivi": approvati.count(),
+            "in_approvazione": qs.filter(stato__in=[Stato.PRONTA_APPROVAZIONE,
+                                                    Stato.IN_APPROVAZIONE]).count(),
+            "effort": qs.aggregate(t=Sum("effort_ore"))["t"] or 0,
+            "ore_ripartite": ore_rip, "sviluppo": sviluppo,
+            "pct_sviluppo": round(sviluppo * 100 / ore_rip) if ore_rip else 0,
+            "costo": costo, "a_budget": a_budget, "extra": extra,
+            "n_costo": n_costo, "incompleti": n_incompleti,
+        })
+    return aree

@@ -225,3 +225,43 @@ def crea_griglia_effort(richiesta) -> bool:
         for a in AttivitaEffort
     ])
     return True
+
+
+def clona_per_funzioni(richiesta, attore=None) -> list:
+    """Crea le schede dedicate per Application e/o IT Operation, se i dettagli sono compilati.
+
+    La scheda AI di origine resta invariata; le copie sono progetti autonomi,
+    gestiti dalla Funzione Applicativa / IT Operations, con ID «ID xx Application»
+    (o «ID xx IT Operation») e lo stesso titolo. Vengono create UNA sola volta:
+    se esistono già, non si duplicano né si sovrascrivono (sono ormai progetti
+    indipendenti). Ritorna l'elenco delle schede create.
+    """
+    from .models import Richiesta, TipoProgetto
+    from .workflow import Stato
+
+    if richiesta.is_clone:
+        return []  # non si clona un clone
+    creati = []
+    for tipo, testo in ((TipoProgetto.APPLICATION, richiesta.dettaglio_application),
+                        (TipoProgetto.IT_OPERATION, richiesta.dettaglio_it_operation)):
+        testo = (testo or "").strip()
+        if not testo or richiesta.cloni.filter(tipo=tipo).exists():
+            continue
+        clone = Richiesta.objects.create(
+            clone_di=richiesta,
+            tipo=tipo,
+            titolo=richiesta.titolo,
+            funzione=richiesta.funzione,
+            proponente=richiesta.proponente,
+            referente_area=richiesta.referente_area,
+            tipo_soluzione=richiesta.tipo_soluzione,
+            priorita=richiesta.priorita,
+            entity=richiesta.entity,
+            descrizione=testo,
+        )
+        # Entra subito nella coda della funzione competente, con traccia in audit.
+        clone.applica("invia", attore=attore,
+                      nota=f"Scheda generata dalla componente «{clone.get_tipo_display()}» "
+                           f"di {richiesta.codice} — {richiesta.titolo}.")
+        creati.append(clone)
+    return creati

@@ -762,3 +762,41 @@ body.auth { background: #080a10; overflow-x: hidden; }
 /* ===== Tipo richiesta (AI / Application / IT Operation) ===== */
 .tipo-pill { background: #eef1f6; color: var(--inchiostro); border: 1px solid var(--bordo); }
 .tipo-filtri { margin-bottom: 10px; }
+
+/* ===== Schede per tipo (Effort / Costi) ===== */
+.tipo-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0 0 14px; }
+.tipo-card { display: block; background: var(--bianco); border: 1px solid var(--bordo); border-radius: var(--r-card);
+  padding: 14px 16px; text-decoration: none; color: var(--inchiostro); }
+.tipo-card:hover { border-color: var(--rosso); }
+.tipo-card.attiva { border-color: var(--rosso); box-shadow: 0 0 0 2px rgba(214,40,40,.12); }
+.tc-nome { font-weight: 800; font-size: 14px; }
+.tc-n { font-weight: 400; color: var(--testo-2); font-size: 12px; margin-left: 4px; }
+.tc-big { font-size: 22px; font-weight: 800; margin: 6px 0 2px; }
+.tc-anno { font-size: 12px; font-weight: 400; color: var(--testo-2); margin-left: 2px; }
+.tc-sub { font-size: 12.5px; color: var(--testo-2); }
+.tc-warn { color: var(--rosso); font-weight: 700; }
+@media (max-width: 860px) { .tipo-cards { grid-template-columns: 1fr; } }
+
+/* ===== Flag economici, priorità, schede collegate ===== */
+.flag-row { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+.flag { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; }
+.flag input { width: auto; }
+.obbl { font-size: 11px; font-weight: 700; color: var(--rosso); margin-left: 6px; }
+.prio-pill { border-radius: 6px; padding: 2px 8px; font-size: 11.5px; font-weight: 700; }
+.prio-ALTA { background: #fbe9e9; color: var(--rosso); }
+.prio-MEDIA { background: #fff7e6; color: #9a6b00; }
+.prio-BASSA { background: #eef1f6; color: var(--testo-2); }
+.link-origine { font-size: 12.5px; color: var(--testo-2); margin-top: 6px; }
+
+/* ===== Riepilogo aree tecniche (KPI) ===== */
+.aree-blocco { margin-bottom: 18px; }
+.aree-titolo { font-size: 15px; margin: 0 0 10px; }
+.aree-titolo .sub { font-weight: 400; font-size: 12.5px; color: var(--testo-2); }
+.area-card { cursor: default; }
+.area-righe { margin: 8px 0 6px; }
+.area-riga { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; padding: 2px 0; }
+.area-riga .lab { color: var(--testo-2); }
+.area-riga .val { font-weight: 800; }
+.area-link { margin-top: 8px; font-size: 12.5px; }
+.area-link a { color: var(--rosso); text-decoration: none; }
+.area-link a:hover { text-decoration: underline; }

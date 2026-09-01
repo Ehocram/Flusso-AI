@@ -126,8 +126,8 @@ class Utente(AbstractUser):
 
     @property
     def is_validatore_rischio(self) -> bool:
-        """Presidio di rischio: Legale, CISO o DPO."""
-        return self.ruolo in (Ruolo.LEGALE, Ruolo.CISO, Ruolo.DPO)
+        """Presidio di rischio: il CISO valida tutte le dimensioni di compliance."""
+        return self.ruolo == Ruolo.CISO
 
     @property
     def is_gestore(self) -> bool:

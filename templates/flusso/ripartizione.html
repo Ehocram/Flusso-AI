@@ -16,6 +16,16 @@
   {% endfor %}
 </div>
 
+<div class="tipo-cards">
+  {% for sc in schede_tipo %}
+  <a href="{{ sc.href }}" class="tipo-card {% if sc.attiva %}attiva{% endif %}">
+    <div class="tc-nome">{{ sc.nome }} <span class="tc-n">{{ sc.n }} progett{{ sc.n|pluralize:"o,i" }}</span></div>
+    <div class="tc-big">{{ sc.ore }} h</div>
+    <div class="tc-sub">Sviluppo <b>{{ sc.sviluppo }} h</b> ({{ sc.pct_sviluppo }}%) · resto <b>{{ sc.resto }} h</b>{% if sc.senza_rip %} · <span class="tc-warn">{{ sc.senza_rip }} da ripartire</span>{% endif %}</div>
+  </a>
+  {% endfor %}
+</div>
+
 <div class="rip-hero">
   <div class="rip-hero-big">Sviluppo: <b>{{ ore_sviluppo }} h</b> <span class="pctx">({{ pct_sviluppo }}%)</span></div>
   <div class="rip-hero-vs">Tutto il resto — analisi, test, compliance, infrastruttura, adozione — vale <b>{{ ore_resto }} h</b> ({{ pct_resto }}%).</div>

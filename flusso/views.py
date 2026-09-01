@@ -25,9 +25,9 @@ from .ai_client import genera_analisi, prova_connessione
 from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, BeneficioForm, ImpostazioniAIForm,
                     PianificazioneForm, RichiestaForm, SalForm, TrattamentoRischioForm,
                     ValidazioneRischioForm)
-from .kpi import calcola_kpi
+from .kpi import calcola_kpi, riepilogo_aree
 from .models import (AttivitaEffort, ClassificazioneRischio, ConfigurazioneAI, TipoProgetto,
-                     DIMENSIONE_PER_RUOLO, FiguraEffort, ORDINE_ATTIVITA, VoceEffort,
+                     DIMENSIONE_PER_RUOLO, DIMENSIONI_PER_RUOLO, FiguraEffort, ORDINE_ATTIVITA, VoceEffort,
                      EsitoBudget, PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
                      StatoRischio, TipoRischio)
 from .notifiche import notifica_transizione
@@ -48,12 +48,11 @@ def _puo_validare(utente, tipo) -> bool:
     """True SOLO se l'utente è il presidio competente per quella dimensione.
 
     Separazione dei compiti: validare il rischio è un atto di governance legato
-    al ruolo (Funzione Legale → AI Act, CISO → NIS2, DPO → GDPR), non un
-    privilegio amministrativo. La Funzione tecnica (che è superuser per gestire
-    l'applicazione) e ogni altro superuser NON possono quindi validare al posto
-    del presidio: la validazione resta sempre dei tre presìdi competenti.
+    al ruolo, non un privilegio amministrativo. Il CISO è il presidio unico di
+    compliance (AI Act, NIS2, GDPR). La Funzione tecnica (che è superuser per
+    gestire l'applicazione) e ogni altro superuser NON possono validare al suo posto.
     """
-    return {"AIACT": utente.is_legale, "NIS2": utente.is_ciso, "GDPR": utente.is_dpo}.get(tipo, False)
+    return utente.is_ciso and tipo in ("AIACT", "NIS2", "GDPR")
 
 
 
@@ -85,6 +84,63 @@ def _filtro_tipo(request, qs):
               for c, _ in TipoProgetto.choices]
     return tipo, chips
 
+
+def _href_tipo(request, val):
+    q = request.GET.copy()
+    q["tipo"] = val
+    return "?" + q.urlencode()
+
+
+_NOMI_TIPO = {"AI": "AI", "APPLICATION": "Application", "IT_OPERATION": "IT Operation"}
+
+
+def _schede_effort(request, qs_tutti, tipo_attivo):
+    """Schede effort per tipo (AI/Application/IT Operation) sul perimetro dato."""
+    schede = []
+    for codice, _ in TipoProgetto.choices:
+        sub = qs_tutti.filter(tipo=codice)
+        voci = VoceEffort.objects.filter(richiesta__in=sub)
+        tot_rip = voci.aggregate(t=Sum("ore"))["t"] or 0
+        svil = voci.filter(attivita=AttivitaEffort.SVILUPPO).aggregate(t=Sum("ore"))["t"] or 0
+        schede.append({
+            "codice": codice, "nome": _NOMI_TIPO[codice], "n": sub.count(),
+            "ore": sub.aggregate(t=Sum("effort_ore"))["t"] or 0, "ripartite": tot_rip,
+            "sviluppo": svil, "pct_sviluppo": round(svil * 100 / tot_rip) if tot_rip else 0,
+            "resto": tot_rip - svil,
+            "senza_rip": sub.annotate(nv=Count("voci_effort")).filter(nv=0).count(),
+            "href": _href_tipo(request, codice), "attiva": tipo_attivo == codice,
+        })
+    return schede
+
+
+def _schede_costi(request, qs_tutti, tipo_attivo):
+    """Schede costi per tipo sul perimetro dato (stessa logica della pagina Costi)."""
+    from decimal import Decimal as _D
+    schede = []
+    for codice, _ in TipoProgetto.choices:
+        tot = a_budget = extra = da_def = _D(0)
+        n = n_inc = 0
+        for r in qs_tutti.filter(tipo=codice):
+            n += 1
+            costo = r.costo_progetto_stimato
+            if costo is None:
+                if r.costo_token_ai is not None or r.altri_costi is not None:
+                    n_inc += 1
+                continue
+            tot += costo
+            rip = r.ripartizione_budget
+            if rip:
+                a_budget += rip["a_budget"]
+                extra += rip["extra"]
+            else:
+                da_def += costo
+        schede.append({
+            "codice": codice, "nome": _NOMI_TIPO[codice], "n": n, "tot": tot,
+            "a_budget": a_budget, "extra": extra, "da_definire": da_def, "incompleti": n_inc,
+            "href": _href_tipo(request, codice), "attiva": tipo_attivo == codice,
+        })
+    return schede
+
 @login_required
 def dashboard(request):
     qs = _richieste_visibili(request.user)
@@ -115,7 +171,8 @@ def dashboard(request):
     # Presidio (Legale/CISO/DPO): rischi della propria dimensione in attesa di validazione.
     rischi_da_validare, dimensione_presidio = [], ""
     if request.user.is_validatore_rischio:
-        dim = DIMENSIONE_PER_RUOLO.get(request.user.ruolo)
+        dims = DIMENSIONI_PER_RUOLO.get(request.user.ruolo, [])
+        dim = dims[0] if dims else None
         if dim:
             dimensione_presidio = dict(TipoRischio.choices).get(dim, dim)
             rischi_da_validare = list(
@@ -418,7 +475,10 @@ def aggiorna_analisi(request, pk):
                 richiesta.costo_token_ai_stimato = False
                 richiesta.save(update_fields=["costo_token_ai_stimato"])
         # Importo mancante: prova a stimarlo con l'AI (una volta), se c'è abbastanza contesto.
-        stimato = servizi.stima_costo_token_se_serve(richiesta, attore=request.user)
+        # La stima token vale solo per i progetti AI: su Application / IT Operation
+        # il costo lo indica la funzione nel campo dedicato.
+        stimato = (servizi.stima_costo_token_se_serve(richiesta, attore=request.user)
+                   if richiesta.tipo == TipoProgetto.AI else False)
         msg = ("Analisi aggiornata. Importo token proposto dall'AI: "
                f"€ {richiesta.costo_token_ai} (modificabile)." if stimato
                else f"Analisi della {richiesta.funzione_competente_label} aggiornata.")
@@ -442,6 +502,10 @@ def aggiorna_analisi(request, pk):
             if rip:
                 msg += (f" Costo € {rip['costo']:.2f}: a budget € {rip['a_budget']:.2f}, "
                         f"extra budget € {rip['extra']:.2f} ({richiesta.budget_stato_label}).")
+        cloni = servizi.clona_per_funzioni(richiesta, attore=request.user)
+        if cloni:
+            elenco = ", ".join(f"{c.codice} ({c.get_tipo_display()})" for c in cloni)
+            msg += f" Create le schede dedicate: {elenco}, ora in carico alla funzione competente."
         messages.success(request, msg)
     else:
         messages.error(request, "Controlla i dati dell'analisi: alcuni valori non sono validi.")
@@ -498,13 +562,17 @@ def schedulazione(request):
     """Pianificazione dei soli progetti approvati (date utili ai KPI, modificabili a mano)."""
     if not request.user.is_gestore:
         return HttpResponseForbidden("Pagina riservata.")
-    qs = (Richiesta.objects
-          .filter(stato__in=[Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO, Stato.COMPLETATO])
+    base = Richiesta.objects.filter(stato__in=[Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO, Stato.COMPLETATO])
+    tipo_attivo, tipo_filtri = _filtro_tipo(request, base)
+    if tipo_attivo:
+        base = base.filter(tipo=tipo_attivo)
+    qs = (base
           .select_related("proponente")
           .order_by("data_inizio", "creata_il"))
     puo_modificare = request.user.is_funzione
     righe = [{"r": r, "form": PianificazioneForm(instance=r) if puo_modificare else None} for r in qs]
     return render(request, "flusso/schedulazione.html", {
+        "tipo_filtri": tipo_filtri, "tipo_attivo": tipo_attivo,
         "righe": righe, "puo_modificare": puo_modificare, "totale": qs.count(),
     })
 
@@ -542,8 +610,8 @@ def ripartizione_effort(request):
     """
     if not request.user.is_gestore:
         return HttpResponseForbidden("Pagina riservata.")
-    base_qs = (Richiesta.objects.filter(effort_ore__gt=0)
-               .select_related("proponente").prefetch_related("voci_effort")
+    base_tutti = Richiesta.objects.filter(effort_ore__gt=0)
+    base_qs = (base_tutti.select_related("proponente").prefetch_related("voci_effort")
                .order_by("-effort_ore", "-creata_il"))
     tipo_attivo, tipo_filtri = _filtro_tipo(request, base_qs)
     if tipo_attivo:
@@ -558,9 +626,12 @@ def ripartizione_effort(request):
     fase = request.GET.get("fase") or ""
     if fase in FASI:
         qs = base_qs.filter(stato__in=FASI[fase])
+        qs_tutti_tipi = base_tutti.filter(stato__in=FASI[fase])
     else:
         fase = ""
         qs = base_qs
+        qs_tutti_tipi = base_tutti
+    schede_tipo = _schede_effort(request, qs_tutti_tipi, tipo_attivo)
     filtri = ([{"chiave": "", "label": "Tutto", "n": base_qs.count(), "attivo": fase == ""}]
               + [{"chiave": k, "label": etichette_fase[k], "n": conteggi.get(k, 0),
                   "attivo": fase == k} for k in FASI])
@@ -593,7 +664,7 @@ def ripartizione_effort(request):
         "senza_ripartizione": sum(1 for x in righe if not x["voci"]),
         "senza_effort": Richiesta.objects.exclude(effort_ore__gt=0).count(),
         "fig_choices": FiguraEffort.choices,
-        "filtri": filtri, "fase_attiva": fase,
+        "filtri": filtri, "fase_attiva": fase, "schede_tipo": schede_tipo,
     })
 
 
@@ -677,7 +748,8 @@ def costi(request):
     if not request.user.is_gestore:
         return HttpResponseForbidden("Pagina riservata.")
     from decimal import Decimal as _D
-    base_qs = Richiesta.objects.select_related("proponente")
+    base_tutti = Richiesta.objects.select_related("proponente")
+    base_qs = base_tutti
     tipo_attivo, tipo_filtri = _filtro_tipo(request, base_qs)
     if tipo_attivo:
         base_qs = base_qs.filter(tipo=tipo_attivo)
@@ -689,12 +761,13 @@ def costi(request):
     conteggi = Counter(fase_per_stato.get(st) for st in base_qs.values_list("stato", flat=True))
     fase = request.GET.get("fase")
     if fase == "tutte":
-        qs = base_qs
+        qs, qs_tutti_tipi = base_qs, base_tutti
     elif fase in FASI:
-        qs = base_qs.filter(stato__in=FASI[fase])
+        qs, qs_tutti_tipi = base_qs.filter(stato__in=FASI[fase]), base_tutti.filter(stato__in=FASI[fase])
     else:
         fase = "in_approvazione"  # default: la coda della Direzione
-        qs = base_qs.filter(stato__in=FASI[fase])
+        qs, qs_tutti_tipi = base_qs.filter(stato__in=FASI[fase]), base_tutti.filter(stato__in=FASI[fase])
+    schede_tipo = _schede_costi(request, qs_tutti_tipi, tipo_attivo)
     filtri = ([{"chiave": "tutte", "label": "Tutto", "n": base_qs.count(), "attivo": fase == "tutte"}]
               + [{"chiave": k, "label": etichette_fase[k], "n": conteggi.get(k, 0),
                   "attivo": fase == k} for k in FASI])
@@ -734,7 +807,7 @@ def costi(request):
          for k, v in per_funzione.items()], key=lambda x: -x["costo"])
     return render(request, "flusso/costi.html", {
         "tipo_filtri": tipo_filtri, "tipo_attivo": tipo_attivo,
-        "righe": righe, "filtri": filtri, "fase_attiva": fase,
+        "righe": righe, "filtri": filtri, "fase_attiva": fase, "schede_tipo": schede_tipo,
         "tot": tot, "tot_token": tot_token, "tot_altri": tot_altri,
         "tot_a_budget": tot_a_budget, "tot_extra": tot_extra,
         "tot_da_definire": tot_da_definire, "n_incompleti": n_incompleti,
@@ -764,9 +837,11 @@ def kpi(request):
     """Cruscotto KPI del portafoglio. Visibile ai ruoli con visibilità completa."""
     if not request.user.is_gestore:
         return HttpResponseForbidden("Pagina riservata.")
-    dati = calcola_kpi()
+    tipo_attivo, tipo_filtri = _filtro_tipo(request, Richiesta.objects.all())
+    dati = calcola_kpi(tipo=tipo_attivo)
     config = ConfigurazioneAI.load()
-    return render(request, "flusso/kpi.html", {"k": dati, "config": config})
+    return render(request, "flusso/kpi.html", {"k": dati, "config": config, "aree": riepilogo_aree(),
+                                               "tipo_filtri": tipo_filtri, "tipo_attivo": tipo_attivo})
 
 
 @login_required
@@ -857,6 +932,9 @@ def rischio(request):
         return HttpResponseForbidden("Pagina riservata alla Funzione tecnica e ai presìdi (Legale, CISO, DPO).")
     voci = (Richiesta.objects.select_related("proponente")
             .prefetch_related("classificazioni").order_by("numero"))
+    tipo_attivo, tipo_filtri = _filtro_tipo(request, voci)
+    if tipo_attivo:
+        voci = voci.filter(tipo=tipo_attivo)
     righe, pronti = [], 0
     da_validare = {"AIACT": 0, "NIS2": 0, "GDPR": 0}
     for r in voci:
@@ -872,6 +950,7 @@ def rischio(request):
         righe.append({"r": r, "aiact": classi.get("AIACT"), "nis2": classi.get("NIS2"),
                       "gdpr": classi.get("GDPR"), "validati": validati, "pronto": pronto})
     return render(request, "flusso/rischio.html", {
+        "tipo_filtri": tipo_filtri, "tipo_attivo": tipo_attivo,
         "righe": righe, "totale": len(righe), "pronti": pronti,
         "da_validare": da_validare, "config": ConfigurazioneAI.load(),
     })

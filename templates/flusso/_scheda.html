@@ -3,7 +3,7 @@
 <article class="scheda">
   <div class="scheda-top">
     <span class="scheda-icona {{ r.funzione|classe_funzione }}"><i class="ti {{ r.funzione|icona_funzione }}"></i></span>
-    <span class="pill {{ r.funzione|classe_funzione }}">{{ r.get_funzione_display }}</span> <span class="pill tipo-pill" title="{{ r.get_tipo_display }}">{{ r.tipo_breve }}</span>
+    <span class="pill {{ r.funzione|classe_funzione }}">{{ r.get_funzione_display }}</span> <span class="pill tipo-pill" title="{{ r.get_tipo_display }}">{{ r.tipo_breve }}</span> <span class="prio-pill prio-{{ r.priorita }}" title="Priorità">{{ r.get_priorita_display }}</span>{% if r.entity %} <span class="pill tipo-pill">{{ r.get_entity_display }}</span>{% endif %}
     <span class="pill-id">{{ r.codice }}</span>
     <span class="spazio"></span>
     <span class="stato {{ r.stato|classe_stato }}">{{ r.stato_label }}</span>
@@ -49,11 +49,14 @@
     </div>
   </div>
 
+  {% if r.is_clone %}<div class="link-origine"><i class="ti ti-git-branch"></i> Scheda generata dalla componente {{ r.tipo_breve }} di <a href="{{ r.clone_di.get_absolute_url }}">{{ r.clone_di.codice }} — {{ r.clone_di.titolo }}</a>.</div>{% endif %}
+  {% if r.cloni.exists %}<div class="link-origine"><i class="ti ti-git-branch"></i> Schede collegate: {% for c in r.cloni.all %}<a href="{{ c.get_absolute_url }}">{{ c.codice }}</a> ({{ c.stato_label }}){% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+
   {% if mostra_foot %}
   <div class="scheda-foot">
     <span class="meta"><i class="ti ti-user" style="font-size:14px;vertical-align:-2px;"></i> {{ r.proponente.get_full_name|default:r.proponente.username }}</span>
     {% if azioni %}<a href="{{ r.get_absolute_url }}" class="btn btn-sm"><i class="ti ti-player-play"></i> {{ azioni|length }} azion{{ azioni|length|pluralize:"e,i" }} disponibil{{ azioni|length|pluralize:"e,i" }}</a>
     {% else %}<a href="{{ r.get_absolute_url }}" class="btn btn-sm">Apri <i class="ti ti-arrow-right"></i></a>{% endif %}
-  </div>
+</div>
   {% endif %}
 </article>

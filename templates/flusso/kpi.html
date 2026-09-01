@@ -2,6 +2,26 @@
 {% block titolo %}KPI · Progetti Digital Transformation{% endblock %}
 
 {% block contenuto %}
+{% include "flusso/_filtro_tipo.html" %}
+
+<section class="aree-blocco">
+  <h2 class="aree-titolo"><i class="ti ti-layout-grid"></i> Aree tecniche <span class="sub">— tutti i progetti, per area di competenza</span></h2>
+  <div class="tipo-cards">
+    {% for a in aree %}
+    <div class="tipo-card area-card {% if tipo_attivo == a.codice %}attiva{% endif %}">
+      <div class="tc-nome">{{ a.nome }} <span class="tc-n">{{ a.n }} progett{{ a.n|pluralize:"o,i" }}</span></div>
+      <div class="area-righe">
+        <div class="area-riga"><span class="lab">Costo</span><span class="val">€ {{ a.costo|floatformat:0 }}</span></div>
+        <div class="area-riga"><span class="lab">Effort</span><span class="val">{{ a.effort }} h</span></div>
+        <div class="area-riga"><span class="lab">In approvazione</span><span class="val">{{ a.in_approvazione }}</span></div>
+        <div class="area-riga"><span class="lab">Approvati / attivi</span><span class="val">{{ a.n_attivi }}</span></div>
+      </div>
+      <div class="tc-sub">A budget € {{ a.a_budget|floatformat:0 }} · extra € {{ a.extra|floatformat:0 }}{% if a.ore_ripartite %} · sviluppo {{ a.pct_sviluppo }}%{% endif %}{% if a.incompleti %} · <span class="tc-warn">{{ a.incompleti }} cost{{ a.incompleti|pluralize:"o,i" }} incomplet{{ a.incompleti|pluralize:"o,i" }}</span>{% endif %}</div>
+      <div class="area-link"><a href="{% url 'flusso:costi' %}?tipo={{ a.codice }}&fase=tutte">Costi</a> · <a href="{% url 'flusso:ripartizione_effort' %}?tipo={{ a.codice }}">Effort</a> · <a href="{% url 'flusso:lista' %}?tipo={{ a.codice }}">Progetti</a></div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
 <div class="kpi">
 
   <!-- HERO: control room -->

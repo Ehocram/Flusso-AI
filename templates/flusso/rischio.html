@@ -8,6 +8,7 @@
     <p>Tre dimensioni per progetto — AI Act, NIS2, GDPR — stimate dall'AI e validate dai presìdi (Funzione Legale, CISO, DPO).</p>
   </div>
 </div>
+{% include "flusso/_filtro_tipo.html" %}
 
 {% if user.is_funzione and not config.abilitato %}
 <div class="msg msg-error"><i class="ti ti-alert-triangle"></i> Analisi AI non abilitata: attivala nelle <a href="{% url 'flusso:impostazioni_ai' %}">Impostazioni AI</a>. Le classificazioni vengono generate all'import dei dati e alla presa in carico delle nuove richieste; in alternativa, da ogni scheda con «Analizza le tre dimensioni con l'AI».</div>

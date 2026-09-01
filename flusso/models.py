@@ -71,10 +71,13 @@ CATEGORIE_RISCHIO = {
 }
 
 # Ruolo (processo) che valida/modifica ciascuna dimensione.
-RUOLO_VALIDATORE = {"AIACT": "LEGALE", "NIS2": "CISO", "GDPR": "DPO"}
-ETICHETTA_VALIDATORE = {"AIACT": "Funzione Legale", "NIS2": "CISO", "GDPR": "DPO"}
+# Presidio unico di compliance: il CISO valida tutte e tre le dimensioni
+# (AI Act, NIS2, GDPR). La validazione separata del DPO e' stata eliminata.
+RUOLO_VALIDATORE = {"AIACT": "CISO", "NIS2": "CISO", "GDPR": "CISO"}
+ETICHETTA_VALIDATORE = {"AIACT": "CISO", "NIS2": "CISO", "GDPR": "CISO"}
+DIMENSIONI_PER_RUOLO = {"CISO": ["AIACT", "NIS2", "GDPR"]}
 # Mappa inversa: ruolo del presidio -> dimensione di rischio di sua competenza.
-DIMENSIONE_PER_RUOLO = {ruolo: dim for dim, ruolo in RUOLO_VALIDATORE.items()}
+DIMENSIONE_PER_RUOLO = {"CISO": "AIACT"}  # compat: prima dimensione del presidio
 
 
 def obblighi_in_voci(testo) -> list:
@@ -176,6 +179,31 @@ class AmbitoCosto(models.TextChoices):
     COMPLESSIVO = "COMPLESSIVO", "Complessivo"
 
 
+class Priorita(models.TextChoices):
+    ALTA = "ALTA", "Alta"
+    MEDIA = "MEDIA", "Media"
+    BASSA = "BASSA", "Bassa"
+
+
+class Entity(models.TextChoices):
+    """Entita' legale/geografica di riferimento del progetto."""
+
+    HD = "HD", "HD"
+    ROMANIA = "ROMANIA", "Romania"
+    SPAGNA = "SPAGNA", "Spagna"
+    FRANCIA = "FRANCIA", "Francia"
+    GERMANIA = "GERMANIA", "Germania"
+    EXTRA_UE = "EXTRA_UE", "Extra UE"
+    ALL = "ALL", "All"
+
+
+class BudgetIT(models.TextChoices):
+    """Copertura sul budget IT (collegata alle schede budget/extra budget)."""
+
+    BUDGET = "BUDGET", "Budget"
+    EXTRA_BUDGET = "EXTRA_BUDGET", "Extra Budget"
+
+
 class TipoProgetto(models.TextChoices):
     """Tipo di richiesta, flaggato dall'owner: determina la funzione tecnica competente."""
 
@@ -225,6 +253,19 @@ class Richiesta(models.Model):
         verbose_name="Tipo di richiesta",
         help_text="AI (perimetro registro AI Act), Application (software/ERP) o IT Operation.",
     )
+    priorita = models.CharField(
+        "Priorità", max_length=8, choices=Priorita.choices, default=Priorita.MEDIA, db_index=True,
+        help_text="Priorità attribuita dall'owner.",
+    )
+    entity = models.CharField(
+        "Entity", max_length=12, choices=Entity.choices, blank=True,
+        help_text="Entità di riferimento; se indicata dall'owner viene riportata nell'analisi.",
+    )
+    clone_di = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="cloni",
+        editable=False, help_text="Scheda AI di origine, se questa è una scheda clonata.",
+    )
+
     funzione = models.CharField("Funzione", max_length=10, choices=Funzione.choices)
     titolo = models.CharField("Titolo (case study)", max_length=140)
     tipo_soluzione = models.CharField(
@@ -276,6 +317,25 @@ class Richiesta(models.Model):
     )
     altri_costi = models.DecimalField("Altri costi (€)", max_digits=10, decimal_places=2, null=True, blank=True)
     altri_costi_note = models.CharField("Dettaglio altri costi", max_length=200, blank=True)
+    costo_owner = models.DecimalField(
+        "Costo a carico dell'owner (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Costi sul budget dell'owner: consulenti esterni, servizi, licenze già a suo carico.",
+    )
+    dettaglio_application = models.TextField(
+        "Application", blank=True,
+        help_text="Componente applicativa (nuovi software, ERP…). Se compilato genera una scheda dedicata per la Funzione Applicativa.",
+    )
+    dettaglio_it_operation = models.TextField(
+        "IT Operation", blank=True,
+        help_text="Componente IT Operation. Se compilato genera una scheda dedicata per la Funzione IT Operations.",
+    )
+    is_capex = models.BooleanField("Capex", default=False)
+    is_opex = models.BooleanField("Opex", default=False)
+    is_ifrs = models.BooleanField("IFRS", default=False)
+    budget_it = models.CharField(
+        "Budget IT", max_length=16, choices=BudgetIT.choices, blank=True,
+        help_text="Copertura sul budget IT: a budget o extra budget.",
+    )
 
     # --- Budget (compilato dall'owner) --------------------------------------
     budget_massimo = models.DecimalField(
@@ -450,7 +510,14 @@ class Richiesta(models.Model):
     # --- Proprieta' di comodo per i template --------------------------------
     @property
     def codice(self) -> str:
+        """ID della scheda; le schede clonate mostrano l'ID di origine + il tipo."""
+        if self.clone_di_id:
+            return f"{self.clone_di.codice} {self.tipo_breve}"
         return f"ID {self.numero:02d}"
+
+    @property
+    def is_clone(self) -> bool:
+        return self.clone_di_id is not None
 
     @property
     def is_terminale(self) -> bool:
@@ -583,9 +650,34 @@ class Richiesta(models.Model):
             parti.append(base)
         if self.altri_costi is not None:
             parti.append(self.altri_costi)
+        if self.costo_owner is not None:
+            parti.append(self.costo_owner)
         if not parti:
             return None
         return sum(parti)
+
+    @property
+    def costo_cloni(self):
+        """Somma dei costi delle schede collegate (Application / IT Operation)."""
+        if self.is_clone:
+            return None
+        parti = [c.costo_progetto_stimato for c in self.cloni.all()
+                 if c.costo_progetto_stimato is not None]
+        return sum(parti) if parti else None
+
+    @property
+    def costo_iniziativa(self):
+        """Costo complessivo dell'iniziativa: questa scheda + le schede collegate.
+
+        Serve a leggere il totale reale di un progetto scomposto su piu' funzioni;
+        negli aggregati di portafoglio si continua a contare ogni scheda una volta
+        sola, per non duplicare gli importi.
+        """
+        proprio = self.costo_progetto_stimato
+        cloni = self.costo_cloni
+        if proprio is None and cloni is None:
+            return None
+        return (proprio or 0) + (cloni or 0)
 
     @property
     def costo_progetto_motivo_incompleto(self):
@@ -597,7 +689,7 @@ class Richiesta(models.Model):
         """
         if self.costo_progetto_stimato is not None:
             return None
-        if self.costo_token_ai is None and self.altri_costi is None:
+        if self.costo_token_ai is None and self.altri_costi is None and self.costo_owner is None:
             return ("manca il costo del progetto: indica il costo token AI e/o gli altri "
                     "costi (0 se il progetto non ha costi).")
         if (self.costo_token_ai is not None
