@@ -67,16 +67,16 @@
         <div class="help">Costi sul tuo budget: consulenti esterni per l'implementazione, servizi, licenze già a tuo carico. Indica <b>0</b> se non ne prevedi. Si somma ai costi della Funzione tecnica e a quelli delle eventuali schede Application / IT Operation.</div>
         {% if form.costo_owner.errors %}<div class="err">{{ form.costo_owner.errors|striptags }}</div>{% endif %}
       </div>
-      <div class="f-row full"><div class="metric-hint"><i class="ti ti-robot"></i> Se lasci vuoti «incremento qualitativo» ed «efficienza», li stima l'AI in base alla descrizione (sempre modificabili).</div></div>
+      <div class="f-row full solo-ai"><div class="metric-hint"><i class="ti ti-robot"></i> Se lasci vuoti «incremento qualitativo» ed «efficienza», li stima l'AI in base alla descrizione (sempre modificabili).</div></div>
       <div class="f-row full metric">
         <label for="{{ form.saving_economico.id_for_label }}">Beneficio economico atteso (€)</label>
         <div class="metric-row">{{ form.saving_economico }}{{ form.saving_economico_note }}</div>
       </div>
-      <div class="f-row full metric">
+      <div class="f-row full metric solo-ai">
         <label for="{{ form.incremento_qualitativo.id_for_label }}">Incremento qualitativo (%)</label>
         <div class="metric-row">{{ form.incremento_qualitativo }}{{ form.incremento_qualitativo_note }}</div>
       </div>
-      <div class="f-row full metric">
+      <div class="f-row full metric solo-ai">
         <label for="{{ form.incremento_efficienza.id_for_label }}">Incremento efficienza (%)</label>
         <div class="metric-row">{{ form.incremento_efficienza }}{{ form.incremento_efficienza_note }}</div>
       </div>

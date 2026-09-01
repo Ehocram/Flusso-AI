@@ -68,6 +68,7 @@ class Transizione:
     stile: str = "primario"          # primario | positivo | pericolo | neutro
     richiede_nota: bool = False
     solo_proponente: bool = False
+    solo_ai: bool = False
     descrizione: str = ""
 
     def per(self, richiesta):
@@ -122,6 +123,7 @@ TRANSIZIONI: tuple[Transizione, ...] = (
         da=(Stato.IN_QUALIFICA,),
         a=Stato.ATTESA_BUDGET,
         ruoli=RUOLI_FUNZIONE,
+        solo_ai=True,
         descrizione="Conclusa l'analisi dei costi, l'owner deve indicare se l'importo è a budget o extra budget.",
     ),
     Transizione(
@@ -261,6 +263,10 @@ def puo_eseguire(richiesta, utente, azione: str) -> bool:
     if utente.ruolo not in t.ruoli:
         return False
     if t.solo_proponente and richiesta.proponente_id != utente.id:
+        return False
+    # Azioni riservate al perimetro AI (es. decisione di budget dell'owner sui
+    # costi token): non si propongono su Application / IT Operation.
+    if t.solo_ai and richiesta.tipo != "AI":
         return False
     return True
 

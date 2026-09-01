@@ -71,6 +71,9 @@ def classifica_tutti_i_rischi(richiesta, attore=None) -> dict:
 
 def stima_incrementi_se_serve(richiesta, attore=None) -> bool:
     """Stima beneficio e incrementi mancanti, UNA sola volta. True se ha valorizzato qualcosa."""
+    from .models import TipoProgetto
+    if richiesta.tipo != TipoProgetto.AI:
+        return False  # incrementi qualitativo/efficienza: solo sui progetti AI
     if richiesta.incrementi_ai_stimati:
         return False
     eff_manca = richiesta.incremento_efficienza is None

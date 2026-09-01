@@ -368,58 +368,18 @@ class Richiesta(models.Model):
     aggiornata_il = models.DateTimeField(auto_now=True)
 
     def applica_analisi_ai(self, dati: dict) -> list:
-        """Mappa l'output di ai_client.genera_analisi_completa sui campi dell'analisi e salva.
+        """Applica l'output di ai_client.genera_analisi_completa: SOLO la fattibilità.
 
-        Tutti i valori restano modificabili: e' una precompilazione, non un vincolo.
-        Ritorna l'elenco dei campi effettivamente aggiornati.
+        Il bottone «AI» redige la bozza di analisi; effort, tipo di AI, infrastruttura,
+        costi, benefici e percentuali restano compilati dalla persona (sono i valori su
+        cui poi decidono owner e presìdi). Ritorna i campi aggiornati.
         """
-        from decimal import Decimal, InvalidOperation
-
-        def _dec(v):
-            if v is None or v == "":
-                return None
-            try:
-                return Decimal(str(v))
-            except (InvalidOperation, ValueError, TypeError):
-                return None
-
-        def _intero(v):
-            d = _dec(v)
-            return int(d) if d is not None else None
-
-        campi = []
         fatt = (dati.get("fattibilita") or "").strip()
-        if fatt:
-            self.analisi_fattibilita = fatt
-            campi.append("analisi_fattibilita")
-        aut = dati.get("autonomia")
-        if aut in dict(AutonomiaAI.choices):
-            self.ai_autonomia = aut
-            campi.append("ai_autonomia")
-        dep = dati.get("deployment")
-        if dep in dict(DeploymentAI.choices):
-            self.ai_deployment = dep
-            campi.append("ai_deployment")
-        eff = _intero(dati.get("effort_ore"))
-        if eff is not None and eff >= 0:
-            self.effort_ore = eff
-            campi.append("effort_ore")
-        costo = _dec(dati.get("costo_token_mensile_per_utente"))
-        if costo is not None and costo > 0:
-            self.costo_token_ai = costo
-            self.costo_token_ai_stimato = True
-            if not self.costo_token_periodicita:
-                self.costo_token_periodicita = PeriodicitaCosto.MENSILE
-            if not self.costo_token_ambito:
-                self.costo_token_ambito = AmbitoCosto.UTENTE
-            campi += ["costo_token_ai", "costo_token_ai_stimato",
-                      "costo_token_periodicita", "costo_token_ambito"]
-        # Beneficio economico e incrementi (efficienza/qualita) NON sono toccati qui:
-        # restano di competenza dell'owner (proposti solo alla creazione della richiesta,
-        # vedi applica_stima_incrementi). Il bottone AI compila solo i campi tecnici.
-        if campi:
-            self.save(update_fields=sorted(set(campi)))
-        return campi
+        if not fatt:
+            return []
+        self.analisi_fattibilita = fatt
+        self.save(update_fields=["analisi_fattibilita"])
+        return ["analisi_fattibilita"]
 
     # --- Ripartizione dell'effort sulle attività -----------------------------
     @property

@@ -105,7 +105,7 @@ class RichiestaForm(forms.ModelForm):
             campo.widget.attrs["class"] = (css + " campo").strip()
 
     def clean(self):
-        """Il costo a carico dell'owner è obbligatorio (e visibile) solo sui progetti AI."""
+        """Campi riservati al perimetro AI: costo a carico dell'owner e incrementi attesi."""
         dati = super().clean()
         if dati.get("tipo") == TipoProgetto.AI:
             if dati.get("costo_owner") is None:
@@ -114,6 +114,11 @@ class RichiestaForm(forms.ModelForm):
                                "(0 se non ne prevedi).")
         else:
             dati["costo_owner"] = None
+            # Incremento qualitativo/efficienza non si applicano fuori dai progetti AI:
+            # non sono mostrati e non vengono stimati.
+            for campo in ("incremento_qualitativo", "incremento_qualitativo_note",
+                          "incremento_efficienza", "incremento_efficienza_note"):
+                dati[campo] = None if not campo.endswith("_note") else ""
         return dati
 
 
@@ -309,6 +314,10 @@ class BeneficioForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if getattr(self.instance, "tipo", TipoProgetto.AI) != TipoProgetto.AI:
+            for nome in ("incremento_qualitativo", "incremento_qualitativo_note",
+                         "incremento_efficienza", "incremento_efficienza_note"):
+                self.fields.pop(nome, None)
         for campo in self.fields.values():
             css = campo.widget.attrs.get("class", "")
             campo.widget.attrs["class"] = (css + " campo").strip()

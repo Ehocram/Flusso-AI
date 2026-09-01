@@ -365,27 +365,24 @@ def stima_costo_token(richiesta, config) -> tuple[dict | None, str | None]:
 
 
 PROMPT_ANALISI_COMPLETA = (
-    "Sei la Funzione AI di ISEO. Ricevi una richiesta di caso d'uso AI (funzione aziendale, "
-    "titolo, descrizione, eventuale numero utenti) e produci un'ANALISI DI FATTIBILITA' completa, "
-    "scritta come la scriverebbe l'AI Officer, piu' la stima dei parametri di progetto.\n"
-    "Scrivi in ITALIANO, professionale e sintetico. Sii prudente e realistico: e' una stima "
-    "preliminare che sara' rivista da una persona, non essere ottimista.\n"
-    "Il JSON deve avere ESATTAMENTE queste chiavi:\n"
-    '  "fattibilita": stringa di 3-6 frasi (valutazione di fattibilita, approccio tecnico, rischi e dipendenze principali),\n'
-    '  "autonomia": uno tra "NON_AGENTICA", "AGENTICA_SUPPORTO", "AGENTICA_AUTONOMA",\n'
-    '  "deployment": uno tra "API" (cloud), "LOCALE" (on-premise), "IBRIDO",\n'
-    '  "effort_ore": intero (ore-uomo di sviluppo stimate),\n'
-    '  "costo_token_mensile_per_utente": numero in euro (consumo token al mese per utente; 0 se non applicabile).\n'
-    "NON stimare il beneficio economico ne' le percentuali di efficienza/qualita: "
-    "non fanno parte di questa analisi (sono di competenza dell'owner)."
+    "Sei la Funzione tecnica di ISEO. Ricevi una richiesta di progetto interno "
+    "(tipo, funzione aziendale, titolo, descrizione, eventuale numero utenti) e scrivi "
+    "l'ANALISI DI FATTIBILITA', come la scriverebbe il responsabile tecnico.\n"
+    "Scrivi in ITALIANO, professionale e sintetico: 3-6 frasi che coprano valutazione di "
+    "fattibilita', approccio tecnico, rischi e dipendenze principali. Sii prudente e realistico: "
+    "e' una bozza che sara' rivista da una persona.\n"
+    "NON stimare effort, costi, tipo di AI, infrastruttura, benefici o percentuali: "
+    "quei campi li compila la persona.\n"
+    'Il JSON deve avere ESATTAMENTE questa chiave: {"fattibilita": "<testo>"}'
 )
 
 
 def genera_analisi_completa(richiesta, config):
-    """Genera l'intera analisi (fattibilita + parametri) in una sola chiamata.
+    """Genera la sola ANALISI DI FATTIBILITA' (testo), non i parametri di progetto.
 
-    Ritorna (dati, None) con un dict pronto per Richiesta.applica_analisi_ai, oppure
-    (None, errore). I valori restano una proposta: l'AI Officer li verifica e modifica.
+    Ritorna (dati, None) con {"fattibilita": ...} pronto per Richiesta.applica_analisi_ai,
+    oppure (None, errore). Effort, costi, tipo di AI e infrastruttura restano scelte
+    della persona: l'AI non li propone.
     """
     contesto = [_descrizione_progetto(richiesta)]
     if richiesta.numero_utenti:

@@ -384,6 +384,21 @@ def esegui_azione(request, pk):
     # GATE: l'invio all'owner per la decisione di budget richiede il costo stimato.
     # In caso di blocco il motivo è puntuale (es. ambito per-utente senza numero utenti).
     if azione == "invia_a_budget":
+        if richiesta.tipo != TipoProgetto.AI:
+            messages.error(request, "La decisione di budget dell'owner riguarda i soli progetti AI. "
+                                    "Su Application / IT Operation la copertura si indica nel campo «Budget IT» dell'analisi.")
+            return redirect(richiesta)
+        # Il costo token e il tipo di AI devono essere compilati: sono ciò su cui
+        # l'owner decide. Nessun invio "al buio".
+        mancano = []
+        if richiesta.costo_token_ai is None:
+            mancano.append("il costo token AI")
+        if not richiesta.ai_autonomia:
+            mancano.append("il tipo di AI")
+        if mancano:
+            messages.error(request, "Non posso inviare all'owner: manca " + " e ".join(mancano)
+                                    + ". Completa l'analisi e riprova.")
+            return redirect(richiesta)
         motivo = richiesta.costo_progetto_motivo_incompleto
         if motivo:
             messages.error(request, "Non posso inviare all'owner: " + motivo)
@@ -482,21 +497,37 @@ def aggiorna_analisi(request, pk):
         msg = ("Analisi aggiornata. Importo token proposto dall'AI: "
                f"€ {richiesta.costo_token_ai} (modificabile)." if stimato
                else f"Analisi della {richiesta.funzione_competente_label} aggiornata.")
-        # Costo zero: nessuna approvazione di budget dall'owner. La Funzione tecnica genera
-        # subito i rischi al salvataggio dell'analisi e il budget è automaticamente «a budget».
-        if (richiesta.stato == Stato.IN_QUALIFICA and not richiesta.esito_budget
-                and richiesta.costo_progetto_stimato == 0):
-            richiesta.esito_budget = EsitoBudget.A_BUDGET
+        # Casi senza decisione di budget dell'owner:
+        #  - progetti AI a costo zero (nulla da approvare);
+        #  - progetti Application / IT Operation: la copertura è il campo «Budget IT»
+        #    compilato dalla funzione, l'owner non entra nel merito dei costi IT.
+        # In entrambi i casi si generano subito i rischi e si prosegue.
+        salta_budget, nota_budget = False, ""
+        if richiesta.stato == Stato.IN_QUALIFICA and not richiesta.esito_budget:
+            if richiesta.tipo != TipoProgetto.AI:
+                if richiesta.budget_it:
+                    richiesta.esito_budget = (EsitoBudget.A_BUDGET
+                                              if richiesta.budget_it == "BUDGET"
+                                              else EsitoBudget.EXTRA_BUDGET)
+                    salta_budget = True
+                    nota_budget = (f" Copertura IT: {richiesta.get_budget_it_display()} "
+                                   "(nessuna decisione di budget dell'owner sui progetti non AI).")
+                else:
+                    msg += (" Indica il «Budget IT» (Budget / Extra Budget) per far proseguire "
+                            "la pratica: su Application / IT Operation sostituisce la decisione dell'owner.")
+            elif richiesta.costo_progetto_stimato == 0:
+                richiesta.esito_budget = EsitoBudget.A_BUDGET
+                salta_budget = True
+                nota_budget = " Costo zero: nessuna approvazione di budget richiesta."
+        if salta_budget:
             richiesta.save(update_fields=["esito_budget"])
             res = servizi.classifica_tutti_i_rischi(richiesta, attore=request.user)
             if res["ok"]:
                 dims = ", ".join(_NOMI_RISCHIO[x] for x in res["ok"])
-                msg += (" Costo zero: nessuna approvazione di budget richiesta. "
-                        f"Rischio stimato dall'AI per: {dims}. "
-                        "Da validare da Legale (AI Act), CISO (NIS2) e DPO (GDPR).")
+                msg += nota_budget + f" Rischio stimato dall'AI per: {dims}. Da validare dal CISO."
             else:
-                msg += (" Costo zero: nessuna approvazione di budget richiesta. "
-                        "Rischi da completare (classificazione AI non riuscita su alcune dimensioni).")
+                msg += nota_budget + (" Rischi da completare (classificazione AI non riuscita "
+                                      "su alcune dimensioni).")
         else:
             rip = richiesta.ripartizione_budget
             if rip:
@@ -526,7 +557,8 @@ def compila_analisi_ai(request, pk):
     if ok:
         messages.success(
             request,
-            "Analisi precompilata dall'AI. Verifica i campi, modificali se serve e salva con «Salva analisi».",
+            "Analisi di fattibilità redatta dall'AI. Rivedila, completa i campi tecnici "
+            "(tipo di AI, effort, costi) e salva con «Salva analisi».",
         )
     else:
         messages.error(request, f"Compilazione AI non riuscita: {errore}")

@@ -800,3 +800,4 @@ body.auth { background: #080a10; overflow-x: hidden; }
 .area-link { margin-top: 8px; font-size: 12.5px; }
 .area-link a { color: var(--rosso); text-decoration: none; }
 .area-link a:hover { text-decoration: underline; }
+.savings-1 { grid-template-columns: 1fr; }
