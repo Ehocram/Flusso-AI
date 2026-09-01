@@ -49,9 +49,9 @@
       <span class="val">{{ r.incremento_efficienza_fmt|default:"—" }}</span>
       {% if r.incremento_efficienza_note %}<span class="sav-note">{{ r.incremento_efficienza_note }}</span>{% endif %}
     </div>
-  {% endif %}
     {% endif %}
   </div>
+  {% endif %}
 
   {% if r.is_clone %}<div class="link-origine"><i class="ti ti-git-branch"></i> Scheda generata dalla componente {{ r.tipo_breve }} di <a href="{{ r.clone_di.get_absolute_url }}">{{ r.clone_di.codice }} — {{ r.clone_di.titolo }}</a>.</div>{% endif %}
   {% if r.cloni.exists %}<div class="link-origine"><i class="ti ti-git-branch"></i> Schede collegate: {% for c in r.cloni.all %}<a href="{{ c.get_absolute_url }}">{{ c.codice }}</a> ({{ c.stato_label }}){% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}

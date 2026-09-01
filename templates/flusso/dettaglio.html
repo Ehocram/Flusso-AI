@@ -100,11 +100,11 @@
             {{ analisi_form.ai_deployment }}
             <span class="help">API cloud, LLM locale on-premise o ibrido — impatta GDPR/NIS2.</span>
           </div>
+          {% endif %}
           <div class="f-row">
             <label for="{{ analisi_form.effort_ore.id_for_label }}">Effort (ore)</label>
             {{ analisi_form.effort_ore }}
           </div>
-          {% endif %}
           <div class="f-row">
             <label for="{{ analisi_form.entity.id_for_label }}">Entity</label>
             {{ analisi_form.entity }}
