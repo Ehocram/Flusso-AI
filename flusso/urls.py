@@ -26,6 +26,7 @@ urlpatterns = [
     path("budget/riga/<int:pk>/salva/", views.salva_riga_budget, name="salva_riga_budget"),
     path("budget/<slug:chiave>/riga/nuova/", views.nuova_riga_budget, name="nuova_riga_budget"),
     path("budget/<slug:chiave>/anno/", views.crea_foglio_anno, name="crea_foglio_anno"),
+    path("budget-nuovo/", views.crea_foglio_vuoto, name="crea_foglio_vuoto"),
     path("richieste/<int:pk>/effort/ai/", views.genera_ripartizione, name="genera_ripartizione"),
     path("richieste/<int:pk>/effort/salva/", views.salva_ripartizione, name="salva_ripartizione"),
     path("richieste/<int:pk>/effort/griglia/", views.crea_griglia_effort_view, name="crea_griglia_effort"),

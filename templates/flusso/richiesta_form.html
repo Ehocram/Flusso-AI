@@ -61,6 +61,12 @@
         <div class="help">Quanti utenti useranno la soluzione: serve dove il costo è per utente (token AI, dispositivi, licenze).</div>
         {% if form.numero_utenti.errors %}<div class="err">{{ form.numero_utenti.errors|striptags }}</div>{% endif %}
       </div>
+      <div class="f-row">
+        <label for="{{ form.data_necessita.id_for_label }}">Entro quando serve <span class="obbl">obbligatorio</span></label>
+        {{ form.data_necessita }}
+        <div class="help">Seleziona dal calendario la data entro cui hai bisogno della soluzione: guida la pianificazione dei lavori.</div>
+        {% if form.data_necessita.errors %}<div class="err">{{ form.data_necessita.errors|striptags }}</div>{% endif %}
+      </div>
       <div class="f-row solo-ai">
         <label for="{{ form.costo_owner.id_for_label }}">Costo a carico tuo (€) <span class="obbl">obbligatorio per i progetti AI</span></label>
         {{ form.costo_owner }}

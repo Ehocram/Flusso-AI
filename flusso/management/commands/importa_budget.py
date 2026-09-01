@@ -43,6 +43,8 @@ class Command(BaseCommand):
         parser.add_argument("--budget", help="Percorso del file Budget (.xlsx)")
         parser.add_argument("--extra", help="Percorso del file Extra Budget (.xlsx)")
         parser.add_argument("--anno", type=int, default=2026)
+        parser.add_argument("--solo-struttura", action="store_true",
+                            help="Importa fogli e intestazioni SENZA le righe (partenza pulita).")
 
     def handle(self, *args, **opts):
         try:
@@ -52,21 +54,28 @@ class Command(BaseCommand):
         if not opts["budget"] and not opts["extra"]:
             raise CommandError("Indica almeno --budget o --extra.")
         tot_fogli = tot_righe = 0
+        solo_struttura = opts["solo_struttura"]
+        if solo_struttura:
+            self.stdout.write(self.style.WARNING(
+                "Modalità «solo struttura»: importo fogli e colonne, nessuna riga."))
         if opts["budget"]:
             f, r = self._importa(opts["budget"], opts["anno"], principale="Budget",
-                                 tipo_principale=TipoFoglio.BUDGET, prefisso="")
+                                 tipo_principale=TipoFoglio.BUDGET, prefisso="",
+                                 solo_struttura=solo_struttura)
             tot_fogli += f
             tot_righe += r
         if opts["extra"]:
             f, r = self._importa(opts["extra"], opts["anno"], principale=None,
-                                 tipo_principale=TipoFoglio.EXTRA, prefisso="xb-")
+                                 tipo_principale=TipoFoglio.EXTRA, prefisso="xb-",
+                                 solo_struttura=solo_struttura)
             tot_fogli += f
             tot_righe += r
         self.stdout.write(self.style.SUCCESS(
             f"Import completato: {tot_fogli} fogli, {tot_righe} righe."))
 
     # ------------------------------------------------------------------
-    def _importa(self, percorso, anno, principale, tipo_principale, prefisso):
+    def _importa(self, percorso, anno, principale, tipo_principale, prefisso,
+                 solo_struttura=False):
         import openpyxl
 
         try:
@@ -112,15 +121,17 @@ class Command(BaseCommand):
                 )
                 # Le righe generate dai progetti non si toccano.
                 foglio.righe.filter(da_progetto=False).delete()
-                base = (foglio.righe.count() + 1) * 1000
-                RigaBudget.objects.bulk_create([
-                    RigaBudget(foglio=foglio, ordine=base + i, dati=list(r))
-                    for i, r in enumerate(corpo)
-                ])
+                if not solo_struttura:
+                    base = (foglio.righe.count() + 1) * 1000
+                    RigaBudget.objects.bulk_create([
+                        RigaBudget(foglio=foglio, ordine=base + i, dati=list(r))
+                        for i, r in enumerate(corpo)
+                    ])
             n_fogli += 1
-            n_righe += len(corpo)
+            n_righe += 0 if solo_struttura else len(corpo)
             etichetta = "PRINCIPALE" if tipo != TipoFoglio.SUPPORTO else "supporto"
-            self.stdout.write(f"  [{etichetta}] {nome}: {len(corpo)} righe, {n_col} colonne")
+            quante = 0 if solo_struttura else len(corpo)
+            self.stdout.write(f"  [{etichetta}] {nome}: {quante} righe, {n_col} colonne")
         wb.close()
         return n_fogli, n_righe
 

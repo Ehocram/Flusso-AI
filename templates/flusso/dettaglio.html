@@ -133,6 +133,11 @@
             <label for="{{ analisi_form.dettaglio_application.id_for_label }}">Application</label>
             {{ analisi_form.dettaglio_application }}
             <span class="help">Se compilato, al salvataggio viene creata la scheda «{{ richiesta.codice }} Application» per la Funzione Applicativa (una sola volta).</span>
+            <div class="comp-costo">
+              <label for="{{ analisi_form.costo_application.id_for_label }}">Costo Application (€)</label>
+              {{ analisi_form.costo_application }}
+              <span class="help">Riportato come costo di progetto sulla scheda «{{ richiesta.codice }} Application».</span>
+            </div>
             <div class="flag-row flag-comp">
               <span class="flag-lab">Classificazione Application:</span>
               <label class="flag">{{ analisi_form.app_capex }} Capex</label>
@@ -144,6 +149,11 @@
             <label for="{{ analisi_form.dettaglio_it_operation.id_for_label }}">IT Operation</label>
             {{ analisi_form.dettaglio_it_operation }}
             <span class="help">Se compilato, al salvataggio viene creata la scheda «{{ richiesta.codice }} IT Operation» per la Funzione IT Operations.</span>
+            <div class="comp-costo">
+              <label for="{{ analisi_form.costo_it_operation.id_for_label }}">Costo IT Operation (€)</label>
+              {{ analisi_form.costo_it_operation }}
+              <span class="help">Riportato come costo di progetto sulla scheda «{{ richiesta.codice }} IT Operation».</span>
+            </div>
             <div class="flag-row flag-comp">
               <span class="flag-lab">Classificazione IT Operation:</span>
               <label class="flag">{{ analisi_form.ops_capex }} Capex</label>
@@ -220,6 +230,7 @@
       <div class="analisi-grid" style="margin-top:10px;">
         <div class="dato"><span class="lab">Entity</span><span class="val">{{ richiesta.get_entity_display|default:"—" }}</span></div>
         <div class="dato"><span class="lab">Budget IT</span><span class="val">{{ richiesta.get_budget_it_display|default:"—" }}</span></div>
+        <div class="dato"><span class="lab">Entro quando serve</span><span class="val">{{ richiesta.data_necessita|date:"d/m/Y"|default:"—" }}</span></div>
         <div class="dato"><span class="lab">Costo owner</span><span class="val">{% if richiesta.costo_owner is not None %}€ {{ richiesta.costo_owner|floatformat:2 }}{% else %}—{% endif %}</span></div>
         <div class="dato"><span class="lab">Classificazione</span><span class="val">{% if richiesta.is_capex %}Capex {% endif %}{% if richiesta.is_opex %}Opex {% endif %}{% if richiesta.is_ifrs %}IFRS{% endif %}{% if not richiesta.is_capex and not richiesta.is_opex and not richiesta.is_ifrs %}—{% endif %}</span></div>
       </div>

@@ -17,8 +17,8 @@ class AnalisiAIForm(forms.ModelForm):
             "is_capex", "is_opex", "is_ifrs", "budget_it",
             "costo_token_ai", "costo_token_periodicita",
             "costo_token_ambito", "altri_costi", "altri_costi_note",
-            "dettaglio_application", "app_capex", "app_opex", "app_ifrs",
-            "dettaglio_it_operation", "ops_capex", "ops_opex", "ops_ifrs",
+            "dettaglio_application", "costo_application", "app_capex", "app_opex", "app_ifrs",
+            "dettaglio_it_operation", "costo_it_operation", "ops_capex", "ops_opex", "ops_ifrs",
         ]
         widgets = {
             "analisi_fattibilita": forms.Textarea(attrs={"rows": 4, "placeholder": "Valutazione di fattibilità, approccio, rischi, dipendenze…"}),
@@ -28,6 +28,8 @@ class AnalisiAIForm(forms.ModelForm):
             "altri_costi_note": forms.TextInput(attrs={"placeholder": "es. licenze, infrastruttura on-prem"}),
             "dettaglio_application": forms.Textarea(attrs={"rows": 2, "placeholder": "Componente applicativa (software, ERP…): se compilata genera una scheda per la Funzione Applicativa"}),
             "dettaglio_it_operation": forms.Textarea(attrs={"rows": 2, "placeholder": "Componente IT Operation: se compilata genera una scheda per la Funzione IT Operations"}),
+            "costo_application": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ costo della componente"}),
+            "costo_it_operation": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ costo della componente"}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -69,6 +71,7 @@ class RichiestaForm(forms.ModelForm):
             "descrizione",
             "referente_area",
             "numero_utenti",
+            "data_necessita",
             "costo_owner",
             "saving_economico",
             "saving_economico_note",
@@ -83,6 +86,7 @@ class RichiestaForm(forms.ModelForm):
             "tipo_soluzione": forms.TextInput(attrs={"placeholder": "Es. Assistente AI interno"}),
             "numero_utenti": forms.NumberInput(attrs={"min": 1, "placeholder": "n. utenti che useranno il tool"}),
             "costo_owner": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ (es. consulenti esterni)"}),
+            "data_necessita": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "saving_economico": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
             "incremento_qualitativo": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "% (vuoto = stima AI)"}),
             "incremento_efficienza": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "% (vuoto = stima AI)"}),
@@ -97,6 +101,8 @@ class RichiestaForm(forms.ModelForm):
         # e' per utente (token AI, ma anche acquisti IT Operation per utente).
         if "numero_utenti" in self.fields:
             self.fields["numero_utenti"].required = False
+        if "data_necessita" in self.fields:
+            self.fields["data_necessita"].required = True
         # Un owner invia richieste solo per la propria funzione: campo bloccato.
         if funzione_owner:
             self.fields["funzione"].initial = funzione_owner

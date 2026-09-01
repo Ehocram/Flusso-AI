@@ -3,9 +3,26 @@
 {% block contenuto %}
 <div class="page-head"><div><h1>Budget</h1><p class="sub">Fogli di budget ed extra budget, a righe come nel file Excel.</p></div></div>
 {% include "flusso/_menu_budget.html" %}
+{% if puo_creare_foglio %}
+<div class="card" style="padding:16px 18px;margin-bottom:14px;">
+  <h2 style="font-size:15px;margin:0 0 6px;">Partenza pulita</h2>
+  <p class="t-mut" style="font-size:13px;margin:0 0 12px;">Crea i fogli vuoti con le colonne di base: le voci arrivano dai progetti validati dal CISO e dagli inserimenti manuali. Puoi importare il workbook in un secondo momento.</p>
+  <div class="bdg-anni" style="margin:0;">
+    <form method="post" action="{% url 'flusso:crea_foglio_vuoto' %}" style="display:inline;">
+      {% csrf_token %}<input type="hidden" name="tipo" value="BUDGET"><input type="hidden" name="anno" value="{{ anno_budget }}">
+      <button type="submit" class="btn btn-primario btn-sm">Crea Budget {{ anno_budget }}</button>
+    </form>
+    <form method="post" action="{% url 'flusso:crea_foglio_vuoto' %}" style="display:inline;">
+      {% csrf_token %}<input type="hidden" name="tipo" value="EXTRA"><input type="hidden" name="anno" value="{{ anno_corrente }}">
+      <button type="submit" class="btn btn-sm">Crea Extra Budget {{ anno_corrente }}</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 <div class="vuoto-box">
-  <p><b>Nessun foglio importato.</b> I workbook si caricano una volta dal server, conservando tutti i fogli e le colonne:</p>
+  <p><b>Nessun foglio presente.</b> In alternativa puoi importare i workbook dal server, conservando tutti i fogli e le colonne:</p>
   <p class="t-mut" style="margin-top:10px;font-family:ui-monospace,monospace;font-size:12.5px;">python manage.py importa_budget --budget /percorso/Budget_2026_V5.xlsx --extra /percorso/Extra_Budget_2026.xlsx --anno 2026</p>
-  <p class="t-mut">L'import è ripetibile: le righe generate dai progetti approvati vengono conservate.</p>
+  <p class="t-mut">L'import è ripetibile e conserva le righe generate dai progetti. Con <b>--solo-struttura</b> importa colonne e fogli senza le righe storiche.</p>
 </div>
 {% endblock %}

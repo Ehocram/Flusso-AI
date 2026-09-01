@@ -261,6 +261,10 @@ class Richiesta(models.Model):
         "Entity", max_length=12, choices=Entity.choices, blank=True,
         help_text="Entità di riferimento; se indicata dall'owner viene riportata nell'analisi.",
     )
+    data_necessita = models.DateField(
+        "Entro quando serve", null=True, blank=True,
+        help_text="Data entro cui l'owner ha bisogno della soluzione: guida la pianificazione.",
+    )
     clone_di = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="cloni",
         editable=False, help_text="Scheda AI di origine, se questa è una scheda clonata.",
@@ -331,6 +335,14 @@ class Richiesta(models.Model):
     )
     # Classificazione economica della componente Application / IT Operation: puo'
     # essere diversa da quella del progetto AI e viene ereditata dalla scheda generata.
+    costo_application = models.DecimalField(
+        "Costo componente Application (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Costo della componente applicativa: viene riportato sulla scheda generata.",
+    )
+    costo_it_operation = models.DecimalField(
+        "Costo componente IT Operation (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Costo della componente IT Operation: viene riportato sulla scheda generata.",
+    )
     app_capex = models.BooleanField("Capex (Application)", default=False)
     app_opex = models.BooleanField("Opex (Application)", default=False)
     app_ifrs = models.BooleanField("IFRS (Application)", default=False)

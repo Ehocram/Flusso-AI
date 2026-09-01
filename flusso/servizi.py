@@ -249,6 +249,10 @@ def clona_per_funzioni(richiesta, attore=None) -> list:
         TipoProgetto.APPLICATION: (richiesta.app_capex, richiesta.app_opex, richiesta.app_ifrs),
         TipoProgetto.IT_OPERATION: (richiesta.ops_capex, richiesta.ops_opex, richiesta.ops_ifrs),
     }
+    costi = {
+        TipoProgetto.APPLICATION: richiesta.costo_application,
+        TipoProgetto.IT_OPERATION: richiesta.costo_it_operation,
+    }
     for tipo, testo in ((TipoProgetto.APPLICATION, richiesta.dettaglio_application),
                         (TipoProgetto.IT_OPERATION, richiesta.dettaglio_it_operation)):
         testo = (testo or "").strip()
@@ -270,6 +274,9 @@ def clona_per_funzioni(richiesta, attore=None) -> list:
             is_capex=classi[tipo][0],
             is_opex=classi[tipo][1],
             is_ifrs=classi[tipo][2],
+            # Costo della componente: diventa il costo del progetto sulla scheda generata.
+            altri_costi=costi[tipo],
+            data_necessita=richiesta.data_necessita,
         )
         # Entra subito nella coda della funzione competente, con traccia in audit.
         clone.applica("invia", attore=attore,
@@ -357,6 +364,20 @@ def copia_in_budget(richiesta, attore=None, anno=None):
     return riga, True
 
 
+# Colonne minime usate quando si parte senza import (nomi allineati ai workbook,
+# cosi' la mappatura dei progetti resta valida e un import successivo si innesta).
+COLONNE_BUDGET_BASE = [
+    "#ID", "P/A", "Descrizione", "Fase+Desc", "Fornitore", "Tipologia", "Priorità",
+    "Approved", "Area", "Owner", "Rich.", "CPX/OPX", "IFRS", "CPX Inv.", "OPX Imp. tot.",
+    "Compete soc.", "Due date", "EFFORT IT (GG)", "Note",
+]
+COLONNE_EXTRA_BASE = [
+    "ITEM ID", "ITEM TYPE", "DESCRIPTION", "BUDGET ITEM", "PRIORITY", "REFERENCE PERSON",
+    "BUDGET RESPONSIBLE", "ESTIMATED AMOUNT", "IT APPROVED", "IT APPROVED AMOUNT",
+    "BUDGET APPROVED", "APPROVED AMOUNT", "STATUS", "NOTE",
+]
+
+
 def foglio_budget(tipo, anno, crea=False):
     """Foglio di un certo tipo (BUDGET/EXTRA) per un dato anno.
 
@@ -373,15 +394,20 @@ def foglio_budget(tipo, anno, crea=False):
     if foglio or not crea:
         return foglio
     modello = FoglioBudget.objects.filter(tipo=tipo).order_by("-anno").first()
-    if modello is None:
-        return None  # nessun workbook importato: fail loudly a monte
-    base = unicodedata.normalize("NFKD", modello.nome).encode("ascii", "ignore").decode()
+    if modello is not None:
+        nome, intestazioni, ordine = modello.nome, list(modello.intestazioni), modello.ordine
+        nota = f"Creato automaticamente da {modello.nome} {modello.anno}."
+    else:
+        # Partenza pulita: nessun workbook importato, si usa lo schema minimo.
+        nome = "Extra Budget" if tipo == "EXTRA" else "Budget"
+        intestazioni = list(COLONNE_EXTRA_BASE if tipo == "EXTRA" else COLONNE_BUDGET_BASE)
+        ordine, nota = 0, "Creato senza import: colonne di base, estendibili a mano o con l'import."
+    base = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode()
     base = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-") or "foglio"
     prefisso = "xb-" if tipo == "EXTRA" else ""
     return FoglioBudget.objects.create(
-        chiave=f"{prefisso}{base}-{anno}"[:60], nome=modello.nome, tipo=tipo, anno=anno,
-        intestazioni=list(modello.intestazioni), ordine=modello.ordine,
-        note=f"Creato automaticamente da {modello.nome} {modello.anno}.",
+        chiave=f"{prefisso}{base}-{anno}"[:60], nome=nome, tipo=tipo, anno=anno,
+        intestazioni=intestazioni, ordine=ordine, note=nota,
     )
 
 

@@ -882,7 +882,12 @@ def budget_indice(request):
               or FoglioBudget.objects.filter(tipo=TipoFoglio.EXTRA).order_by("-anno").first()
               or FoglioBudget.objects.first())
     if foglio is None:
-        return render(request, "flusso/budget_vuoto.html", {"menu": _menu_budget()})
+        from datetime import date
+        anno = date.today().year
+        return render(request, "flusso/budget_vuoto.html", {
+            "menu": _menu_budget(), "anno_corrente": anno, "anno_budget": anno + 1,
+            "puo_creare_foglio": request.user.is_funzione,
+        })
     return redirect(foglio)
 
 
@@ -917,6 +922,26 @@ def budget_foglio(request, chiave):
         "funzioni": Funzione.choices, "tipi": TipoProgetto.choices,
         "anno_corrente": anno_corrente,
     })
+
+
+@login_required
+@require_POST
+def crea_foglio_vuoto(request):
+    """Partenza pulita: crea un foglio Budget o Extra Budget senza importare nulla."""
+    if not request.user.is_funzione:
+        return HttpResponseForbidden("Solo le funzioni tecniche possono creare un foglio.")
+    tipo = request.POST.get("tipo")
+    try:
+        anno = int(request.POST.get("anno", ""))
+    except (TypeError, ValueError):
+        anno = None
+    if tipo not in (TipoFoglio.BUDGET, TipoFoglio.EXTRA) or not anno:
+        messages.error(request, "Tipo o anno non validi.")
+        return redirect("flusso:budget")
+    foglio = servizi.foglio_budget(tipo, anno, crea=True)
+    messages.success(request, f"Foglio «{foglio.nome} {anno}» creato con le colonne di base: "
+                              "aggiungi voci a mano o importa il workbook per estenderlo.")
+    return redirect(foglio)
 
 
 @login_required
