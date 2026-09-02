@@ -28,6 +28,7 @@ from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, BeneficioForm, Impo
                     ValidazioneRischioForm)
 from .kpi import calcola_kpi, riepilogo_aree
 from .models import (AttivitaEffort, ClassificazioneRischio, ConfigurazioneAI, FoglioBudget,
+                     NOME_BREVE_TIPO,
                      Priorita,
                      RigaBudget, TipoFoglio, TipoProgetto,
                      DIMENSIONE_PER_RUOLO, DIMENSIONI_PER_RUOLO, FiguraEffort, ORDINE_ATTIVITA, VoceEffort,
@@ -81,10 +82,9 @@ def _filtro_tipo(request, qs):
         q["tipo"] = val
         return "?" + q.urlencode()
 
-    brevi = {"AI": "AI", "APPLICATION": "Application", "IT_OPERATION": "IT Operation"}
     chips = [{"label": "Tutti", "href": _href("tutti"), "attivo": tipo is None, "n": qs.count()}]
-    chips += [{"label": brevi[c], "href": _href(c), "attivo": tipo == c, "n": conteggi.get(c, 0)}
-              for c, _ in TipoProgetto.choices]
+    chips += [{"label": NOME_BREVE_TIPO.get(c, c), "href": _href(c), "attivo": tipo == c,
+               "n": conteggi.get(c, 0)} for c, _ in TipoProgetto.choices]
     return tipo, chips
 
 
@@ -94,7 +94,7 @@ def _href_tipo(request, val):
     return "?" + q.urlencode()
 
 
-_NOMI_TIPO = {"AI": "AI", "APPLICATION": "Application", "IT_OPERATION": "IT Operation"}
+_NOMI_TIPO = NOME_BREVE_TIPO
 
 
 def _schede_effort(request, qs_tutti, tipo_attivo):

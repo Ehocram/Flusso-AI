@@ -210,12 +210,19 @@ class TipoProgetto(models.TextChoices):
     AI = "AI", "AI — Intelligenza Artificiale (registro AI Act)"
     APPLICATION = "APPLICATION", "Application — nuovi software, implementazioni ERP…"
     IT_OPERATION = "IT_OPERATION", "IT Operation"
+    INFOSEC = "INFOSEC", "Infosec — sicurezza informatica"
 
 
 FUNZIONE_PER_TIPO = {
     TipoProgetto.AI: "Funzione AI",
     TipoProgetto.APPLICATION: "Funzione Applicativa",
     TipoProgetto.IT_OPERATION: "Funzione IT Operations",
+    TipoProgetto.INFOSEC: "Funzione Infosec",
+}
+
+# Etichette brevi, usate da pill, chip di filtro e schede di riepilogo.
+NOME_BREVE_TIPO = {
+    "AI": "AI", "APPLICATION": "Application", "IT_OPERATION": "IT Operation", "INFOSEC": "Infosec",
 }
 
 
@@ -509,6 +516,8 @@ class Richiesta(models.Model):
         """
         if self.is_clone:
             return []
+        # Infosec non compare mai come componente di un'altra scheda: si crea solo
+        # come progetto a sé (dal form dell'owner o da una riga di budget).
         return [t for t in (TipoProgetto.APPLICATION, TipoProgetto.IT_OPERATION)
                 if t != self.tipo]
 
@@ -528,7 +537,7 @@ class Richiesta(models.Model):
     @property
     def tipo_breve(self) -> str:
         """Etichetta corta del tipo per pill e chip."""
-        return {"AI": "AI", "APPLICATION": "Application", "IT_OPERATION": "IT Operation"}.get(self.tipo, self.tipo)
+        return NOME_BREVE_TIPO.get(self.tipo, self.tipo)
 
     @property
     def funzione_competente_label(self) -> str:

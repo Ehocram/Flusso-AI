@@ -254,7 +254,7 @@ def riepilogo_aree():
     from decimal import Decimal
     from .models import TipoProgetto, VoceEffort
 
-    nomi = {"AI": "AI", "APPLICATION": "Application", "IT_OPERATION": "IT Operation"}
+    from .models import NOME_BREVE_TIPO as nomi
     aree = []
     for codice, _ in TipoProgetto.choices:
         qs = Richiesta.objects.filter(tipo=codice)
@@ -278,7 +278,7 @@ def riepilogo_aree():
         sviluppo = voci.filter(attivita="SVILUPPO").aggregate(t=Sum("ore"))["t"] or 0
         approvati = qs.filter(stato__in=[Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO])
         aree.append({
-            "codice": codice, "nome": nomi[codice],
+            "codice": codice, "nome": nomi.get(codice, codice),
             "n": qs.count(),
             "n_attivi": approvati.count(),
             "in_approvazione": qs.filter(stato__in=[Stato.PRONTA_APPROVAZIONE,

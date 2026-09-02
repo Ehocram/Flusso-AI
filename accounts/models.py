@@ -10,6 +10,7 @@ class Ruolo(models.TextChoices):
     AI_OFFICER = "AI_OFFICER", "Funzione AI"
     APP_OFFICER = "APP_OFFICER", "Funzione Applicativa"
     ITOPS_OFFICER = "ITOPS_OFFICER", "Funzione IT Operations"
+    INFOSEC_OFFICER = "INFOSEC_OFFICER", "Funzione Infosec"
     APPROVATORE = "APPROVATORE", "Approvatore"
     OWNER = "OWNER", "Owner di funzione"
     AUDITOR = "AUDITOR", "Auditor (sola lettura)"
@@ -19,9 +20,14 @@ class Ruolo(models.TextChoices):
 
 
 # Le tre "funzioni tecniche" hanno permessi identici nel processo: AI, Applicativa, IT Operations.
-RUOLI_FUNZIONE = (Ruolo.AI_OFFICER, Ruolo.APP_OFFICER, Ruolo.ITOPS_OFFICER)
+# Il CISO ha i permessi delle funzioni tecniche (presidia l'area Infosec) OLTRE
+# ai propri di validazione della compliance.
+RUOLI_FUNZIONE = (Ruolo.AI_OFFICER, Ruolo.APP_OFFICER, Ruolo.ITOPS_OFFICER,
+                  Ruolo.INFOSEC_OFFICER, Ruolo.CISO)
 # Tipo di progetto di competenza di ciascuna funzione (valori di flusso.models.TipoProgetto).
-TIPO_PER_RUOLO = {Ruolo.AI_OFFICER: "AI", Ruolo.APP_OFFICER: "APPLICATION", Ruolo.ITOPS_OFFICER: "IT_OPERATION"}
+TIPO_PER_RUOLO = {Ruolo.AI_OFFICER: "AI", Ruolo.APP_OFFICER: "APPLICATION",
+                  Ruolo.ITOPS_OFFICER: "IT_OPERATION", Ruolo.INFOSEC_OFFICER: "INFOSEC",
+                  Ruolo.CISO: "INFOSEC"}
 
 
 class Funzione(models.TextChoices):
