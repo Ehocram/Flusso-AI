@@ -411,12 +411,28 @@ def esegui_azione(request, pk):
 
     # GATE: niente passaggio alla Direzione senza decisione di budget + tre validazioni.
     if azione in ("presenta_approvazione", "invia_in_approvazione"):
-        if not richiesta.esito_budget:
-            messages.error(
-                request,
-                "Prima dell'approvazione l'owner deve indicare se l'importo è a budget o extra budget.",
-            )
-            return redirect(richiesta)
+        if richiesta.tipo == TipoProgetto.AI:
+            # Solo sui progetti AI la copertura la decide l'owner.
+            if not richiesta.esito_budget:
+                messages.error(
+                    request,
+                    "Prima dell'approvazione l'owner deve indicare se l'importo è a budget o extra budget.",
+                )
+                return redirect(richiesta)
+        else:
+            # Application / IT Operation / Infosec: la copertura è il «Budget IT»
+            # indicato dalla funzione; l'owner non entra nel merito dei costi IT.
+            if not richiesta.budget_it:
+                messages.error(
+                    request,
+                    "Prima di proseguire indica il «Budget IT» (Budget / Extra Budget) nell'analisi.",
+                )
+                return redirect(richiesta)
+            if not richiesta.esito_budget:
+                richiesta.esito_budget = (EsitoBudget.A_BUDGET
+                                          if richiesta.budget_it == "BUDGET"
+                                          else EsitoBudget.EXTRA_BUDGET)
+                richiesta.save(update_fields=["esito_budget"])
         richiesta.assicura_classificazioni()
         if not richiesta.rischi_tutti_validati:
             messages.error(
@@ -1191,6 +1207,11 @@ def _segna_pronta_se_validata(richiesta, attore) -> bool:
     """Auto-avanzamento: se tutte le dimensioni di rischio sono validate/corrette e il
     budget è definito, la pratica passa a «Pronta per approvazione». L'invio alla
     Direzione resta un'azione manuale riservata alla Funzione tecnica."""
+    # Copertura definita: decisione dell'owner sui progetti AI, «Budget IT» sugli altri.
+    if richiesta.tipo != TipoProgetto.AI and richiesta.budget_it and not richiesta.esito_budget:
+        richiesta.esito_budget = (EsitoBudget.A_BUDGET if richiesta.budget_it == "BUDGET"
+                                  else EsitoBudget.EXTRA_BUDGET)
+        richiesta.save(update_fields=["esito_budget"])
     if (richiesta.stato == Stato.IN_QUALIFICA and richiesta.esito_budget
             and richiesta.rischi_tutti_validati):
         try:
