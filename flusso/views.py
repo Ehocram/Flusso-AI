@@ -7,6 +7,7 @@ prima di essere applicata. I pulsanti nei template sono solo un riflesso di
 questi controlli, non la loro fonte.
 """
 
+import logging
 import os
 from decimal import Decimal, InvalidOperation
 from collections import Counter
@@ -38,6 +39,7 @@ from .notifiche import notifica_transizione
 from .workflow import FASI, STATI_OPERATIVI, STATI_TERMINALI, Stato, azioni_disponibili, puo_eseguire, transizione
 
 _NOMI_RISCHIO = dict(TipoRischio.choices)
+logger = logging.getLogger(__name__)
 
 
 def _richieste_visibili(utente):
@@ -372,6 +374,29 @@ def modifica(request, pk):
     return render(request, "flusso/richiesta_form.html", {"form": form, "nuova": False, "richiesta": richiesta})
 
 
+def _allinea_riga_budget(richiesta, attore=None, request=None):
+    """Scrive (o aggiorna) la riga del progetto nel foglio di budget.
+
+    Va chiamata a OGNI ingresso in «Pronta per approvazione» e all'approvazione,
+    qualunque sia la strada: la copia era agganciata al solo avanzamento
+    automatico, quindi una pratica segnata pronta a mano non finiva nei fogli.
+    Un fallimento non blocca la pratica, ma viene registrato e segnalato a video
+    invece di restare silenzioso.
+    """
+    try:
+        riga, _creata = servizi.copia_in_budget(richiesta, attore=attore)
+    except Exception:
+        logger.exception("Copia nel foglio di budget non riuscita per %s", richiesta.codice)
+        riga = None
+    if riga is None and request is not None:
+        messages.warning(
+            request,
+            "Il progetto non è stato scritto nei fogli di budget: verifica che il foglio "
+            "Budget / Extra Budget dell'anno esista, poi usa «sincronizza_budget» per allinearlo.",
+        )
+    return riga
+
+
 @login_required
 @require_POST
 def esegui_azione(request, pk):
@@ -450,6 +475,9 @@ def esegui_azione(request, pk):
             servizi.pianifica_su_approvazione(richiesta)
         except Exception:
             pass  # le date sono utili ai KPI ma non devono bloccare l'approvazione
+    if azione in ("presenta_approvazione", "invia_in_approvazione", "approva"):
+        # Copertura decisa e compliance validata: il progetto entra nel foglio di budget.
+        _allinea_riga_budget(richiesta, attore=request.user, request=request)
     notifica_transizione(request, richiesta, evento)
     messages.success(request, f"{evento.etichetta}: {richiesta.stato_label}.")
     return redirect(richiesta)
@@ -1217,10 +1245,7 @@ def _segna_pronta_se_validata(richiesta, attore) -> bool:
         try:
             richiesta.applica("presenta_approvazione", attore=attore,
                               nota="Avanzamento automatico: tutte le dimensioni di rischio validate.")
-            try:
-                servizi.copia_in_budget(richiesta, attore=attore)
-            except Exception:
-                pass  # la riga di budget non deve bloccare l'avanzamento della pratica
+            _allinea_riga_budget(richiesta, attore=attore)
             return True
         except Exception:
             return False
