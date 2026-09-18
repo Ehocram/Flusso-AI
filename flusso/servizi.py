@@ -329,7 +329,12 @@ def _riga_da_richiesta(foglio, richiesta):
     if richiesta.data_inizio:
         scrivi(richiesta.data_inizio.isoformat(), "Due date")
     scrivi(richiesta.funzione_competente_label, "Rich.")
-    scrivi("Progetto Digital Transformation — compliance validata dal CISO", "Note", "NOTE")
+    if richiesta.rischi_tutti_validati:
+        nota = "Progetto Digital Transformation — compliance validata dal CISO"
+    else:
+        nota = ("Progetto Digital Transformation — in analisi presso la "
+                + richiesta.funzione_competente_label)
+    scrivi(nota, "Note", "NOTE")
     return dati
 
 

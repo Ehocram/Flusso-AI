@@ -527,8 +527,11 @@ def esegui_azione(request, pk):
             servizi.pianifica_su_approvazione(richiesta)
         except Exception:
             pass  # le date sono utili ai KPI ma non devono bloccare l'approvazione
-    if azione in ("presenta_approvazione", "invia_in_approvazione", "approva"):
-        # Copertura decisa e compliance validata: il progetto entra nel foglio di budget.
+    if azione in ("prendi_in_carico", "presenta_approvazione", "invia_in_approvazione", "approva"):
+        # La riga di budget nasce quando la funzione tecnica prende in carico il
+        # progetto — così l'esigenza è visibile nel foglio da subito, anche senza
+        # costi — e viene riscritta a ogni passaggio successivo (analisi, copertura
+        # decisa, approvazione), spostandosi fra Budget ed Extra Budget se serve.
         _allinea_riga_budget(richiesta, attore=request.user, request=request)
     notifica_transizione(request, richiesta, evento)
     messages.success(request, f"{evento.etichetta}: {richiesta.stato_label}.")
