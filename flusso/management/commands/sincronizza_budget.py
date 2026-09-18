@@ -1,8 +1,8 @@
 """Allinea ai fogli di budget i progetti la cui compliance è già stata validata.
 
 Serve dopo il primo import dei workbook (o dopo un periodo in cui i fogli non
-erano presenti): la copia automatica scatta al momento della terza validazione
-del CISO, quindi i progetti validati PRIMA non hanno una riga.
+erano presenti): la riga viene scritta alla presa in carico e riscritta ai
+passaggi successivi, quindi i progetti avanzati PRIMA non hanno una riga.
 
 Uso:
     python manage.py sincronizza_budget            # anteprima, non scrive nulla

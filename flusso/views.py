@@ -339,23 +339,21 @@ def dettaglio(request, pk):
             azioni_formset = AzioneTrattamentoFormSet(instance=c, prefix=f"az_{c.tipo}")
         rischi.append({"c": c, "form": form, "tratta_form": tratta_form,
                        "azioni_formset": azioni_formset})
-    blocco_approvazione = richiesta.stato == Stato.IN_QUALIFICA and not richiesta.rischi_tutti_validati
-    if blocco_approvazione:
-        azioni = [a for a in azioni if a.azione != "presenta_approvazione"]
     # La decisione di budget dell'owner ha un pannello dedicato: fuori dai bottoni generici.
     mostra_decisione_budget = (
         richiesta.stato == Stato.ATTESA_BUDGET
         and request.user.is_owner
         and richiesta.proponente_id == request.user.id
     )
-    azioni = [a for a in azioni if a.azione not in ("conferma_budget", "rifiuta_progetto")]
+    # «approva» non è più un pulsante: si registra nel foglio di budget.
+    azioni = [a for a in azioni
+              if a.azione not in ("conferma_budget", "rifiuta_progetto", "approva")]
 
     return render(request, "flusso/dettaglio.html", {
         "richiesta": richiesta, "azioni": azioni, "timeline": timeline,
         "puo_modificare": puo_modificare, "puo_eliminare": puo_eliminare,
         "sal_form": sal_form, "analisi_form": analisi_form, "beneficio_form": beneficio_form,
         "rischi": rischi, "puo_analizza_rischio": request.user.is_funzione,
-        "blocco_approvazione": blocco_approvazione,
         "mostra_decisione_budget": mostra_decisione_budget,
         "rischi_mancanti": richiesta.rischi_mancanti_label,
     })
@@ -459,6 +457,12 @@ def esegui_azione(request, pk):
     t = transizione(azione)
     if t is None or not puo_eseguire(richiesta, request.user, azione):
         return HttpResponseForbidden("Azione non consentita.")
+    if azione == "approva":
+        # L'approvazione la decide il foglio di budget (colonna «Approved»), non un
+        # pulsante: qui si rifiuta anche una POST costruita a mano.
+        messages.error(request, "L'approvazione si registra nel foglio di budget: "
+                                "metti a vero la colonna «Approved» sulla riga del progetto.")
+        return redirect(richiesta)
     if t.richiede_nota and not nota:
         messages.error(request, f"L'azione «{t.label}» richiede una nota.")
         return redirect(richiesta)
@@ -486,7 +490,8 @@ def esegui_azione(request, pk):
             messages.error(request, "Non posso inviare all'owner: " + motivo)
             return redirect(richiesta)
 
-    # GATE: niente passaggio alla Direzione senza decisione di budget + tre validazioni.
+    # GATE: niente passaggio alla Direzione senza la copertura di budget. La
+    # validazione di compliance del CISO è facoltativa e non entra nel gate.
     if azione in ("presenta_approvazione", "invia_in_approvazione"):
         if richiesta.tipo == TipoProgetto.AI:
             # Solo sui progetti AI la copertura la decide l'owner.
@@ -510,32 +515,26 @@ def esegui_azione(request, pk):
                                           if richiesta.budget_it == "BUDGET"
                                           else EsitoBudget.EXTRA_BUDGET)
                 richiesta.save(update_fields=["esito_budget"])
+        # Le tre righe di rischio devono esistere (il CISO le validerà quando vuole),
+        # ma la validazione NON è un requisito per proseguire: è facoltativa e si fa
+        # in coda, anche a progetto già approvato o avviato.
         richiesta.assicura_classificazioni()
-        if not richiesta.rischi_tutti_validati:
-            messages.error(
-                request,
-                "Prima di presentare alla Direzione servono le tre validazioni di rischio. "
-                f"Mancano: {richiesta.rischi_mancanti_label}.",
-            )
-            return redirect(richiesta)
 
     evento = richiesta.applica(azione, attore=request.user, nota=nota)
     if azione in ("riporta_in_bozza", "riporta_in_bozza_owner"):
         richiesta.azzera_per_bozza()  # budget, date e validazioni: si riparte
-    if richiesta.stato in (Stato.RESPINTA, Stato.ARCHIVIATA):
-        # La pratica non prosegue (non approvata o archiviata dall'owner): esce dai
-        # fogli di budget. Vale per qualunque azione porti a questi due stati.
+    if richiesta.stato in (Stato.BOZZA, Stato.INVIATA, Stato.RESPINTA, Stato.ARCHIVIATA):
+        # La pratica non è più in carico a nessuno (tornata in bozza, rimandata
+        # all'owner per integrazione, non approvata o archiviata): esce dai fogli di
+        # budget. Il controllo è sullo stato raggiunto, così vale per ogni azione che
+        # ci porta. Se il progetto riparte, la riga si riscrive alla presa in carico.
         richiesta.togli_dal_budget()
-    if azione == "approva":
-        try:
-            servizi.pianifica_su_approvazione(richiesta)
-        except Exception:
-            pass  # le date sono utili ai KPI ma non devono bloccare l'approvazione
-    if azione in ("prendi_in_carico", "presenta_approvazione", "invia_in_approvazione", "approva"):
+    if azione in ("prendi_in_carico", "presenta_approvazione", "invia_in_approvazione"):
         # La riga di budget nasce quando la funzione tecnica prende in carico il
         # progetto — così l'esigenza è visibile nel foglio da subito, anche senza
-        # costi — e viene riscritta a ogni passaggio successivo (analisi, copertura
-        # decisa, approvazione), spostandosi fra Budget ed Extra Budget se serve.
+        # costi — e viene riscritta ai passaggi successivi, spostandosi fra Budget ed
+        # Extra Budget se cambia la copertura. All'approvazione NON si riscrive: quella
+        # arriva dal foglio, e riscrivere la riga cancellerebbe la spunta appena messa.
         _allinea_riga_budget(richiesta, attore=request.user, request=request)
     notifica_transizione(request, richiesta, evento)
     messages.success(request, f"{evento.etichetta}: {richiesta.stato_label}.")
@@ -1138,6 +1137,18 @@ def salva_riga_budget(request, pk):
     riga.dati = [request.POST.get(f"c{i}", "") for i in range(n_col)]
     riga.save(update_fields=["dati", "aggiornata_il"])
     messages.success(request, "Riga aggiornata.")
+    # L'approvazione non ha un pulsante: la decide il foglio. Se la colonna di
+    # approvazione è a vero, il progetto collegato viene approvato qui.
+    esito, avviso = servizi.allinea_approvazione_da_riga(riga, attore=request.user)
+    if esito == "approvata":
+        messages.success(request, f"{riga.richiesta.codice} approvato: "
+                                  "la riga è segnata approvata nel foglio.")
+    elif esito == "revocata":
+        riga.richiesta.refresh_from_db()
+        messages.warning(request, f"{riga.richiesta.codice}: approvazione revocata, "
+                                  f"la pratica torna in «{riga.richiesta.stato_label}».")
+    elif avviso:
+        messages.warning(request, "Approvazione non allineata — " + avviso)
     return redirect(riga.foglio.get_absolute_url() + f"#r{riga.pk}")
 
 
@@ -1302,27 +1313,6 @@ def analizza_rischio(request, pk):
     return redirect(richiesta)
 
 
-def _segna_pronta_se_validata(richiesta, attore) -> bool:
-    """Auto-avanzamento: se tutte le dimensioni di rischio sono validate/corrette e il
-    budget è definito, la pratica passa a «Pronta per approvazione». L'invio alla
-    Direzione resta un'azione manuale riservata alla Funzione tecnica."""
-    # Copertura definita: decisione dell'owner sui progetti AI, «Budget IT» sugli altri.
-    if richiesta.tipo != TipoProgetto.AI and richiesta.budget_it and not richiesta.esito_budget:
-        richiesta.esito_budget = (EsitoBudget.A_BUDGET if richiesta.budget_it == "BUDGET"
-                                  else EsitoBudget.EXTRA_BUDGET)
-        richiesta.save(update_fields=["esito_budget"])
-    if (richiesta.stato == Stato.IN_QUALIFICA and richiesta.esito_budget
-            and richiesta.rischi_tutti_validati):
-        try:
-            richiesta.applica("presenta_approvazione", attore=attore,
-                              nota="Avanzamento automatico: tutte le dimensioni di rischio validate.")
-            _allinea_riga_budget(richiesta, attore=attore)
-            return True
-        except Exception:
-            return False
-    return False
-
-
 @login_required
 @require_POST
 def valida_rischio(request, pk, tipo):
@@ -1344,8 +1334,9 @@ def valida_rischio(request, pk, tipo):
         )
         verbo = "modificato" if classificazione.stato == "MODIFICATO" else "validato"
         messages.success(request, f"Rischio {_NOMI_RISCHIO[tipo]} {verbo}: {classificazione.categoria_label}.")
-        if _segna_pronta_se_validata(richiesta, request.user):
-            messages.success(request, "Tutte le dimensioni di rischio sono validate: la pratica è «Pronta per approvazione». La " + richiesta.funzione_competente_label + " deciderà quando inviarla alla Direzione.")
+        if richiesta.rischi_tutti_validati:
+            messages.success(request, "Compliance completa: le tre dimensioni sono validate. "
+                                      "Lo stato della pratica non cambia.")
     else:
         messages.error(request, "Selezione non valida.")
     return redirect(richiesta)

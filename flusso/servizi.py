@@ -471,3 +471,87 @@ def crea_progetto_da_riga(foglio, dati_riga, attore, titolo, funzione, tipo_prog
     riga = RigaBudget.objects.create(foglio=foglio, ordine=ultimo + 10, dati=dati,
                                      richiesta=richiesta, da_progetto=True)
     return riga, richiesta
+
+
+# --- Approvazione decisa nel foglio di budget ----------------------------------
+# Non c'e' un pulsante «approva»: il progetto risulta approvato quando nel foglio
+# la colonna di approvazione viene messa a vero. E' il budget a decidere, e la
+# pratica si allinea da sola.
+
+COLONNE_APPROVAZIONE = ("approved", "budget approved", "it approved", "approved cio")
+VALORI_VERI = {"true", "vero", "si", "sì", "yes", "y", "x", "1", "ok", "approvato", "approved"}
+
+
+def indice_colonna_approvazione(foglio):
+    """Posizione della colonna di approvazione: confronto esatto, per non scambiarla
+    con colonne di importo tipo «APPROVED AMOUNT»."""
+    norm = [str(h or "").strip().lower() for h in foglio.intestazioni]
+    for nome in COLONNE_APPROVAZIONE:
+        if nome in norm:
+            return norm.index(nome)
+    return None
+
+
+def valore_approvato(valore) -> bool:
+    if isinstance(valore, bool):
+        return valore
+    if isinstance(valore, (int, float)):
+        return float(valore) == 1
+    return str(valore).strip().lower() in VALORI_VERI
+
+
+# Stati da cui la riga di budget puo' portare il progetto ad approvato.
+_PRIMA_DELL_APPROVAZIONE = ("IN_QUALIFICA", "ATTESA_BUDGET", "PRONTA_APPROVAZIONE",
+                            "IN_APPROVAZIONE")
+
+
+def allinea_approvazione_da_riga(riga, attore=None):
+    """Allinea lo stato del progetto alla colonna di approvazione del foglio.
+
+    Vero  -> il progetto risulta approvato (passando per «pronta» se era ancora in
+             analisi: la decisione di budget vale anche come passaggio di stato).
+    Falso -> se era approvato proprio così, torna allo stato che aveva prima.
+
+    Ritorna (esito, avviso) con esito in {"", "approvata", "revocata"}; l'avviso e'
+    valorizzato quando c'e' una spunta ma l'allineamento non si puo' applicare.
+    """
+    from .workflow import Stato
+
+    richiesta = riga.richiesta
+    if richiesta is None:
+        return "", ""
+    indice = indice_colonna_approvazione(riga.foglio)
+    if indice is None:
+        return "", ""
+    segnata = valore_approvato(riga.valore(indice))
+    dove = f"{riga.foglio.nome} {riga.foglio.anno}"
+
+    if segnata:
+        if richiesta.stato in (Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO,
+                               Stato.COMPLETATO):
+            return "", ""  # gia' approvata: niente da fare
+        if richiesta.stato not in _PRIMA_DELL_APPROVAZIONE:
+            return "", (f"{richiesta.codice} è in stato «{richiesta.stato_label}»: "
+                        "va prima preso in carico dalla funzione competente.")
+        nota = f"Approvazione automatica: riga segnata approvata nel foglio {dove}."
+        if richiesta.stato in (Stato.IN_QUALIFICA, Stato.ATTESA_BUDGET):
+            richiesta.applica("presenta_approvazione", attore=attore, nota=nota)
+        richiesta.applica("approva", attore=attore, nota=nota)
+        try:
+            pianifica_su_approvazione(richiesta)
+        except Exception:
+            pass  # le date aiutano i KPI ma non devono fermare l'approvazione
+        return "approvata", ""
+
+    # Spunta tolta: si torna indietro solo se il progetto non è ancora partito.
+    if richiesta.stato == Stato.APPROVATA:
+        richiesta.torna_allo_stato_precedente(
+            attore=attore, azione="revoca_approvazione",
+            etichetta="Approvazione revocata dal foglio di budget",
+            nota=f"Nel foglio {dove} la riga non è più segnata approvata.",
+            ripiego=Stato.PRONTA_APPROVAZIONE)
+        return "revocata", ""
+    if richiesta.stato in (Stato.ATTIVO, Stato.MONITORAGGIO, Stato.COMPLETATO):
+        return "", (f"{richiesta.codice} è già avviato ({richiesta.stato_label}): "
+                    "l'approvazione non si revoca dal foglio, si interviene sulla scheda.")
+    return "", ""

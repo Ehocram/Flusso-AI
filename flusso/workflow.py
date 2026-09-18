@@ -153,7 +153,7 @@ TRANSIZIONI: tuple[Transizione, ...] = (
         da=(Stato.IN_QUALIFICA,),
         a=Stato.PRONTA_APPROVAZIONE,
         ruoli=RUOLI_FUNZIONE,
-        descrizione="Rischi validati e budget deciso: la pratica è pronta. La {funzione} deciderà quando inviarla alla Direzione.",
+        descrizione="Copertura di budget definita: la pratica è pronta. La {funzione} deciderà quando inviarla alla Direzione. La validazione di compliance non è un requisito.",
     ),
     Transizione(
         azione="invia_in_approvazione",
@@ -207,11 +207,11 @@ TRANSIZIONI: tuple[Transizione, ...] = (
         azione="respingi",
         label="Non approvare",
         da=(Stato.PRONTA_APPROVAZIONE, Stato.IN_APPROVAZIONE),
-        a=Stato.RESPINTA,
+        a=Stato.INVIATA,
         ruoli=RUOLI_FUNZIONE,
         stile="pericolo",
         richiede_nota=True,
-        descrizione="Decisione dell'Approvatore: non approvazione.",
+        descrizione="Non approvazione: la voce esce dal foglio di budget e la pratica torna in coda alla {funzione}, che potrà riprenderla in carico.",
     ),
     Transizione(
         azione="avvia_progetto",

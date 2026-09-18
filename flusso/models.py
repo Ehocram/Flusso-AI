@@ -566,6 +566,24 @@ class Richiesta(models.Model):
                 c.validato_il = None
                 c.save(update_fields=["stato", "validato_da", "validato_il"])
 
+    def torna_allo_stato_precedente(self, attore=None, nota="", azione="passo_indietro",
+                                    etichetta="Passo indietro", ripiego=None):
+        """Riporta la pratica allo stato da cui era arrivata a quello attuale.
+
+        Serve quando una decisione presa fuori dal flusso viene ritirata — oggi la
+        spunta di approvazione nel foglio di budget rimessa a falso. Non è una
+        transizione del workflow, ma resta tracciata nell'audit trail come le altre.
+        """
+        ultimo = (self.transizioni.filter(stato_a=self.stato)
+                  .exclude(stato_da=self.stato).order_by("-creata_il").first())
+        precedente = ultimo.stato_da if ultimo else (ripiego or Stato.PRONTA_APPROVAZIONE)
+        stato_da = self.stato
+        self.stato = precedente
+        self.save(update_fields=["stato", "aggiornata_il"])
+        return Transizione.objects.create(
+            richiesta=self, azione=azione, etichetta=etichetta, stato_da=stato_da,
+            stato_a=precedente, attore=attore, nota=nota)
+
     def togli_dal_budget(self):
         """Toglie dai fogli le righe di questo progetto.
 

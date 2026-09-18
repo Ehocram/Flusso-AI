@@ -271,13 +271,13 @@
     <div class="card rischio-card" id="rischio" style="margin-top:18px;">
       <div class="rischio-cardhead">
         <h2><i class="ti ti-scale" style="vertical-align:-2px;color:var(--rosso)"></i> Rischio &amp; Conformità
-          <span class="sub">classificazione preliminare · da validare dai presìdi</span></h2>
+          <span class="sub">classificazione preliminare · validazione del CISO facoltativa, in qualsiasi momento</span></h2>
         <span class="rk-conta {% if richiesta.rischi_tutti_validati %}ok{% endif %}"><i class="ti ti-clipboard-check"></i> Validazioni {{ richiesta.rischi_validati_n }}/3</span>
       </div>
 
-      {% if blocco_approvazione %}
-      <div class="msg msg-info" style="margin:10px 0 4px;"><i class="ti ti-alert-triangle"></i>
-        Per presentare alla Direzione servono le tre validazioni di rischio (AI Act → Funzione Legale, NIS2 → CISO, GDPR → DPO).{% if rischi_mancanti %} Mancano: <b>{{ rischi_mancanti }}</b>.{% endif %}</div>
+      {% if not richiesta.rischi_tutti_validati %}
+      <div class="msg msg-info" style="margin:10px 0 4px;"><i class="ti ti-info-circle"></i>
+        La validazione di compliance (AI Act, NIS2, GDPR) è <b>facoltativa e non blocca il flusso</b>: il progetto può essere preso in carico, messo a budget e approvato comunque. Il CISO la registra quando vuole, anche a progetto avviato.{% if rischi_mancanti %} Da validare: <b>{{ rischi_mancanti }}</b>.{% endif %}</div>
       {% endif %}
 
       {% for d in rischi %}
