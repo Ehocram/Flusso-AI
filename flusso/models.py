@@ -558,13 +558,22 @@ class Richiesta(models.Model):
         self.data_inizio = None
         self.data_consegna_prevista = None
         self.save(update_fields=["esito_budget", "data_inizio", "data_consegna_prevista"])
-        self.righe_budget.all().delete()
+        self.togli_dal_budget()
         for c in self.classificazioni.all():
             if c.stato in (StatoRischio.VALIDATO, StatoRischio.MODIFICATO):
                 c.stato = StatoRischio.PROPOSTO_AI if c.categoria else StatoRischio.DA_ANALIZZARE
                 c.validato_da = None
                 c.validato_il = None
                 c.save(update_fields=["stato", "validato_da", "validato_il"])
+
+    def togli_dal_budget(self):
+        """Toglie dai fogli le righe di questo progetto.
+
+        Serve quando la pratica smette di essere un impegno: rientro in bozza,
+        non approvazione, archiviazione dell'owner. Se il progetto ritorna in
+        carico la riga viene riscritta da capo.
+        """
+        self.righe_budget.all().delete()
 
     @property
     def is_bozza(self) -> bool:

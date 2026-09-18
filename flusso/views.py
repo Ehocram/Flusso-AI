@@ -522,6 +522,10 @@ def esegui_azione(request, pk):
     evento = richiesta.applica(azione, attore=request.user, nota=nota)
     if azione in ("riporta_in_bozza", "riporta_in_bozza_owner"):
         richiesta.azzera_per_bozza()  # budget, date e validazioni: si riparte
+    if richiesta.stato in (Stato.RESPINTA, Stato.ARCHIVIATA):
+        # La pratica non prosegue (non approvata o archiviata dall'owner): esce dai
+        # fogli di budget. Vale per qualunque azione porti a questi due stati.
+        richiesta.togli_dal_budget()
     if azione == "approva":
         try:
             servizi.pianifica_su_approvazione(richiesta)
