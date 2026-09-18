@@ -146,3 +146,72 @@ def risposta_excel(richieste, filtri) -> HttpResponse:
     risposta["Content-Disposition"] = f'attachment; filename="{nome_file(filtri)}"'
     wb.save(risposta)
     return risposta
+
+
+# --- Workbook di budget --------------------------------------------------------
+# Rileggere i fogli come sono stati importati: stessi nomi, stesse intestazioni,
+# stesse righe. L'import dell'Extra Budget prefissa le chiavi con «xb-», quello
+# del Budget no: e' cosi' che si riconosce da quale dei due file arriva un foglio.
+
+VIETATI_NEL_NOME = set('[]:*?/\\')
+
+
+def _famiglia(foglio) -> str:
+    return "xb" if foglio.chiave.startswith("xb-") else "bdg"
+
+
+def fogli_del_workbook(foglio):
+    """I fogli del workbook a cui appartiene questo foglio, nell'ordine originale."""
+    from .models import FoglioBudget
+
+    famiglia = _famiglia(foglio)
+    fogli = [f for f in FoglioBudget.objects.filter(anno=foglio.anno).order_by("ordine", "nome")
+             if _famiglia(f) == famiglia]
+    return fogli or [foglio]
+
+
+def _nome_scheda(nome, usati) -> str:
+    """Nome di foglio accettato da Excel: max 31 caratteri, senza []:*?/\\, univoco."""
+    pulito = "".join(("-" if c in VIETATI_NEL_NOME else c) for c in str(nome)).strip() or "Foglio"
+    pulito = pulito[:31]
+    base, n = pulito, 2
+    while pulito.lower() in usati:
+        coda = f"-{n}"
+        pulito = base[:31 - len(coda)] + coda
+        n += 1
+    usati.add(pulito.lower())
+    return pulito
+
+
+def risposta_workbook_budget(foglio) -> HttpResponse:
+    """Scarica il workbook di budget nel formato del file di origine."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    fogli = fogli_del_workbook(foglio)
+    wb = Workbook()
+    wb.remove(wb.active)
+    usati = set()
+    for f in fogli:
+        ws = wb.create_sheet(title=_nome_scheda(f.nome, usati))
+        intestazioni = list(f.intestazioni)
+        ws.append(intestazioni)
+        for cella in ws[1]:
+            cella.font = Font(bold=True)
+        n_col = len(intestazioni)
+        for riga in f.righe.all():
+            ws.append(["" if v is None else v for v in riga.celle(n_col)])
+        ws.freeze_panes = "A2"
+        for col in range(1, n_col + 1):
+            lettera = ws.cell(row=1, column=col).column_letter
+            ws.column_dimensions[lettera].width = max(
+                12, min(len(str(intestazioni[col - 1] or "")) + 3, 40))
+
+    principale = next((f for f in fogli if f.tipo in ("BUDGET", "EXTRA")), foglio)
+    etichetta = "Extra_Budget" if _famiglia(foglio) == "xb" else "Budget"
+    risposta = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    risposta["Content-Disposition"] = (
+        f'attachment; filename="{etichetta}_{principale.anno}.xlsx"')
+    wb.save(risposta)
+    return risposta

@@ -24,7 +24,7 @@ from django.views.decorators.http import require_POST
 
 from . import servizi
 from .ai_client import genera_analisi, prova_connessione
-from .esportazioni import risposta_excel
+from .esportazioni import fogli_del_workbook, risposta_excel, risposta_workbook_budget
 from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, BeneficioForm, ImpostazioniAIForm,
                     PianificazioneForm, RichiestaForm, SalForm, TrattamentoRischioForm,
                     ValidazioneRischioForm)
@@ -1014,8 +1014,11 @@ def budget_foglio(request, chiave):
     from datetime import date
     anno_corrente = date.today().year
     prossimi = [a for a in (anno_corrente, anno_corrente + 1) if a not in anni]
+    fogli_export = fogli_del_workbook(foglio)
     return render(request, "flusso/budget_foglio.html", {
         "foglio": foglio, "intestazioni": foglio.intestazioni, "corpo": corpo,
+        "n_fogli_export": len(fogli_export),
+        "righe_export": sum(f.righe.count() for f in fogli_export),
         "menu": _menu_budget(foglio.chiave), "q": q, "anni": anni, "anni_creabili": prossimi,
         "totale": foglio.righe.count(), "mostrate": len(corpo), "da_progetto": da_progetto,
         "puo_modificare": _puo_righe_budget(request.user),
@@ -1023,6 +1026,15 @@ def budget_foglio(request, chiave):
         "funzioni": Funzione.choices, "tipi": TipoProgetto.choices,
         "anno_corrente": anno_corrente,
     })
+
+
+@login_required
+def esporta_budget(request, chiave):
+    """Scarica il workbook di budget come è stato importato: stessi fogli e colonne."""
+    if not _puo_budget(request.user):
+        return HttpResponseForbidden("Pagina riservata alle funzioni tecniche e al CISO.")
+    foglio = get_object_or_404(FoglioBudget, chiave=chiave)
+    return risposta_workbook_budget(foglio)
 
 
 @login_required

@@ -6,7 +6,13 @@
     <h1>{% if foglio.tipo == 'EXTRA' %}Extra Budget{% elif foglio.tipo == 'BUDGET' %}Budget{% else %}{{ foglio.nome }}{% endif %} <span class="anno-big">{{ foglio.anno }}</span></h1>
     <p class="sub">Foglio «{{ foglio.nome }}» — {{ intestazioni|length }} colonne, {{ totale }} righe{% if da_progetto %} · <b>{{ da_progetto }}</b> generate dai progetti approvati{% endif %}. Struttura e intestazioni sono quelle del file Excel di origine.</p>
   </div>
-  <div class="ph-side"><span class="pill">{{ mostrate }} / {{ totale }}</span></div>
+  <div class="ph-side azioni-testata">
+    <a href="{% url 'flusso:esporta_budget' foglio.chiave %}" class="btn"
+       title="Scarica il workbook come il file di origine: {{ n_fogli_export }} fogli, {{ righe_export }} righe, stesse intestazioni">
+      <i class="ti ti-file-spreadsheet"></i> Scarica il workbook
+    </a>
+    <span class="pill">{{ mostrate }} / {{ totale }}</span>
+  </div>
 </div>
 
 {% include "flusso/_menu_budget.html" %}

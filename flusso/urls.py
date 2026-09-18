@@ -24,6 +24,7 @@ urlpatterns = [
     path("costi/", views.costi, name="costi"),
     path("budget/", views.budget_indice, name="budget"),
     path("budget/<slug:chiave>/", views.budget_foglio, name="budget_foglio"),
+    path("budget/<slug:chiave>/esporta/", views.esporta_budget, name="esporta_budget"),
     path("budget/riga/<int:pk>/salva/", views.salva_riga_budget, name="salva_riga_budget"),
     path("budget/<slug:chiave>/riga/nuova/", views.nuova_riga_budget, name="nuova_riga_budget"),
     path("budget/<slug:chiave>/anno/", views.crea_foglio_anno, name="crea_foglio_anno"),
