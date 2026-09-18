@@ -7,13 +7,18 @@
     <h1>Richieste</h1>
     <p>Le schede progetto e il loro stato nel flusso.</p>
   </div>
-  {% if user.is_owner or user.is_superuser %}
-  {% if user.is_owner %}<a href="{% url 'flusso:nuova' %}" class="btn btn-primario"><i class="ti ti-plus"></i> Nuova richiesta</a>{% endif %}
-  {% endif %}
+  <div class="azioni-testata">
+    <a href="{% url 'flusso:esporta_richieste' %}?{{ query_export }}" class="btn"
+       title="Scarica in Excel i progetti che stai vedendo, con i filtri attivi (le bozze restano fuori)">
+      <i class="ti ti-file-spreadsheet"></i> Esporta in Excel
+    </a>
+    {% if user.is_owner %}<a href="{% url 'flusso:nuova' %}" class="btn btn-primario"><i class="ti ti-plus"></i> Nuova richiesta</a>{% endif %}
+  </div>
 </div>
 {% include "flusso/_filtro_tipo.html" %}
 
 <form class="filtri" method="get">
+  <input type="hidden" name="tipo" value="{{ f_tipo }}">
   <input type="text" name="q" value="{{ q }}" placeholder="Cerca titolo o descrizione…">
   <select name="stato" onchange="this.form.submit()">
     <option value="">Tutti gli stati</option>

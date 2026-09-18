@@ -82,6 +82,7 @@ h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -.01em; }
 .page-head .eyebrow::before { content: ""; width: 12px; height: 12px; border-radius: 4px; background: var(--rosso); }
 .page-head h1 { font-size: 26px; margin-top: 5px; }
 .page-head p { margin: 4px 0 0; color: var(--testo-2); font-size: 14px; }
+.azioni-testata { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 /* ---------- bottoni ---------- */
 .btn {

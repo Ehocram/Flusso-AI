@@ -7,6 +7,7 @@ app_name = "flusso"
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("richieste/", views.lista, name="lista"),
+    path("richieste/esporta/", views.esporta_richieste, name="esporta_richieste"),
     path("board/", views.kanban, name="kanban"),
     path("kpi/", views.kpi, name="kpi"),
     path("kpi/genera/", views.genera_analisi_kpi, name="genera_analisi_kpi"),

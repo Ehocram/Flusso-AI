@@ -24,6 +24,7 @@ from django.views.decorators.http import require_POST
 
 from . import servizi
 from .ai_client import genera_analisi, prova_connessione
+from .esportazioni import risposta_excel
 from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, BeneficioForm, ImpostazioniAIForm,
                     PianificazioneForm, RichiestaForm, SalForm, TrattamentoRischioForm,
                     ValidazioneRischioForm)
@@ -197,8 +198,13 @@ def dashboard(request):
     })
 
 
-@login_required
-def lista(request):
+def _filtra_richieste(request):
+    """Filtri della pagina Richieste: chip del tipo, stato, funzione, ricerca libera.
+
+    La usano sia la lista sia l'export, cosi' il foglio Excel contiene esattamente
+    i progetti che si vedono a video, con le stesse regole di visibilita' per ruolo.
+    Ritorna (queryset, descrizione dei filtri).
+    """
     qs = _richieste_visibili(request.user)
     tipo_attivo, tipo_filtri = _filtro_tipo(request, qs)
     if tipo_attivo:
@@ -212,13 +218,46 @@ def lista(request):
         qs = qs.filter(funzione=funzione)
     if cerca:
         qs = qs.filter(Q(titolo__icontains=cerca) | Q(descrizione__icontains=cerca))
+    filtri = {
+        "tipo_attivo": tipo_attivo, "tipo_filtri": tipo_filtri,
+        "tipo_label": NOME_BREVE_TIPO.get(tipo_attivo, "") if tipo_attivo else "",
+        "stato": stato, "stato_label": dict(Stato.choices).get(stato, ""),
+        "funzione": funzione, "funzione_label": dict(Funzione.choices).get(funzione, ""),
+        "cerca": cerca,
+    }
+    return qs, filtri
 
+
+@login_required
+def lista(request):
+    qs, filtri = _filtra_richieste(request)
     richieste = [{"obj": r, "azioni": azioni_disponibili(r, request.user)} for r in qs]
+    # Il tipo attivo viaggia esplicito nei link (chip e export): senza, un invio del
+    # form di filtro ricadrebbe sul tipo di competenza del ruolo.
+    parametri = request.GET.copy()
+    parametri["tipo"] = filtri["tipo_attivo"] or "tutti"
     return render(request, "flusso/lista.html", {
-        "tipo_filtri": tipo_filtri, "tipo_attivo": tipo_attivo,
+        "tipo_filtri": filtri["tipo_filtri"], "tipo_attivo": filtri["tipo_attivo"],
         "richieste": richieste, "stati": Stato.choices, "funzioni": Funzione.choices,
-        "f_stato": stato, "f_funzione": funzione, "q": cerca,
+        "f_stato": filtri["stato"], "f_funzione": filtri["funzione"], "q": filtri["cerca"],
+        "f_tipo": filtri["tipo_attivo"] or "tutti", "query_export": parametri.urlencode(),
     })
+
+
+@login_required
+def esporta_richieste(request):
+    """Scarica in .xlsx i progetti del filtro corrente (una riga per scheda).
+
+    Le bozze restano fuori: sono schede non ancora inviate alla funzione tecnica,
+    quindi non sono progetti su cui ragionare in un foglio.
+    """
+    qs, filtri = _filtra_richieste(request)
+    qs = qs.exclude(stato=Stato.BOZZA)
+    filtri["esclude_bozze"] = True
+    richieste = list(qs.select_related("proponente")
+                     .prefetch_related("classificazioni", "cloni")
+                     .order_by("numero"))
+    return risposta_excel(richieste, filtri)
 
 
 @login_required
