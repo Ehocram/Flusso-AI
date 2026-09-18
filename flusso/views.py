@@ -63,11 +63,13 @@ def _puo_validare(utente, tipo) -> bool:
 
 
 
-def _filtro_tipo(request, qs):
-    """Filtro per tipo di richiesta (AI / Application / IT Operation).
+def _filtro_tipo(request, qs, usa_default=True):
+    """Filtro per tipo di richiesta (AI / Application / IT Operation / Infosec).
 
     Default: il tipo di competenza della funzione tecnica dell'utente; per owner,
     presìdi e approvatore nessun filtro. 'tutti' o un tipo esplicito via GET.
+    Con usa_default=False il tipo filtra solo se scelto esplicitamente: serve
+    all'export, che non deve ereditare la chip di comodo del ruolo.
     Le chip conservano gli altri parametri della pagina (ricerca, stato, fase...).
     Ritorna (tipo_attivo | None, chips).
     """
@@ -76,8 +78,10 @@ def _filtro_tipo(request, qs):
         tipo = None
     elif scelto in dict(TipoProgetto.choices):
         tipo = scelto
-    else:
+    elif usa_default:
         tipo = request.user.tipo_competenza
+    else:
+        tipo = None
     conteggi = Counter(qs.values_list("tipo", flat=True))
 
     def _href(val):
@@ -198,7 +202,7 @@ def dashboard(request):
     })
 
 
-def _filtra_richieste(request):
+def _filtra_richieste(request, tipo_di_default=True):
     """Filtri della pagina Richieste: chip del tipo, stato, funzione, ricerca libera.
 
     La usano sia la lista sia l'export, cosi' il foglio Excel contiene esattamente
@@ -206,7 +210,7 @@ def _filtra_richieste(request):
     Ritorna (queryset, descrizione dei filtri).
     """
     qs = _richieste_visibili(request.user)
-    tipo_attivo, tipo_filtri = _filtro_tipo(request, qs)
+    tipo_attivo, tipo_filtri = _filtro_tipo(request, qs, usa_default=tipo_di_default)
     if tipo_attivo:
         qs = qs.filter(tipo=tipo_attivo)
     stato = request.GET.get("stato", "")
@@ -232,15 +236,23 @@ def _filtra_richieste(request):
 def lista(request):
     qs, filtri = _filtra_richieste(request)
     richieste = [{"obj": r, "azioni": azioni_disponibili(r, request.user)} for r in qs]
-    # Il tipo attivo viaggia esplicito nei link (chip e export): senza, un invio del
-    # form di filtro ricadrebbe sul tipo di competenza del ruolo.
+    # La chip attiva all'apertura è solo un default di comodo (il tipo di competenza
+    # del ruolo): l'export non lo eredita, altrimenti la Funzione AI scaricherebbe i
+    # soli progetti AI senza averlo chiesto. Vale come filtro solo la scelta esplicita.
+    scelto = request.GET.get("tipo", "")
+    esplicito = scelto in dict(TipoProgetto.choices)
     parametri = request.GET.copy()
-    parametri["tipo"] = filtri["tipo_attivo"] or "tutti"
+    parametri["tipo"] = scelto if esplicito else "tutti"
+    tutti = request.GET.copy()
+    tutti["tipo"] = "tutti"
     return render(request, "flusso/lista.html", {
         "tipo_filtri": filtri["tipo_filtri"], "tipo_attivo": filtri["tipo_attivo"],
         "richieste": richieste, "stati": Stato.choices, "funzioni": Funzione.choices,
         "f_stato": filtri["stato"], "f_funzione": filtri["funzione"], "q": filtri["cerca"],
-        "f_tipo": filtri["tipo_attivo"] or "tutti", "query_export": parametri.urlencode(),
+        "f_tipo": scelto if (esplicito or scelto == "tutti") else "",
+        "query_export": parametri.urlencode(),
+        "export_ambito": NOME_BREVE_TIPO.get(scelto, scelto) if esplicito else "tutti i tipi",
+        "query_export_tutti": tutti.urlencode() if esplicito else "",
     })
 
 
@@ -249,9 +261,10 @@ def esporta_richieste(request):
     """Scarica in .xlsx i progetti del filtro corrente (una riga per scheda).
 
     Le bozze restano fuori: sono schede non ancora inviate alla funzione tecnica,
-    quindi non sono progetti su cui ragionare in un foglio.
+    quindi non sono progetti su cui ragionare in un foglio. Il tipo filtra solo se
+    scelto con una chip: senza scelta escono AI, Application, IT Operation e Infosec.
     """
-    qs, filtri = _filtra_richieste(request)
+    qs, filtri = _filtra_richieste(request, tipo_di_default=False)
     qs = qs.exclude(stato=Stato.BOZZA)
     filtri["esclude_bozze"] = True
     richieste = list(qs.select_related("proponente")

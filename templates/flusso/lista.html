@@ -9,9 +9,13 @@
   </div>
   <div class="azioni-testata">
     <a href="{% url 'flusso:esporta_richieste' %}?{{ query_export }}" class="btn"
-       title="Scarica in Excel i progetti che stai vedendo, con i filtri attivi (le bozze restano fuori)">
-      <i class="ti ti-file-spreadsheet"></i> Esporta in Excel
+       title="Scarica in Excel i progetti con i filtri attivi (stato, funzione, ricerca). Le bozze restano fuori.">
+      <i class="ti ti-file-spreadsheet"></i> Esporta in Excel <span class="ambito">· {{ export_ambito }}</span>
     </a>
+    {% if query_export_tutti %}
+    <a href="{% url 'flusso:esporta_richieste' %}?{{ query_export_tutti }}" class="link-ambito"
+       title="Esporta AI, Application, IT Operation e Infosec insieme, mantenendo gli altri filtri">tutti i tipi</a>
+    {% endif %}
     {% if user.is_owner %}<a href="{% url 'flusso:nuova' %}" class="btn btn-primario"><i class="ti ti-plus"></i> Nuova richiesta</a>{% endif %}
   </div>
 </div>
