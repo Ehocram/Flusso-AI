@@ -545,15 +545,20 @@ class Richiesta(models.Model):
         return FUNZIONE_PER_TIPO.get(self.tipo, "Funzione tecnica")
 
     def azzera_per_bozza(self):
-        """Al rientro in bozza: via decisione budget, date e validazioni dei rischi.
+        """Al rientro in bozza: via decisione budget, date, validazioni dei rischi e
+        riga nel foglio di budget.
 
         Le categorie di rischio proposte restano (sono un'analisi, non una decisione);
         tornano «da validare» perché i presìdi devono riesaminare ciò che cambia.
+        La riga di budget invece sparisce: la pratica non è più in carico a nessuno,
+        quindi non deve occupare una posizione nel foglio. Se viene ripresa in carico
+        la riga viene riscritta da capo.
         """
         self.esito_budget = ""
         self.data_inizio = None
         self.data_consegna_prevista = None
         self.save(update_fields=["esito_budget", "data_inizio", "data_consegna_prevista"])
+        self.righe_budget.all().delete()
         for c in self.classificazioni.all():
             if c.stato in (StatoRischio.VALIDATO, StatoRischio.MODIFICATO):
                 c.stato = StatoRischio.PROPOSTO_AI if c.categoria else StatoRischio.DA_ANALIZZARE
