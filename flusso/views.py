@@ -640,6 +640,10 @@ def aggiorna_analisi(request, pk):
             if rip:
                 msg += (f" Costo € {rip['costo']:.2f}: a budget € {rip['a_budget']:.2f}, "
                         f"extra budget € {rip['extra']:.2f} ({richiesta.budget_stato_label}).")
+        # Effort e costi appena inseriti devono arrivare nel foglio senza aspettare
+        # il passaggio di stato: l'effort in ore diventa «EFFORT IT (GG)» a 8 ore/giorno.
+        if richiesta.stato not in (Stato.BOZZA, Stato.INVIATA, Stato.RESPINTA, Stato.ARCHIVIATA):
+            _allinea_riga_budget(richiesta, attore=request.user, request=request)
         cloni = servizi.clona_per_funzioni(richiesta, attore=request.user)
         if cloni:
             elenco = ", ".join(f"{c.codice} ({c.get_tipo_display()})" for c in cloni)

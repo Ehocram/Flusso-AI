@@ -289,13 +289,18 @@ def clona_per_funzioni(richiesta, attore=None) -> list:
     return creati
 
 
-def _riga_da_richiesta(foglio, richiesta):
+def _riga_da_richiesta(foglio, richiesta, base=None):
     """Costruisce la riga di budget mappando i campi del progetto sulle colonne del foglio.
 
     La mappatura e' per NOME di colonna: se una colonna non esiste nel workbook
     importato, semplicemente non viene valorizzata (nessun dato inventato).
+
+    Con `base` (i valori gia' presenti nella riga) l'aggiornamento e' per colonna:
+    si riscrivono solo le colonne che il progetto conosce e tutto il resto — la
+    spunta di approvazione, le colonne compilate a mano nel foglio — resta dov'e'.
     """
-    dati = [""] * len(foglio.intestazioni)
+    n = len(foglio.intestazioni)
+    dati = (list(base)[:n] + [""] * max(0, n - len(base))) if base else [""] * n
 
     def scrivi(valore, *nomi):
         i = foglio.indice_colonna(*nomi)
@@ -359,7 +364,8 @@ def copia_in_budget(richiesta, attore=None, anno=None):
     foglio = foglio_budget(tipo, anno, crea=True)
     if foglio is None:
         return None, False
-    dati = _riga_da_richiesta(foglio, richiesta)
+    dati = _riga_da_richiesta(foglio, richiesta,
+                              base=esistente.dati if esistente else None)
     if esistente:
         if esistente.foglio_id != foglio.id:  # la copertura è cambiata: riga spostata
             esistente.foglio = foglio
