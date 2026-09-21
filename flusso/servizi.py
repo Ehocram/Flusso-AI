@@ -343,6 +343,35 @@ def _riga_da_richiesta(foglio, richiesta, base=None):
     return dati
 
 
+def anteprima_copia_in_budget(richiesta):
+    """Che cosa farebbe copia_in_budget, senza scrivere niente.
+
+    Ritorna (azione, dove) con azione in {"crea", "sposta", "aggiorna", "invariata"};
+    `dove` e' il foglio di destinazione in chiaro. Serve all'anteprima dei comandi
+    di allineamento: mostrare solo cio' che cambia davvero.
+    """
+    from .models import RigaBudget, TipoFoglio
+
+    esistente = RigaBudget.objects.filter(richiesta=richiesta).select_related("foglio").first()
+    extra = (richiesta.budget_it == "EXTRA_BUDGET"
+             or richiesta.esito_budget == "EXTRA_BUDGET")
+    tipo = TipoFoglio.EXTRA if extra else TipoFoglio.BUDGET
+    anno = anno_destinazione(extra)
+    foglio = foglio_budget(tipo, anno, crea=False)
+    if foglio is None:
+        etichetta = "Extra Budget" if extra else "Budget"
+        return "crea", f"{etichetta} {anno} (foglio da creare)"
+    dove = f"{foglio.nome} {foglio.anno}"
+    if esistente is None:
+        return "crea", dove
+    if esistente.foglio_id != foglio.id:
+        return "sposta", dove
+    dati = _riga_da_richiesta(foglio, richiesta, base=esistente.dati)
+    if list(esistente.dati) == list(dati):
+        return "invariata", dove
+    return "aggiorna", dove
+
+
 def copia_in_budget(richiesta, attore=None, anno=None):
     """Copia il progetto nelle righe del foglio di budget corretto.
 

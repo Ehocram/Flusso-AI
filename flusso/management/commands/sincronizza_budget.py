@@ -1,29 +1,44 @@
-"""Allinea ai fogli di budget i progetti la cui compliance è già stata validata.
+"""Riallinea ai fogli di budget i progetti presi in carico.
 
-Serve dopo il primo import dei workbook (o dopo un periodo in cui i fogli non
-erano presenti): la riga viene scritta alla presa in carico e riscritta ai
-passaggi successivi, quindi i progetti avanzati PRIMA non hanno una riga.
+La riga nasce alla presa in carico e viene riscritta ai passaggi successivi e al
+salvataggio dell'analisi. Questo comando serve per il pregresso: progetti presi in
+carico prima che la regola esistesse, o la cui riga e' rimasta indietro rispetto
+all'analisi (tipicamente l'effort, che nel foglio e' «EFFORT IT (GG)» a 8 ore/giorno).
+
+L'aggiornamento e' per colonna: quello che e' stato scritto a mano nel foglio —
+spunta di approvazione compresa — non viene toccato.
+
+Restano fuori le pratiche che nel foglio non devono stare (bozza, in coda,
+respinte, archiviate): per togliere le loro righe c'e' «pulisci_budget».
 
 Uso:
     python manage.py sincronizza_budget            # anteprima, non scrive nulla
     python manage.py sincronizza_budget --applica  # crea/aggiorna le righe
-
-Regole invariate: Budget -> esercizio successivo, Extra Budget -> esercizio in
-corso; ogni progetto ha UNA riga (se esiste viene aggiornata, mai duplicata).
 """
 
 from django.core.management.base import BaseCommand
 
 from flusso.models import FoglioBudget, Richiesta
-from flusso.servizi import copia_in_budget
+from flusso.servizi import anteprima_copia_in_budget, copia_in_budget
 from flusso.workflow import Stato
 
-STATI_VALIDATI = [Stato.PRONTA_APPROVAZIONE, Stato.IN_APPROVAZIONE, Stato.APPROVATA,
-                  Stato.ATTIVO, Stato.MONITORAGGIO, Stato.COMPLETATO]
+# Una pratica sta nel foglio da quando e' in carico a una funzione tecnica.
+STATI_FUORI = [Stato.BOZZA, Stato.INVIATA, Stato.RESPINTA, Stato.ARCHIVIATA]
+
+ETICHETTE = {"crea": "da creare", "sposta": "da spostare", "aggiorna": "da aggiornare"}
+
+
+def _euro(valore) -> str:
+    """Importo all'italiana: 10.000,00."""
+    return "€ " + f"{valore:,.2f}".replace(",", "§").replace(".", ",").replace("§", ".")
+
+
+def _righe(n: int) -> str:
+    return "1 riga" if n == 1 else f"{n} righe"
 
 
 class Command(BaseCommand):
-    help = "Copia nei fogli di budget i progetti con compliance già validata dal CISO."
+    help = "Allinea ai fogli di budget le righe dei progetti presi in carico."
 
     def add_arguments(self, parser):
         parser.add_argument("--applica", action="store_true",
@@ -32,28 +47,44 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         if not FoglioBudget.objects.exists():
             self.stdout.write(self.style.ERROR(
-                "Nessun foglio di budget presente: esegui prima «importa_budget»."))
+                "Nessun foglio di budget presente: crealo dalla pagina Budget o importa i workbook."))
             return
 
-        candidati = [r for r in Richiesta.objects.exclude(stato=Stato.RESPINTA)
-                     .prefetch_related("classificazioni", "righe_budget")
-                     if r.stato in STATI_VALIDATI or r.rischi_tutti_validati]
-        if not candidati:
-            self.stdout.write(self.style.WARNING("Nessun progetto con compliance validata."))
-            return
-
-        applica = opts["applica"]
-        nuovi = aggiornati = falliti = 0
+        candidati = (Richiesta.objects.exclude(stato__in=STATI_FUORI)
+                     .select_related("proponente").prefetch_related("righe_budget", "cloni")
+                     .order_by("numero"))
+        da_fare = []
+        invariati = 0
         for r in candidati:
-            if not applica:
-                extra = r.budget_it == "EXTRA_BUDGET" or r.esito_budget == "EXTRA_BUDGET"
-                dove = "Extra Budget" if extra else "Budget"
-                stato = "già presente" if r.righe_budget.exists() else "da creare"
-                self.stdout.write(f"  [{stato}] {r.codice} — {r.titolo} → {dove}")
+            azione, dove = anteprima_copia_in_budget(r)
+            if azione == "invariata":
+                invariati += 1
                 continue
+            da_fare.append((r, azione, dove))
+
+        if not da_fare:
+            self.stdout.write(self.style.SUCCESS(
+                f"Niente da fare: {invariati} progetti già allineati ai fogli."))
+            return
+
+        for r, azione, dove in da_fare:
+            effort = f"{r.effort_ore / 8:.1f} gg".replace(".", ",") if r.effort_ore else "effort n.d."
+            costo = (_euro(r.costo_progetto_stimato)
+                     if r.costo_progetto_stimato is not None else "costo n.d.")
+            self.stdout.write(f"  [{ETICHETTE[azione]}] {r.codice} — {r.titolo} "
+                              f"→ {dove} · {effort} · {costo}")
+
+        if not opts["applica"]:
+            self.stdout.write(self.style.WARNING(
+                f"\nAnteprima: {_righe(len(da_fare))} da scrivere ({invariati} già allineate). "
+                "Rilancia con --applica per applicare."))
+            return
+
+        creati = aggiornati = falliti = 0
+        for r, _azione, _dove in da_fare:
             try:
                 riga, creata = copia_in_budget(r)
-            except Exception as exc:  # fail loudly, senza fermare gli altri
+            except Exception as exc:  # un progetto rotto non ferma gli altri
                 falliti += 1
                 self.stdout.write(self.style.ERROR(f"  [FAIL] {r.codice} — {exc}"))
                 continue
@@ -62,17 +93,10 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(
                     f"  [FAIL] {r.codice} — nessun foglio di destinazione disponibile."))
                 continue
-            nuovi += 1 if creata else 0
+            creati += 1 if creata else 0
             aggiornati += 0 if creata else 1
-            verbo = "creata" if creata else "aggiornata"
-            self.stdout.write(self.style.SUCCESS(
-                f"  [OK] {r.codice} — riga {verbo} in {riga.foglio.nome} {riga.foglio.anno}"))
 
-        if not applica:
-            self.stdout.write(self.style.WARNING(
-                f"\nAnteprima: {len(candidati)} progetti. "
-                "Rilancia con --applica per scrivere le righe."))
-            return
         stile = self.style.SUCCESS if falliti == 0 else self.style.WARNING
         self.stdout.write(stile(
-            f"\nCompletato: {nuovi} righe create, {aggiornati} aggiornate, {falliti} fallite."))
+            f"\nCompletato: {_righe(creati)} create, {aggiornati} aggiornate, "
+            f"{falliti} fallite ({invariati} erano già allineate)."))
