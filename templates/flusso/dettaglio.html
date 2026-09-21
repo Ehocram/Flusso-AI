@@ -106,6 +106,11 @@
             {{ analisi_form.effort_ore }}
           </div>
           <div class="f-row">
+            <label for="{{ analisi_form.priorita_it.id_for_label }}">Priorità IT</label>
+            {{ analisi_form.priorita_it }}
+            <span class="help">Priorità della funzione tecnica; si affianca a quella dell'owner ({{ richiesta.get_priorita_display }}), non la sostituisce.</span>
+          </div>
+          <div class="f-row">
             <label for="{{ analisi_form.entity.id_for_label }}">Entity</label>
             {{ analisi_form.entity }}
           </div>
@@ -232,6 +237,8 @@
       </div>
       {% if richiesta.altri_costi_note %}<div class="t-mut" style="margin-top:8px;">Dettaglio altri costi: {{ richiesta.altri_costi_note }}</div>{% endif %}
       <div class="analisi-grid" style="margin-top:10px;">
+        <div class="dato"><span class="lab">Priorità owner</span><span class="val">{{ richiesta.get_priorita_display }}</span></div>
+        <div class="dato"><span class="lab">Priorità IT</span><span class="val">{{ richiesta.get_priorita_it_display|default:"—" }}</span></div>
         <div class="dato"><span class="lab">Entity</span><span class="val">{{ richiesta.get_entity_display|default:"—" }}</span></div>
         <div class="dato"><span class="lab">Budget IT</span><span class="val">{{ richiesta.get_budget_it_display|default:"—" }}</span></div>
         <div class="dato"><span class="lab">Entro quando serve</span><span class="val">{{ richiesta.data_necessita|date:"d/m/Y"|default:"—" }}</span></div>

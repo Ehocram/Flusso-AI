@@ -264,6 +264,11 @@ class Richiesta(models.Model):
         "Priorità", max_length=8, choices=Priorita.choices, default=Priorita.MEDIA, db_index=True,
         help_text="Priorità attribuita dall'owner.",
     )
+    priorita_it = models.CharField(
+        "Priorità IT", max_length=8, choices=Priorita.choices, blank=True,
+        help_text="Priorità attribuita in analisi dalla funzione tecnica; si affianca a "
+                  "quella dell'owner, non la sostituisce.",
+    )
     entity = models.CharField(
         "Entity", max_length=12, choices=Entity.choices, blank=True,
         help_text="Entità di riferimento; se indicata dall'owner viene riportata nell'analisi.",
