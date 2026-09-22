@@ -267,6 +267,7 @@ def _riga_da_richiesta(foglio, richiesta, base=None):
 
     etichetta = f"{richiesta.codice} {richiesta.titolo}"
     scrivi(etichetta, "#ID", "ITEM ID", "ID")
+    scrivi(richiesta.sigla_natura, "P/A")  # P = progetto, A = attività
     scrivi(etichetta, "Descrizione", "DESCRIPTION")
     scrivi(richiesta.titolo, "Fase+Desc", "BUDGET ITEM")
     scrivi(richiesta.get_priorita_display(), "Priorità", "PRIORITY")

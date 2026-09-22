@@ -35,7 +35,7 @@ from .models import (AttivitaEffort, ClassificazioneRischio, ConfigurazioneAI, F
                      RigaBudget, TipoFoglio, TipoProgetto,
                      DIMENSIONE_PER_RUOLO, DIMENSIONI_PER_RUOLO, FiguraEffort, ORDINE_ATTIVITA, VoceEffort,
                      EsitoBudget, PROMPT_RISCHIO_DEFAULT, PROMPT_SISTEMA_DEFAULT, Richiesta,
-                     StatoRischio, TipoRischio)
+                     NaturaVoce, StatoRischio, TipoRischio, solo_progetti)
 from .notifiche import notifica_transizione
 from .workflow import FASI, STATI_OPERATIVI, STATI_TERMINALI, Stato, azioni_disponibili, puo_eseguire, transizione
 
@@ -216,6 +216,11 @@ def _filtra_richieste(request, tipo_di_default=True):
     stato = request.GET.get("stato", "")
     funzione = request.GET.get("funzione", "")
     cerca = request.GET.get("q", "").strip()
+    # Progetti / attività: filtra l'elenco ma NON i conteggi delle chip per tipo,
+    # che restano sul totale (progetti + attività).
+    natura = request.GET.get("natura", "")
+    if natura in NaturaVoce.values:
+        qs = qs.filter(natura=natura)
     if stato:
         qs = qs.filter(stato=stato)
     if funzione:
@@ -227,6 +232,7 @@ def _filtra_richieste(request, tipo_di_default=True):
         "tipo_label": NOME_BREVE_TIPO.get(tipo_attivo, "") if tipo_attivo else "",
         "stato": stato, "stato_label": dict(Stato.choices).get(stato, ""),
         "funzione": funzione, "funzione_label": dict(Funzione.choices).get(funzione, ""),
+        "natura": natura, "natura_label": dict(NaturaVoce.choices).get(natura, ""),
         "cerca": cerca,
     }
     return qs, filtri
@@ -249,6 +255,7 @@ def lista(request):
         "tipo_filtri": filtri["tipo_filtri"], "tipo_attivo": filtri["tipo_attivo"],
         "richieste": richieste, "stati": Stato.choices, "funzioni": Funzione.choices,
         "f_stato": filtri["stato"], "f_funzione": filtri["funzione"], "q": filtri["cerca"],
+        "nature": NaturaVoce.choices, "f_natura": filtri["natura"],
         "f_tipo": scelto if (esplicito or scelto == "tutti") else "",
         "query_export": parametri.urlencode(),
         "export_ambito": NOME_BREVE_TIPO.get(scelto, scelto) if esplicito else "tutti i tipi",
@@ -667,7 +674,9 @@ def schedulazione(request):
     """Pianificazione dei soli progetti approvati (date utili ai KPI, modificabili a mano)."""
     if not request.user.is_gestore:
         return HttpResponseForbidden("Pagina riservata.")
-    base = Richiesta.objects.filter(stato__in=[Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO, Stato.COMPLETATO])
+    # Le attività non si schedulano: la pagina pianifica i soli progetti.
+    base = solo_progetti(Richiesta.objects.filter(
+        stato__in=[Stato.APPROVATA, Stato.ATTIVO, Stato.MONITORAGGIO, Stato.COMPLETATO]))
     tipo_attivo, tipo_filtri = _filtro_tipo(request, base)
     if tipo_attivo:
         base = base.filter(tipo=tipo_attivo)
@@ -715,7 +724,7 @@ def ripartizione_effort(request):
     """
     if not request.user.is_gestore:
         return HttpResponseForbidden("Pagina riservata.")
-    base_tutti = Richiesta.objects.filter(effort_ore__gt=0)
+    base_tutti = solo_progetti(Richiesta.objects.filter(effort_ore__gt=0))
     base_qs = (base_tutti.select_related("proponente").prefetch_related("voci_effort")
                .order_by("-effort_ore", "-creata_il"))
     tipo_attivo, tipo_filtri = _filtro_tipo(request, base_qs)
@@ -853,7 +862,7 @@ def costi(request):
     if not request.user.is_gestore:
         return HttpResponseForbidden("Pagina riservata.")
     from decimal import Decimal as _D
-    base_tutti = Richiesta.objects.select_related("proponente")
+    base_tutti = solo_progetti(Richiesta.objects.select_related("proponente"))
     base_qs = base_tutti
     tipo_attivo, tipo_filtri = _filtro_tipo(request, base_qs)
     if tipo_attivo:

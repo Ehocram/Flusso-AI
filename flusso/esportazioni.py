@@ -19,6 +19,7 @@ DATA_ORA = "DD/MM/YYYY HH:MM"
 COLONNE = [
     ("ID", lambda r: r.codice, None),
     ("Tipo", lambda r: r.tipo_breve, None),
+    ("Progetto/Attività", lambda r: r.get_natura_display(), None),
     ("Stato", lambda r: r.stato_label, None),
     ("Titolo", lambda r: r.titolo, None),
     ("Funzione richiedente", lambda r: r.get_funzione_display(), None),
@@ -86,6 +87,8 @@ def descrizione_filtri(filtri) -> str:
         voci.append("Funzione: " + filtri["funzione_label"])
     if filtri.get("cerca"):
         voci.append(f"Ricerca: «{filtri['cerca']}»")
+    if filtri.get("natura_label"):
+        voci.append("Solo: " + filtri["natura_label"])
     if filtri.get("esclude_bozze"):
         voci.append("bozze escluse")
     return " · ".join(voci)

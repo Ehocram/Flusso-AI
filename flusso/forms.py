@@ -13,8 +13,8 @@ class AnalisiAIForm(forms.ModelForm):
     class Meta:
         model = Richiesta
         fields = [
-            "analisi_fattibilita", "priorita_it", "entity", "ai_autonomia", "ai_deployment",
-            "effort_ore",
+            "analisi_fattibilita", "natura", "priorita_it", "entity", "ai_autonomia",
+            "ai_deployment", "effort_ore",
             "is_capex", "is_opex", "is_ifrs", "budget_it",
             "costo_token_ai", "costo_token_periodicita",
             "costo_token_ambito", "altri_costi", "altri_costi_note",

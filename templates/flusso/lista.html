@@ -28,6 +28,10 @@
     <option value="">Tutti gli stati</option>
     {% for val, label in stati %}<option value="{{ val }}" {% if val == f_stato %}selected{% endif %}>{{ label }}</option>{% endfor %}
   </select>
+  <select name="natura" onchange="this.form.submit()" title="Progetti, attività o entrambi">
+    <option value="">Progetti e attività</option>
+    {% for val, label in nature %}<option value="{{ val }}" {% if val == f_natura %}selected{% endif %}>Solo {{ label|lower }}</option>{% endfor %}
+  </select>
   <select name="funzione" onchange="this.form.submit()">
     <option value="">Tutte le funzioni</option>
     {% for val, label in funzioni %}<option value="{{ val }}" {% if val == f_funzione %}selected{% endif %}>{{ label }}</option>{% endfor %}

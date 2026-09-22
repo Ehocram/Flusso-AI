@@ -185,6 +185,23 @@ class Priorita(models.TextChoices):
     BASSA = "BASSA", "Bassa"
 
 
+class NaturaVoce(models.TextChoices):
+    """Progetto o semplice attività: distingue ciò che è governato come progetto."""
+
+    PROGETTO = "PROGETTO", "Progetto"
+    ATTIVITA = "ATTIVITA", "Attività"
+
+
+def solo_progetti(qs):
+    """Toglie le attività da un queryset di richieste.
+
+    Le attività restano nell'elenco e nel foglio di budget (dove finiscono con la
+    sigla «A»), ma non entrano nelle analisi di portafoglio: schedulazione, KPI,
+    costi ed effort ragionano sui soli progetti.
+    """
+    return qs.exclude(natura=NaturaVoce.ATTIVITA)
+
+
 class Entity(models.TextChoices):
     """Entita' legale/geografica di riferimento del progetto."""
 
@@ -263,6 +280,12 @@ class Richiesta(models.Model):
     priorita = models.CharField(
         "Priorità", max_length=8, choices=Priorita.choices, default=Priorita.MEDIA, db_index=True,
         help_text="Priorità attribuita dall'owner.",
+    )
+    natura = models.CharField(
+        "Progetto o attività", max_length=9, choices=NaturaVoce.choices,
+        default=NaturaVoce.PROGETTO, db_index=True,
+        help_text="Le attività finiscono nel budget con la sigla «A» ma restano fuori da "
+                  "schedulazione, KPI, costi ed effort.",
     )
     priorita_it = models.CharField(
         "Priorità IT", max_length=8, choices=Priorita.choices, blank=True,
@@ -588,6 +611,15 @@ class Richiesta(models.Model):
         return Transizione.objects.create(
             richiesta=self, azione=azione, etichetta=etichetta, stato_da=stato_da,
             stato_a=precedente, attore=attore, nota=nota)
+
+    @property
+    def sigla_natura(self) -> str:
+        """«A» per le attività, «P» per i progetti: è ciò che va nella colonna P/A."""
+        return "A" if self.natura == NaturaVoce.ATTIVITA else "P"
+
+    @property
+    def is_attivita(self) -> bool:
+        return self.natura == NaturaVoce.ATTIVITA
 
     def togli_dal_budget(self):
         """Toglie dai fogli le righe di questo progetto.

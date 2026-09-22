@@ -53,8 +53,13 @@ def _segmenti_donut(coppie):
 
 
 def calcola_kpi(tipo=None) -> dict:
-    """KPI di portafoglio; con tipo (AI / APPLICATION / IT_OPERATION) si restringe a quel perimetro."""
-    qs = Richiesta.objects.all()
+    """KPI di portafoglio; con tipo (AI / APPLICATION / IT_OPERATION) si restringe a quel perimetro.
+
+    Le voci marcate come «attività» restano fuori: i KPI parlano di progetti.
+    """
+    from .models import solo_progetti
+
+    qs = solo_progetti(Richiesta.objects.all())
     if tipo:
         qs = qs.filter(tipo=tipo)
     tot = qs.count()
@@ -250,14 +255,15 @@ def riepilogo_aree():
     progetto, quest'ultimo comprensivo di token, altri costi e costo a carico
     dell'owner). Ogni scheda conta una volta sola: le schede Application e IT
     Operation generate da un progetto AI portano i propri numeri nella loro area.
+    Le voci marcate come «attività» non entrano nel riepilogo.
     """
     from decimal import Decimal
-    from .models import TipoProgetto, VoceEffort
+    from .models import TipoProgetto, VoceEffort, solo_progetti
 
     from .models import NOME_BREVE_TIPO as nomi
     aree = []
     for codice, _ in TipoProgetto.choices:
-        qs = Richiesta.objects.filter(tipo=codice)
+        qs = solo_progetti(Richiesta.objects.filter(tipo=codice))  # le attività non contano
         costo = Decimal(0)
         a_budget = extra = Decimal(0)
         n_costo, n_incompleti = 0, 0
