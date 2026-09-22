@@ -36,6 +36,10 @@
     <option value="">Progetti e attività</option>
     {% for val, label in nature %}<option value="{{ val }}" {% if val == f_natura %}selected{% endif %}>Solo {{ label|lower }}</option>{% endfor %}
   </select>
+  <select name="priorita_it" onchange="this.form.submit()" title="Priorità assegnata in analisi dalla funzione tecnica">
+    <option value="">Tutte le priorità IT</option>
+    {% for val, label in priorita_scelte %}<option value="{{ val }}" {% if val == f_priorita_it %}selected{% endif %}>Priorità IT: {{ label|lower }}</option>{% endfor %}
+  </select>
   <select name="funzione" onchange="this.form.submit()">
     <option value="">Tutte le funzioni</option>
     {% for val, label in funzioni %}<option value="{{ val }}" {% if val == f_funzione %}selected{% endif %}>{{ label }}</option>{% endfor %}

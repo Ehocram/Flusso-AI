@@ -223,6 +223,10 @@ def _filtra_richieste(request, tipo_di_default=True):
     natura = request.GET.get("natura", "")
     if natura in NaturaVoce.values:
         qs = qs.filter(natura=natura)
+    # Priorità IT: quella messa in analisi dalla funzione tecnica.
+    priorita_it = request.GET.get("priorita_it", "")
+    if priorita_it in Priorita.values:
+        qs = qs.filter(priorita_it=priorita_it)
     if stato:
         qs = qs.filter(stato=stato)
     if funzione:
@@ -235,6 +239,8 @@ def _filtra_richieste(request, tipo_di_default=True):
         "stato": stato, "stato_label": dict(Stato.choices).get(stato, ""),
         "funzione": funzione, "funzione_label": dict(Funzione.choices).get(funzione, ""),
         "natura": natura, "natura_label": dict(NaturaVoce.choices).get(natura, ""),
+        "priorita_it": priorita_it,
+        "priorita_it_label": dict(Priorita.choices).get(priorita_it, ""),
         "cerca": cerca,
     }
     return qs, filtri
@@ -258,6 +264,7 @@ def lista(request):
         "richieste": richieste, "stati": Stato.choices, "funzioni": Funzione.choices,
         "f_stato": filtri["stato"], "f_funzione": filtri["funzione"], "q": filtri["cerca"],
         "nature": NaturaVoce.choices, "f_natura": filtri["natura"],
+        "priorita_scelte": Priorita.choices, "f_priorita_it": filtri["priorita_it"],
         "f_tipo": scelto if (esplicito or scelto == "tutti") else "",
         "query_export": parametri.urlencode(),
         "export_ambito": NOME_BREVE_TIPO.get(scelto, scelto) if esplicito else "tutti i tipi",

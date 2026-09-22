@@ -89,6 +89,8 @@ def descrizione_filtri(filtri) -> str:
         voci.append(f"Ricerca: «{filtri['cerca']}»")
     if filtri.get("natura_label"):
         voci.append("Solo: " + filtri["natura_label"])
+    if filtri.get("priorita_it_label"):
+        voci.append("Priorità IT: " + filtri["priorita_it_label"])
     if filtri.get("esclude_bozze"):
         voci.append("bozze escluse")
     return " · ".join(voci)
