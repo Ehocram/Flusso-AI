@@ -925,6 +925,22 @@ class Richiesta(models.Model):
         return "€ " + f"{float(self.saving_economico):,.0f}".replace(",", ".")
 
     @property
+    def costo_progetto_fmt(self):
+        """Costo di questa scheda, formattato; None se non è ancora determinabile."""
+        costo = self.costo_progetto_stimato
+        if costo is None:
+            return None
+        return "€ " + f"{float(costo):,.0f}".replace(",", ".")
+
+    @property
+    def costo_iniziativa_fmt(self):
+        """Totale con le schede collegate; None se coincide col costo della scheda."""
+        tot = self.costo_iniziativa
+        if tot is None or tot == self.costo_progetto_stimato:
+            return None
+        return "€ " + f"{float(tot):,.0f}".replace(",", ".")
+
+    @property
     def incremento_qualitativo_fmt(self):
         return self._fmt_pct(self.incremento_qualitativo)
 

@@ -31,11 +31,17 @@
 
   <p class="descr">{{ r.descrizione }}{% if r.tipo_soluzione %} <em>— {{ r.tipo_soluzione }}</em>{% endif %}</p>
 
-    <div class="savings savings-3">
+    <div class="savings">
     <div class="sav">
       <span class="lab">Beneficio economico atteso</span>
       <span class="val {% if r.saving_economico_fmt is None %}tbd{% endif %}">{{ r.saving_economico_fmt|default:"—" }}</span>
       {% if r.saving_economico_note %}<span class="sav-note">{{ r.saving_economico_note }}</span>{% endif %}
+    </div>
+    <div class="sav">
+      <span class="lab">Costo {% if r.is_attivita %}dell'attività{% else %}del progetto{% endif %}</span>
+      <span class="val {% if r.costo_progetto_fmt is None %}tbd{% endif %}">{{ r.costo_progetto_fmt|default:"—" }}</span>
+      {% if r.costo_iniziativa_fmt %}<span class="sav-note">con le schede collegate {{ r.costo_iniziativa_fmt }}</span>
+      {% elif r.costo_progetto_fmt is None and r.costo_progetto_motivo_incompleto %}<span class="sav-note">{{ r.costo_progetto_motivo_incompleto }}</span>{% endif %}
     </div>
     <div class="sav verde">
       <span class="lab">Incremento qualitativo</span>
