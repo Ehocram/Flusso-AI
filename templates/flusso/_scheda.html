@@ -31,6 +31,9 @@
 
   <p class="descr">{{ r.descrizione }}{% if r.tipo_soluzione %} <em>— {{ r.tipo_soluzione }}</em>{% endif %}</p>
 
+    <div class="effort-riga{% if not r.effort_fmt %} vuoto{% endif %}">
+      <i class="ti ti-clock-hour-4"></i> Effort <b>{{ r.effort_fmt|default:"non ancora stimato" }}</b>
+    </div>
     <div class="savings">
     <div class="sav">
       <span class="lab">Beneficio economico atteso</span>

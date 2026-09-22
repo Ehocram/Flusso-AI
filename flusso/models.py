@@ -398,6 +398,18 @@ class Richiesta(models.Model):
     is_capex = models.BooleanField("Capex", default=False)
     is_opex = models.BooleanField("Opex", default=False)
     is_ifrs = models.BooleanField("IFRS", default=False)
+    # Quando il progetto è insieme capex e opex, l'importo va diviso: le due quote
+    # finiscono nelle rispettive colonne del foglio di budget.
+    costo_capex = models.DecimalField(
+        "Quota Capex (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Parte dell'importo da capitalizzare; si compila quando il progetto è "
+                  "insieme capex e opex.",
+    )
+    costo_opex = models.DecimalField(
+        "Quota Opex (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Parte dell'importo a conto economico; si compila quando il progetto è "
+                  "insieme capex e opex.",
+    )
     budget_it = models.CharField(
         "Budget IT", max_length=16, choices=BudgetIT.choices, blank=True,
         help_text="Copertura sul budget IT: a budget o extra budget.",
@@ -923,6 +935,27 @@ class Richiesta(models.Model):
         if self.saving_economico is None:
             return None
         return "€ " + f"{float(self.saving_economico):,.0f}".replace(",", ".")
+
+    @property
+    def capex_e_opex(self) -> bool:
+        """Progetto misto: l'importo si divide fra quota capex e quota opex."""
+        return bool(self.is_capex and self.is_opex)
+
+    @property
+    def effort_giorni(self):
+        """Effort in giornate (8 ore), come nel foglio di budget. None se non stimato."""
+        if not self.effort_ore:
+            return None
+        return round(self.effort_ore / 8, 1)
+
+    @property
+    def effort_fmt(self):
+        """«10 gg · 80 ore», oppure None se l'effort non c'è ancora."""
+        gg = self.effort_giorni
+        if gg is None:
+            return None
+        giorni = f"{gg:g}".replace(".", ",")
+        return f"{giorni} gg · {self.effort_ore} ore"
 
     @property
     def costo_progetto_fmt(self):

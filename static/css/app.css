@@ -83,6 +83,15 @@ h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -.01em; }
 .page-head h1 { font-size: 26px; margin-top: 5px; }
 .page-head p { margin: 4px 0 0; color: var(--testo-2); font-size: 14px; }
 .azioni-testata { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.quote-cpx-opx { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.quote-cpx-opx[hidden] { display: none; }
+.effort-riga { display: inline-flex; align-self: flex-start; width: fit-content;
+  align-items: center; gap: 6px; margin: 0 0 8px; padding: 4px 10px;
+  border-radius: 999px; background: #f0f2f5; color: var(--testo-2); font-size: 12px; }
+.effort-riga b { color: var(--inchiostro); font-weight: 600; }
+.effort-riga.vuoto b { color: var(--testo-3); font-weight: 500; }
+.quote-cpx-opx .comp-costo { margin-top: 0; }
+.quote-cpx-opx .help { flex-basis: 100%; }
 .azioni-testata .ambito { font-weight: 500; opacity: .75; }
 .link-ambito { font-size: 13px; color: var(--testo-2); text-decoration: underline; }
 

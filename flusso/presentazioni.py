@@ -297,12 +297,16 @@ def _card(slide, richiesta, x, y, w, h):
            f"{' · Attività' if richiesta.is_attivita else ''} · {richiesta.stato_label}",
            dim=8, grassetto=True, colore=GRIGIO)
 
-    titolo = slide.shapes.add_textbox(x + Inches(0.15), y + Inches(0.38), w - Inches(0.3), Inches(0.55))
+    titolo = slide.shapes.add_textbox(x + Inches(0.15), y + Inches(0.36), w - Inches(0.3), Inches(0.5))
     _testo(titolo, richiesta.titolo[:70], dim=12.5, grassetto=True)
+
+    effort = slide.shapes.add_textbox(x + Inches(0.15), y + Inches(0.78), w - Inches(0.3), Inches(0.22))
+    _testo(effort, "Effort " + (richiesta.effort_fmt or "non ancora stimato"),
+           dim=8.5, colore=GRIGIO)
 
     quadr_w = (w - Inches(0.45)) / 2
     quadr_h = Inches(0.62)
-    base_y = y + Inches(1.0)
+    base_y = y + Inches(1.05)
     _riquadro(slide, x + Inches(0.15), base_y, quadr_w, quadr_h,
               "Beneficio atteso", _euro(richiesta.saving_economico))
     _riquadro(slide, x + Inches(0.3) + quadr_w, base_y, quadr_w, quadr_h,

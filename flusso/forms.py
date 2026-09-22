@@ -15,7 +15,7 @@ class AnalisiAIForm(forms.ModelForm):
         fields = [
             "analisi_fattibilita", "natura", "priorita_it", "entity", "ai_autonomia",
             "ai_deployment", "effort_ore",
-            "is_capex", "is_opex", "is_ifrs", "budget_it",
+            "is_capex", "is_opex", "is_ifrs", "costo_capex", "costo_opex", "budget_it",
             "costo_token_ai", "costo_token_periodicita",
             "costo_token_ambito", "altri_costi", "altri_costi_note",
             "dettaglio_ai", "costo_ai", "ai_capex", "ai_opex", "ai_ifrs",
@@ -27,6 +27,8 @@ class AnalisiAIForm(forms.ModelForm):
             "effort_ore": forms.NumberInput(attrs={"min": 0, "placeholder": "es. 120"}),
             "costo_token_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
             "altri_costi": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
+            "costo_capex": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ quota da capitalizzare"}),
+            "costo_opex": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ quota a conto economico"}),
             "altri_costi_note": forms.TextInput(attrs={"placeholder": "es. licenze, infrastruttura on-prem"}),
             "dettaglio_ai": forms.Textarea(attrs={"rows": 2, "placeholder": "Componente AI (assistenti, modelli, automazioni): se compilata genera una scheda per la Funzione AI"}),
             "costo_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ costo della componente"}),
@@ -35,6 +37,14 @@ class AnalisiAIForm(forms.ModelForm):
             "costo_application": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ costo della componente"}),
             "costo_it_operation": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ costo della componente"}),
         }
+
+    def clean(self):
+        """Le quote capex/opex hanno senso solo se il progetto è insieme capex e opex."""
+        dati = super().clean()
+        if not (dati.get("is_capex") and dati.get("is_opex")):
+            dati["costo_capex"] = None
+            dati["costo_opex"] = None
+        return dati
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

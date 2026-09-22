@@ -283,9 +283,11 @@ def _riga_da_richiesta(foglio, richiesta, base=None):
     scrivi(nome_owner, "Owner", "REFERENCE PERSON")
     scrivi(nome_owner, "BUDGET RESPONSIBLE")
     scrivi(richiesta.get_entity_display(), "Compete soc.", "Pagato da soc.")
-    if richiesta.is_capex and not richiesta.is_opex:
+    if richiesta.capex_e_opex:
+        scrivi("CPX+OPX", "CPX/OPX")
+    elif richiesta.is_capex:
         scrivi("CPX", "CPX/OPX")
-    elif richiesta.is_opex and not richiesta.is_capex:
+    elif richiesta.is_opex:
         scrivi("OPX", "CPX/OPX")
     if richiesta.is_ifrs:
         scrivi("IFRS", "IFRS")
@@ -295,7 +297,14 @@ def _riga_da_richiesta(foglio, richiesta, base=None):
     if costo is not None:
         importo = float(costo)
         scrivi(importo, "ESTIMATED AMOUNT")
-        scrivi(importo, "CPX Inv." if richiesta.is_capex else "OPX Imp. tot.")
+        if richiesta.capex_e_opex:
+            # Progetto misto: ogni quota nella sua colonna, come le vuole il workbook.
+            scrivi(float(richiesta.costo_capex) if richiesta.costo_capex is not None else "",
+                   "CPX Inv.")
+            scrivi(float(richiesta.costo_opex) if richiesta.costo_opex is not None else "",
+                   "OPX Imp. tot.")
+        else:
+            scrivi(importo, "CPX Inv." if richiesta.is_capex else "OPX Imp. tot.")
     if richiesta.effort_ore:
         scrivi(round(richiesta.effort_ore / 8, 1), "EFFORT IT (GG)")
     if richiesta.data_inizio:
