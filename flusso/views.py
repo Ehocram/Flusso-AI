@@ -303,9 +303,10 @@ def dettaglio(request, pk):
     bloccata = richiesta.modifica_bloccata
     # La Funzione tecnica modifica la scheda completa in tutti gli stati non bloccati;
     # l'owner solo prima della presa in carico (bozza/inviata).
+    # L'owner modifica la propria scheda in ogni stato non bloccato, anche quando la
+    # pratica è già in carico alla funzione tecnica: non deve riportarla in bozza.
     puo_modificare = (not bloccata) and (
-        request.user.is_funzione
-        or (richiesta.proponente_id == request.user.id and richiesta.stato in (Stato.BOZZA, Stato.INVIATA))
+        request.user.is_funzione or richiesta.proponente_id == request.user.id
     )
     puo_eliminare = request.user.is_funzione or (
         request.user.is_owner and richiesta.proponente_id == request.user.id and richiesta.is_bozza
@@ -314,10 +315,10 @@ def dettaglio(request, pk):
         richiesta.is_operativa and request.user.is_funzione
     ) else None
     analisi_form = AnalisiAIForm(instance=richiesta) if (request.user.is_funzione and not bloccata) else None
-    # Beneficio economico e incrementi: modificabili da owner e Funzione tecnica fino al blocco.
-    # Il beneficio atteso è una misura del perimetro AI: sulle schede Application /
-    # IT Operation non viene chiesto (il valore sta sul progetto AI di origine).
-    puo_beneficio = (not bloccata) and richiesta.tipo == TipoProgetto.AI and (
+    # Beneficio economico e incrementi: modificabili da owner e funzione tecnica fino
+    # al blocco della scheda, su tutte le aree.
+    # Beneficio e incrementi valgono su tutte le aree, non solo sui progetti AI.
+    puo_beneficio = (not bloccata) and (
         request.user.is_funzione or richiesta.proponente_id == request.user.id
     )
     beneficio_form = BeneficioForm(instance=richiesta) if puo_beneficio else None
@@ -345,9 +346,11 @@ def dettaglio(request, pk):
         and request.user.is_owner
         and richiesta.proponente_id == request.user.id
     )
-    # «approva» non è più un pulsante: si registra nel foglio di budget.
+    # «Segna pronta» e «Approva» non sono più pulsanti: il progetto entra nel foglio di
+    # budget con la presa in carico ed è il foglio ad approvarlo.
     azioni = [a for a in azioni
-              if a.azione not in ("conferma_budget", "rifiuta_progetto", "approva")]
+              if a.azione not in ("conferma_budget", "rifiuta_progetto", "approva",
+                                  "presenta_approvazione")]
 
     return render(request, "flusso/dettaglio.html", {
         "richiesta": richiesta, "azioni": azioni, "timeline": timeline,
@@ -372,12 +375,8 @@ def nuova(request):
                 richiesta.funzione = request.user.funzione
             richiesta.proponente = request.user
             richiesta.save()
-            # Stima AI degli incrementi mancanti (una sola volta; sempre modificabili).
-            estimato = servizi.stima_incrementi_se_serve(richiesta, attore=request.user)
-            msg = f"Richiesta {richiesta.codice} creata in bozza."
-            if estimato:
-                msg += " Beneficio atteso e incrementi stimati dall'AI dove mancanti (modificabili)."
-            messages.success(request, msg)
+            # Nessuna compilazione automatica: i campi della scheda si inseriscono a mano.
+            messages.success(request, f"Richiesta {richiesta.codice} creata in bozza.")
             return redirect(richiesta)
     else:
         form = RichiestaForm(funzione_owner=request.user.funzione or None)
@@ -392,31 +391,28 @@ def modifica(request, pk):
     if richiesta.modifica_bloccata:
         messages.error(request, "La richiesta è in approvazione o approvata: non è più modificabile.")
         return redirect(richiesta)
-    if not request.user.is_funzione and not (is_owner and richiesta.stato in (Stato.BOZZA, Stato.INVIATA)):
-        return HttpResponseForbidden("Non puoi modificare questa richiesta in questo stato.")
+    # L'owner corregge la propria scheda in ogni stato non bloccato, anche dopo la
+    # presa in carico: la pratica resta dov'è e i valori aggiornati finiscono nel foglio.
+    if not request.user.is_funzione and not is_owner:
+        return HttpResponseForbidden("Non puoi modificare questa richiesta.")
     funz = (richiesta.proponente.funzione or None) if request.user.is_funzione else (request.user.funzione or None)
 
     if request.method == "POST":
         form = RichiestaForm(request.POST, instance=richiesta, funzione_owner=funz)
         if form.is_valid():
-            era_inviata = richiesta.stato == Stato.INVIATA
             form.save()
-            # Solo lato owner: prima volta utile, stima beneficio/incrementi ancora vuoti (best-effort).
-            # La Funzione tecnica non genera mai questi valori (li corregge solo a mano).
-            if is_owner and not request.user.is_funzione:
-                servizi.stima_incrementi_se_serve(richiesta, attore=request.user)
-            if is_owner and not request.user.is_funzione and era_inviata:
-                richiesta.stato = Stato.BOZZA
-                richiesta.save(update_fields=["stato", "aggiornata_il"])
+            if is_owner and not request.user.is_funzione and richiesta.stato != Stato.BOZZA:
                 richiesta.transizioni.create(
                     azione="modifica",
-                    etichetta="Modificata dal proponente — da reinviare",
-                    stato_da=Stato.INVIATA, stato_a=Stato.BOZZA, attore=request.user,
-                    nota=f"Scheda aggiornata dal proponente; riportata in bozza per il reinvio alla {richiesta.funzione_competente_label}.",
+                    etichetta="Scheda aggiornata dal proponente",
+                    stato_da=richiesta.stato, stato_a=richiesta.stato, attore=request.user,
+                    nota="Modifica dell'owner a pratica già in carico: stato invariato.",
                 )
-                messages.success(request, f"Richiesta aggiornata. Reinviala alla {richiesta.funzione_competente_label} per applicare le modifiche.")
-            else:
-                messages.success(request, "Richiesta aggiornata.")
+            # Se la pratica è in carico, i valori aggiornati vanno subito nel foglio.
+            if richiesta.stato not in (Stato.BOZZA, Stato.INVIATA, Stato.RESPINTA,
+                                       Stato.ARCHIVIATA):
+                _allinea_riga_budget(richiesta, attore=request.user, request=request)
+            messages.success(request, "Richiesta aggiornata.")
             return redirect(richiesta)
     else:
         form = RichiestaForm(instance=richiesta, funzione_owner=funz)
@@ -454,15 +450,15 @@ def esegui_azione(request, pk):
     azione = request.POST.get("azione", "")
     nota = request.POST.get("nota", "").strip()
 
+    if azione in ("approva", "presenta_approvazione"):
+        # Approvazione e passaggio a «pronta» li decide il foglio di budget, non un
+        # pulsante: qui si rifiuta anche una POST costruita a mano.
+        messages.error(request, "Il progetto avanza dal foglio di budget: la riga nasce con la "
+                                "presa in carico e si approva mettendo a vero la colonna «Approved».")
+        return redirect(richiesta)
     t = transizione(azione)
     if t is None or not puo_eseguire(richiesta, request.user, azione):
         return HttpResponseForbidden("Azione non consentita.")
-    if azione == "approva":
-        # L'approvazione la decide il foglio di budget (colonna «Approved»), non un
-        # pulsante: qui si rifiuta anche una POST costruita a mano.
-        messages.error(request, "L'approvazione si registra nel foglio di budget: "
-                                "metti a vero la colonna «Approved» sulla riga del progetto.")
-        return redirect(richiesta)
     if t.richiede_nota and not nota:
         messages.error(request, f"L'azione «{t.label}» richiede una nota.")
         return redirect(richiesta)
@@ -596,14 +592,8 @@ def aggiorna_analisi(request, pk):
             if richiesta.costo_token_ai_stimato:
                 richiesta.costo_token_ai_stimato = False
                 richiesta.save(update_fields=["costo_token_ai_stimato"])
-        # Importo mancante: prova a stimarlo con l'AI (una volta), se c'è abbastanza contesto.
-        # La stima token vale solo per i progetti AI: su Application / IT Operation
-        # il costo lo indica la funzione nel campo dedicato.
-        stimato = (servizi.stima_costo_token_se_serve(richiesta, attore=request.user)
-                   if richiesta.tipo == TipoProgetto.AI else False)
-        msg = ("Analisi aggiornata. Importo token proposto dall'AI: "
-               f"€ {richiesta.costo_token_ai} (modificabile)." if stimato
-               else f"Analisi della {richiesta.funzione_competente_label} aggiornata.")
+        # Compilazione manuale: nessuna stima automatica dei costi.
+        msg = f"Analisi della {richiesta.funzione_competente_label} aggiornata."
         # Casi senza decisione di budget dell'owner:
         #  - progetti AI a costo zero (nulla da approvare);
         #  - progetti Application / IT Operation: la copertura è il campo «Budget IT»
@@ -628,13 +618,7 @@ def aggiorna_analisi(request, pk):
                 nota_budget = " Costo zero: nessuna approvazione di budget richiesta."
         if salta_budget:
             richiesta.save(update_fields=["esito_budget"])
-            res = servizi.classifica_tutti_i_rischi(richiesta, attore=request.user)
-            if res["ok"]:
-                dims = ", ".join(_NOMI_RISCHIO[x] for x in res["ok"])
-                msg += nota_budget + f" Rischio stimato dall'AI per: {dims}. Da validare dal CISO."
-            else:
-                msg += nota_budget + (" Rischi da completare (classificazione AI non riuscita "
-                                      "su alcune dimensioni).")
+            msg += nota_budget
         else:
             rip = richiesta.ripartizione_budget
             if rip:
@@ -651,28 +635,6 @@ def aggiorna_analisi(request, pk):
         messages.success(request, msg)
     else:
         messages.error(request, "Controlla i dati dell'analisi: alcuni valori non sono validi.")
-    return redirect(richiesta)
-
-
-@login_required
-@require_POST
-def compila_analisi_ai(request, pk):
-    """Bottone «AI»: l'AI precompila l'intera analisi; l'AI Officer poi verifica, modifica e salva."""
-    richiesta = get_object_or_404(Richiesta, pk=pk)
-    if not request.user.is_funzione:
-        return HttpResponseForbidden("Solo la Funzione tecnica puo' usare la compilazione automatica.")
-    if richiesta.modifica_bloccata:
-        messages.error(request, "La richiesta è in approvazione o approvata: analisi non modificabile.")
-        return redirect(richiesta)
-    ok, errore = servizi.compila_analisi_con_ai(richiesta, attore=request.user)
-    if ok:
-        messages.success(
-            request,
-            "Analisi di fattibilità redatta dall'AI. Rivedila, completa i campi tecnici "
-            "(tipo di AI, effort, costi) e salva con «Salva analisi».",
-        )
-    else:
-        messages.error(request, f"Compilazione AI non riuscita: {errore}")
     return redirect(richiesta)
 
 

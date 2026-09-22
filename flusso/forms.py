@@ -24,7 +24,7 @@ class AnalisiAIForm(forms.ModelForm):
         widgets = {
             "analisi_fattibilita": forms.Textarea(attrs={"rows": 4, "placeholder": "Valutazione di fattibilità, approccio, rischi, dipendenze…"}),
             "effort_ore": forms.NumberInput(attrs={"min": 0, "placeholder": "es. 120"}),
-            "costo_token_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ (vuoto = stima AI)"}),
+            "costo_token_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
             "altri_costi": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
             "altri_costi_note": forms.TextInput(attrs={"placeholder": "es. licenze, infrastruttura on-prem"}),
             "dettaglio_application": forms.Textarea(attrs={"rows": 2, "placeholder": "Componente applicativa (software, ERP…): se compilata genera una scheda per la Funzione Applicativa"}),
@@ -104,8 +104,8 @@ class RichiestaForm(forms.ModelForm):
             "costo_owner": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ (es. consulenti esterni)"}),
             "data_necessita": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             "saving_economico": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
-            "incremento_qualitativo": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "% (vuoto = stima AI)"}),
-            "incremento_efficienza": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "% (vuoto = stima AI)"}),
+            "incremento_qualitativo": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "%"}),
+            "incremento_efficienza": forms.NumberInput(attrs={"min": 0, "step": "0.1", "placeholder": "%"}),
             "saving_economico_note": forms.TextInput(attrs={"placeholder": "Note (facoltative)"}),
             "incremento_qualitativo_note": forms.TextInput(attrs={"placeholder": "Note (facoltative)"}),
             "incremento_efficienza_note": forms.TextInput(attrs={"placeholder": "Note (facoltative)"}),
@@ -128,7 +128,11 @@ class RichiestaForm(forms.ModelForm):
             campo.widget.attrs["class"] = (css + " campo").strip()
 
     def clean(self):
-        """Campi riservati al perimetro AI: costo a carico dell'owner e incrementi attesi."""
+        """Il costo a carico dell'owner resta specifico dei progetti AI.
+
+        Beneficio atteso e incrementi valgono invece su tutte le aree — AI,
+        Application, IT Operation e Infosec — e si compilano sempre a mano.
+        """
         dati = super().clean()
         if dati.get("tipo") == TipoProgetto.AI:
             if dati.get("costo_owner") is None:
@@ -137,14 +141,6 @@ class RichiestaForm(forms.ModelForm):
                                "(0 se non ne prevedi).")
         else:
             dati["costo_owner"] = None
-            # Incremento qualitativo/efficienza non si applicano fuori dai progetti AI:
-            # non sono mostrati e non vengono stimati.
-            for campo in ("saving_economico", "incremento_qualitativo",
-                          "incremento_efficienza"):
-                dati[campo] = None
-            for campo in ("saving_economico_note", "incremento_qualitativo_note",
-                          "incremento_efficienza_note"):
-                dati[campo] = ""
         return dati
 
 
@@ -318,8 +314,9 @@ class PianificazioneForm(forms.ModelForm):
 class BeneficioForm(forms.ModelForm):
     """Beneficio economico e incrementi attesi.
 
-    Modificabili dall'owner e dalla Funzione AI in tutti gli stati non bloccati
-    (fino all'ingresso in approvazione). Restano la business case del richiedente.
+    Valgono su tutte le aree e si compilano a mano. Modificabili dall'owner e dalle
+    funzioni tecniche in tutti gli stati non bloccati (fino all'ingresso in
+    approvazione). Restano la business case del richiedente.
     """
 
     class Meta:
@@ -340,10 +337,6 @@ class BeneficioForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if getattr(self.instance, "tipo", TipoProgetto.AI) != TipoProgetto.AI:
-            for nome in ("incremento_qualitativo", "incremento_qualitativo_note",
-                         "incremento_efficienza", "incremento_efficienza_note"):
-                self.fields.pop(nome, None)
         for campo in self.fields.values():
             css = campo.widget.attrs.get("class", "")
             campo.widget.attrs["class"] = (css + " campo").strip()

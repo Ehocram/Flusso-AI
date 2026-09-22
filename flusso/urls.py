@@ -33,7 +33,6 @@ urlpatterns = [
     path("richieste/<int:pk>/effort/salva/", views.salva_ripartizione, name="salva_ripartizione"),
     path("richieste/<int:pk>/effort/griglia/", views.crea_griglia_effort_view, name="crea_griglia_effort"),
     path("richieste/<int:pk>/analisi/", views.aggiorna_analisi, name="aggiorna_analisi"),
-    path("richieste/<int:pk>/analisi/ai/", views.compila_analisi_ai, name="compila_analisi_ai"),
     path("richieste/<int:pk>/beneficio/", views.aggiorna_beneficio, name="aggiorna_beneficio"),
     path("richieste/<int:pk>/pianificazione/", views.salva_pianificazione, name="salva_pianificazione"),
     path("richieste/<int:pk>/budget/", views.decidi_budget, name="decidi_budget"),

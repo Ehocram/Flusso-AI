@@ -76,12 +76,7 @@
     <div class="card" style="margin-top:18px;">
       <h2><i class="ti ti-clipboard-data" style="vertical-align:-2px;color:var(--rosso)"></i> Analisi {{ richiesta.funzione_competente_label }}</h2>
       {% if analisi_form %}
-      {# Modificabile dall'AI Officer #}
-      <form method="post" action="{% url 'flusso:compila_analisi_ai' richiesta.pk %}" class="analisi-ai-form" data-ai-wait="Compilazione AI dell'analisi in corso…">
-        {% csrf_token %}
-        <button type="submit" class="btn-ai-tondo" title="Compila l'intera analisi con l'AI (fattibilità, tipo, infrastruttura, effort, costi, benefici), poi verifica e salva.">AI</button>
-        <span class="ai-tondo-hint">Premi <b>AI</b> per far precompilare l'intera analisi. Poi verifica i campi, modificali se serve e salva con «Salva analisi».</span>
-      </form>
+      {# Compilazione manuale: nessun automatismo AI su questa scheda. #}
       <form method="post" action="{% url 'flusso:aggiorna_analisi' richiesta.pk %}" class="analisi-form">
         {% csrf_token %}
         <div class="f-row">
@@ -179,7 +174,7 @@
               {{ analisi_form.costo_token_periodicita }}
               {{ analisi_form.costo_token_ambito }}
             </div>
-            <span class="help">Importo (lascia vuoto = stima AI al salvataggio) · periodicità · ambito. Utenti previsti (dall'owner): <b>{{ richiesta.numero_utenti|default:"non indicato" }}</b> — usato per il totale.</span>
+            <span class="help">Importo · periodicità · ambito. Utenti previsti (dall'owner): <b>{{ richiesta.numero_utenti|default:"non indicato" }}</b> — usato per il totale.</span>
             <div class="help" data-annuo data-utenti="{{ richiesta.numero_utenti|default:0 }}" style="margin-top:6px;">Costo token annualizzato: <b>—</b></div>
           </div>
           {% endif %}

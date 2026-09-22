@@ -8,8 +8,7 @@ lettura KPI). Sono richiamate sia dalle view sia dall'import (seed_demo).
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-from .ai_client import (classifica_rischio, genera_analisi_completa, stima_costo_token,
-                        stima_incrementi, stima_ripartizione_effort)
+from .ai_client import classifica_rischio, stima_incrementi, stima_ripartizione_effort
 from .models import ConfigurazioneAI, TipoRischio
 
 log = logging.getLogger("flusso.audit")
@@ -107,49 +106,8 @@ def genera_tutto(richiesta, attore=None) -> dict:
     return {"incrementi": incr, "rischi_ok": len(risk["ok"]), "rischi_errori": risk["errori"]}
 
 
-def stima_costo_token_se_serve(richiesta, attore=None) -> bool:
-    """Se l'importo token manca e c'e' abbastanza contesto, lo stima con l'AI (una volta).
-
-    Richiede periodicita' e ambito impostati (la struttura del costo) per una stima
-    sensata. L'importo resta sempre modificabile a mano. True se ha valorizzato.
-    """
-    if richiesta.costo_token_ai is not None:
-        return False
-    if not (richiesta.costo_token_periodicita and richiesta.costo_token_ambito):
-        return False
-    cfg = _config_pronta()
-    if cfg is None:
-        return False
-    try:
-        from decimal import Decimal
-        dati, errore = stima_costo_token(richiesta, cfg)
-        if errore or not dati:
-            return False
-        richiesta.costo_token_ai = Decimal(str(dati["costo"]))
-        richiesta.costo_token_ai_stimato = True
-        richiesta.save(update_fields=["costo_token_ai", "costo_token_ai_stimato"])
-        return True
-    except Exception as e:  # noqa: BLE001
-        log.warning("stima costo token richiesta=%s eccezione=%s", richiesta.codice, e)
-        return False
-
-
-def compila_analisi_con_ai(richiesta, attore=None):
-    """Precompila l'intera analisi (fattibilita + parametri) con l'AI.
-
-    Ritorna (True, None) se i campi sono stati proposti, (False, errore) altrimenti.
-    I valori restano modificabili dall'AI Officer.
-    """
-    cfg = _config_pronta()
-    if cfg is None:
-        return False, "Analisi AI non disponibile (abilitazione o API key)."
-    dati, errore = genera_analisi_completa(richiesta, cfg)
-    if errore:
-        return False, errore
-    campi = richiesta.applica_analisi_ai(dati)
-    if not campi:
-        return False, "L'AI non ha restituito valori utilizzabili."
-    return True, None
+# La compilazione automatica dell'analisi (bozza di fattibilita' e stima del costo
+# token) e' stata rimossa: i campi della scheda si inseriscono a mano.
 
 
 def _prossimo_giorno_lavorativo(d):

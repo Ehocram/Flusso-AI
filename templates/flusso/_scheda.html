@@ -31,14 +31,12 @@
 
   <p class="descr">{{ r.descrizione }}{% if r.tipo_soluzione %} <em>— {{ r.tipo_soluzione }}</em>{% endif %}</p>
 
-{% if r.tipo == 'AI' %}
     <div class="savings savings-3">
     <div class="sav">
       <span class="lab">Beneficio economico atteso</span>
       <span class="val {% if r.saving_economico_fmt is None %}tbd{% endif %}">{{ r.saving_economico_fmt|default:"—" }}</span>
       {% if r.saving_economico_note %}<span class="sav-note">{{ r.saving_economico_note }}</span>{% endif %}
     </div>
-{% if r.tipo == 'AI' %}
     <div class="sav verde">
       <span class="lab">Incremento qualitativo</span>
       <span class="val">{{ r.incremento_qualitativo_fmt|default:"—" }}</span>
@@ -49,9 +47,7 @@
       <span class="val">{{ r.incremento_efficienza_fmt|default:"—" }}</span>
       {% if r.incremento_efficienza_note %}<span class="sav-note">{{ r.incremento_efficienza_note }}</span>{% endif %}
     </div>
-    {% endif %}
   </div>
-  {% endif %}
 
   {% if r.is_clone %}<div class="link-origine"><i class="ti ti-git-branch"></i> Scheda generata dalla componente {{ r.tipo_breve }} di <a href="{{ r.clone_di.get_absolute_url }}">{{ r.clone_di.codice }} — {{ r.clone_di.titolo }}</a>.</div>{% endif %}
   {% if r.cloni.exists %}<div class="link-origine"><i class="ti ti-git-branch"></i> Schede collegate: {% for c in r.cloni.all %}<a href="{{ c.get_absolute_url }}">{{ c.codice }}</a> ({{ c.stato_label }}){% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
