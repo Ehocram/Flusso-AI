@@ -74,6 +74,11 @@
             <form method="post" id="f{{ riga.r.pk }}" action="{% url 'flusso:salva_riga_budget' riga.r.pk %}">{% csrf_token %}</form>
             <button type="submit" form="f{{ riga.r.pk }}" class="btn btn-sm">Salva</button>
             {% if riga.r.richiesta %}<a href="{{ riga.r.richiesta.get_absolute_url }}" class="btn btn-sm">Scheda</a>{% endif %}
+            <form method="post" action="{% url 'flusso:elimina_riga_budget' riga.r.pk %}" style="display:inline"
+                  onsubmit="return confirm('Eliminare questa riga dal foglio {{ foglio.nome }} {{ foglio.anno }}?{% if riga.r.richiesta %} È collegata a {{ riga.r.richiesta.codice }}: tornerà al prossimo aggiornamento della scheda finché il progetto è in carico.{% endif %}');">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-pericolo" title="Elimina la riga dal foglio"><i class="ti ti-trash"></i></button>
+            </form>
           </td>
         {% else %}
           {% for c in riga.celle %}<td>{{ c }}</td>{% endfor %}

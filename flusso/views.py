@@ -1129,6 +1129,33 @@ def salva_riga_budget(request, pk):
 
 @login_required
 @require_POST
+def elimina_riga_budget(request, pk):
+    """Toglie una riga dal foglio.
+
+    Le righe importate dai workbook spariscono e basta. Quelle generate da un
+    progetto tornano al prossimo aggiornamento della scheda (è il progetto a
+    doverle stare nel foglio finché è in carico): lo si dice a chi cancella.
+    """
+    riga = get_object_or_404(RigaBudget.objects.select_related("foglio", "richiesta"), pk=pk)
+    if not _puo_righe_budget(request.user):
+        return HttpResponseForbidden("Solo le funzioni tecniche e il CISO possono eliminare le righe.")
+    foglio = riga.foglio
+    richiesta = riga.richiesta
+    riga.delete()
+    if richiesta is not None:
+        messages.warning(
+            request,
+            f"Riga eliminata da {foglio.nome} {foglio.anno}. Era collegata a {richiesta.codice} "
+            f"({richiesta.titolo}): finché il progetto resta in carico, la riga viene riscritta "
+            "al prossimo aggiornamento della scheda.",
+        )
+    else:
+        messages.success(request, f"Riga eliminata da {foglio.nome} {foglio.anno}.")
+    return redirect(foglio.get_absolute_url())
+
+
+@login_required
+@require_POST
 def aggiorna_sal(request, pk):
     richiesta = get_object_or_404(Richiesta, pk=pk)
     if not request.user.is_funzione or not richiesta.is_operativa:
