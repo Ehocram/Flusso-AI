@@ -12,7 +12,7 @@
     {% if puo_modificare %}<a href="{% url 'flusso:modifica' richiesta.pk %}" class="btn"><i class="ti ti-edit"></i> Modifica</a>{% endif %}
     <a href="{% url 'flusso:lista' %}" class="btn"><i class="ti ti-arrow-left"></i> Indietro</a>
     {% if puo_eliminare %}
-    <form method="post" action="{% url 'flusso:elimina' richiesta.pk %}" style="display:inline" onsubmit="return confirm('Eliminare definitivamente la richiesta {{ richiesta.codice }}? Operazione non reversibile.');">
+    <form method="post" action="{% url 'flusso:elimina' richiesta.pk %}" style="display:inline" onsubmit="return confirm('Eliminare definitivamente la richiesta {{ richiesta.codice }}? Sparisce anche la sua voce dal foglio di budget. Operazione non reversibile.');">
       {% csrf_token %}
       <button type="submit" class="btn btn-pericolo"><i class="ti ti-trash"></i> Elimina</button>
     </form>
@@ -135,6 +135,24 @@
             <label for="{{ analisi_form.altri_costi_note.id_for_label }}">{{ analisi_form.altri_costi_note.label }}</label>
             {{ analisi_form.altri_costi_note }}
           </div>
+          {% if analisi_form.dettaglio_ai %}
+          <div class="f-row full">
+            <label for="{{ analisi_form.dettaglio_ai.id_for_label }}">AI</label>
+            {{ analisi_form.dettaglio_ai }}
+            <span class="help">Se il progetto usa anche l'AI: al salvataggio viene creata la scheda «{{ richiesta.codice }} AI» per la Funzione AI (una sola volta).</span>
+            <div class="comp-costo">
+              <label for="{{ analisi_form.costo_ai.id_for_label }}">Costo AI (€)</label>
+              {{ analisi_form.costo_ai }}
+              <span class="help">Riportato come costo di progetto sulla scheda «{{ richiesta.codice }} AI».</span>
+            </div>
+            <div class="flag-row flag-comp">
+              <span class="flag-lab">Classificazione AI:</span>
+              <label class="flag">{{ analisi_form.ai_capex }} Capex</label>
+              <label class="flag">{{ analisi_form.ai_opex }} Opex</label>
+              <label class="flag">{{ analisi_form.ai_ifrs }} IFRS</label>
+            </div>
+          </div>
+          {% endif %}
           {% if analisi_form.dettaglio_application %}
           <div class="f-row full">
             <label for="{{ analisi_form.dettaglio_application.id_for_label }}">Application</label>
@@ -246,7 +264,8 @@
         <div class="dato"><span class="lab">Costo owner</span><span class="val">{% if richiesta.costo_owner is not None %}€ {{ richiesta.costo_owner|floatformat:2 }}{% else %}—{% endif %}</span></div>
         <div class="dato"><span class="lab">Classificazione</span><span class="val">{% if richiesta.is_capex %}Capex {% endif %}{% if richiesta.is_opex %}Opex {% endif %}{% if richiesta.is_ifrs %}IFRS{% endif %}{% if not richiesta.is_capex and not richiesta.is_opex and not richiesta.is_ifrs %}—{% endif %}</span></div>
       </div>
-      {% if richiesta.dettaglio_application %}<div class="t-mut" style="margin-top:8px;">Application: {{ richiesta.dettaglio_application }}</div>{% endif %}
+      {% if richiesta.dettaglio_ai %}<div class="t-mut" style="margin-top:8px;">AI: {{ richiesta.dettaglio_ai }}</div>{% endif %}
+      {% if richiesta.dettaglio_application %}<div class="t-mut" style="margin-top:4px;">Application: {{ richiesta.dettaglio_application }}</div>{% endif %}
       {% if richiesta.dettaglio_it_operation %}<div class="t-mut" style="margin-top:4px;">IT Operation: {{ richiesta.dettaglio_it_operation }}</div>{% endif %}
       {% if richiesta.esito_budget %}
       <div class="bgt {{ richiesta.esito_budget_css }}" style="margin-top:12px;">

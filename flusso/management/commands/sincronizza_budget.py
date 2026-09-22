@@ -25,7 +25,8 @@ from flusso.workflow import Stato
 # Una pratica sta nel foglio da quando e' in carico a una funzione tecnica.
 STATI_FUORI = [Stato.BOZZA, Stato.INVIATA, Stato.RESPINTA, Stato.ARCHIVIATA]
 
-ETICHETTE = {"crea": "da creare", "sposta": "da spostare", "aggiorna": "da aggiornare"}
+ETICHETTE = {"crea": "da creare", "sposta": "da spostare", "aggiorna": "da aggiornare",
+             "togli": "da togliere (scheda generata: l'iniziativa ha una riga sola)"}
 
 
 def _euro(valore) -> str:
@@ -80,13 +81,16 @@ class Command(BaseCommand):
                 "Rilancia con --applica per applicare."))
             return
 
-        creati = aggiornati = falliti = 0
-        for r, _azione, _dove in da_fare:
+        creati = aggiornati = tolti = falliti = 0
+        for r, azione, _dove in da_fare:
             try:
                 riga, creata = copia_in_budget(r)
             except Exception as exc:  # un progetto rotto non ferma gli altri
                 falliti += 1
                 self.stdout.write(self.style.ERROR(f"  [FAIL] {r.codice} — {exc}"))
+                continue
+            if azione == "togli":
+                tolti += 1  # scheda generata: copia_in_budget ha rimosso la riga
                 continue
             if riga is None:
                 falliti += 1
@@ -99,4 +103,4 @@ class Command(BaseCommand):
         stile = self.style.SUCCESS if falliti == 0 else self.style.WARNING
         self.stdout.write(stile(
             f"\nCompletato: {_righe(creati)} create, {aggiornati} aggiornate, "
-            f"{falliti} fallite ({invariati} erano già allineate)."))
+            f"{tolti} tolte, {falliti} fallite ({invariati} erano già allineate)."))

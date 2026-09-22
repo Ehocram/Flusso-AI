@@ -631,14 +631,17 @@ def aggiorna_analisi(request, pk):
             if rip:
                 msg += (f" Costo € {rip['costo']:.2f}: a budget € {rip['a_budget']:.2f}, "
                         f"extra budget € {rip['extra']:.2f} ({richiesta.budget_stato_label}).")
-        # Effort e costi appena inseriti devono arrivare nel foglio senza aspettare
-        # il passaggio di stato: l'effort in ore diventa «EFFORT IT (GG)» a 8 ore/giorno.
-        if richiesta.stato not in (Stato.BOZZA, Stato.INVIATA, Stato.RESPINTA, Stato.ARCHIVIATA):
-            _allinea_riga_budget(richiesta, attore=request.user, request=request)
         cloni = servizi.clona_per_funzioni(richiesta, attore=request.user)
         if cloni:
             elenco = ", ".join(f"{c.codice} ({c.get_tipo_display()})" for c in cloni)
-            msg += f" Create le schede dedicate: {elenco}, ora in carico alla funzione competente."
+            msg += (f" Create le schede dedicate: {elenco}, già in carico alla funzione "
+                    "competente; nel foglio di budget resta la sola riga di questa scheda, "
+                    "con il costo dell'intera iniziativa.")
+        # Effort e costi appena inseriti devono arrivare nel foglio senza aspettare il
+        # passaggio di stato: l'effort in ore diventa «EFFORT IT (GG)» a 8 ore/giorno.
+        # Dopo la clonazione, così l'importo comprende le componenti appena create.
+        if richiesta.stato not in (Stato.BOZZA, Stato.INVIATA, Stato.RESPINTA, Stato.ARCHIVIATA):
+            _allinea_riga_budget(richiesta, attore=request.user, request=request)
         messages.success(request, msg)
     else:
         messages.error(request, "Controlla i dati dell'analisi: alcuni valori non sono validi.")
@@ -1130,26 +1133,27 @@ def salva_riga_budget(request, pk):
 @login_required
 @require_POST
 def elimina_riga_budget(request, pk):
-    """Toglie una riga dal foglio.
+    """Elimina una riga del foglio e, se c'è, il progetto collegato.
 
-    Le righe importate dai workbook spariscono e basta. Quelle generate da un
-    progetto tornano al prossimo aggiornamento della scheda (è il progetto a
-    doverle stare nel foglio finché è in carico): lo si dice a chi cancella.
+    Riga e progetto sono la stessa cosa vista da due parti: eliminarne una elimina
+    l'altro. Le righe importate dai workbook non hanno progetto dietro e spariscono
+    e basta. Operazione non reversibile: il pulsante chiede conferma.
     """
     riga = get_object_or_404(RigaBudget.objects.select_related("foglio", "richiesta"), pk=pk)
     if not _puo_righe_budget(request.user):
         return HttpResponseForbidden("Solo le funzioni tecniche e il CISO possono eliminare le righe.")
     foglio = riga.foglio
     richiesta = riga.richiesta
-    riga.delete()
     if richiesta is not None:
-        messages.warning(
+        codice, titolo = richiesta.codice, richiesta.titolo
+        richiesta.delete()  # la riga sparisce con lui (cascata)
+        messages.success(
             request,
-            f"Riga eliminata da {foglio.nome} {foglio.anno}. Era collegata a {richiesta.codice} "
-            f"({richiesta.titolo}): finché il progetto resta in carico, la riga viene riscritta "
-            "al prossimo aggiornamento della scheda.",
+            f"Riga eliminata da {foglio.nome} {foglio.anno} insieme al progetto collegato "
+            f"{codice} — {titolo}.",
         )
     else:
+        riga.delete()
         messages.success(request, f"Riga eliminata da {foglio.nome} {foglio.anno}.")
     return redirect(foglio.get_absolute_url())
 
@@ -1257,8 +1261,10 @@ def elimina(request, pk):
     if not puo:
         return HttpResponseForbidden("Non hai i permessi per eliminare questa richiesta.")
     codice = richiesta.codice
-    richiesta.delete()
-    messages.success(request, f"Richiesta {codice} eliminata definitivamente.")
+    righe = richiesta.righe_budget.count()
+    richiesta.delete()  # porta con sé la riga nel foglio di budget
+    nota = f" Tolta anche la voce dal foglio di budget." if righe else ""
+    messages.success(request, f"Richiesta {codice} eliminata definitivamente.{nota}")
     return redirect("flusso:lista")
 
 

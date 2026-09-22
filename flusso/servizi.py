@@ -189,7 +189,7 @@ def crea_griglia_effort(richiesta) -> bool:
 
 
 def clona_per_funzioni(richiesta, attore=None) -> list:
-    """Crea le schede dedicate per Application e/o IT Operation, se i dettagli sono compilati.
+    """Crea le schede dedicate per AI, Application e/o IT Operation, se i dettagli sono compilati.
 
     La scheda AI di origine resta invariata; le copie sono progetti autonomi,
     gestiti dalla Funzione Applicativa / IT Operations, con ID «ID xx Application»
@@ -205,14 +205,17 @@ def clona_per_funzioni(richiesta, attore=None) -> list:
         return []  # scheda già generata: niente catene di cloni
     creati = []
     classi = {
+        TipoProgetto.AI: (richiesta.ai_capex, richiesta.ai_opex, richiesta.ai_ifrs),
         TipoProgetto.APPLICATION: (richiesta.app_capex, richiesta.app_opex, richiesta.app_ifrs),
         TipoProgetto.IT_OPERATION: (richiesta.ops_capex, richiesta.ops_opex, richiesta.ops_ifrs),
     }
     costi = {
+        TipoProgetto.AI: richiesta.costo_ai,
         TipoProgetto.APPLICATION: richiesta.costo_application,
         TipoProgetto.IT_OPERATION: richiesta.costo_it_operation,
     }
-    for tipo, testo in ((TipoProgetto.APPLICATION, richiesta.dettaglio_application),
+    for tipo, testo in ((TipoProgetto.AI, richiesta.dettaglio_ai),
+                        (TipoProgetto.APPLICATION, richiesta.dettaglio_application),
                         (TipoProgetto.IT_OPERATION, richiesta.dettaglio_it_operation)):
         if tipo not in scomponibili:
             continue  # non ci si scompone nel proprio tipo
@@ -239,10 +242,13 @@ def clona_per_funzioni(richiesta, attore=None) -> list:
             altri_costi=costi[tipo],
             data_necessita=richiesta.data_necessita,
         )
-        # Entra subito nella coda della funzione competente, con traccia in audit.
-        clone.applica("invia", attore=attore,
-                      nota=f"Scheda generata dalla componente «{clone.get_tipo_display()}» "
-                           f"di {richiesta.codice} — {richiesta.titolo}.")
+        # Entra subito nella coda della funzione competente e viene presa in carico
+        # automaticamente: la componente è già stata decisa sulla scheda madre.
+        nota = (f"Scheda generata dalla componente «{clone.get_tipo_display()}» "
+                f"di {richiesta.codice} — {richiesta.titolo}.")
+        clone.applica("invia", attore=attore, nota=nota)
+        clone.applica("prendi_in_carico", attore=attore,
+                      nota="Presa in carico automatica: componente di una scheda già in carico.")
         creati.append(clone)
     return creati
 
@@ -283,7 +289,9 @@ def _riga_da_richiesta(foglio, richiesta, base=None):
         scrivi("OPX", "CPX/OPX")
     if richiesta.is_ifrs:
         scrivi("IFRS", "IFRS")
-    costo = richiesta.costo_progetto_stimato
+    # Nel foglio va il costo dell'iniziativa: la scheda madre più le componenti, che
+    # non hanno una riga propria. Senza componenti coincide col costo di progetto.
+    costo = richiesta.costo_iniziativa
     if costo is not None:
         importo = float(costo)
         scrivi(importo, "ESTIMATED AMOUNT")
@@ -312,6 +320,9 @@ def anteprima_copia_in_budget(richiesta):
     from .models import RigaBudget, TipoFoglio
 
     esistente = RigaBudget.objects.filter(richiesta=richiesta).select_related("foglio").first()
+    if richiesta.is_clone:
+        return ("togli", f"{esistente.foglio.nome} {esistente.foglio.anno}") if esistente \
+            else ("invariata", "—")
     extra = (richiesta.budget_it == "EXTRA_BUDGET"
              or richiesta.esito_budget == "EXTRA_BUDGET")
     tipo = TipoFoglio.EXTRA if extra else TipoFoglio.BUDGET
@@ -344,6 +355,12 @@ def copia_in_budget(richiesta, attore=None, anno=None):
     from .models import RigaBudget, TipoFoglio
 
     esistente = RigaBudget.objects.filter(richiesta=richiesta).select_related("foglio").first()
+    if richiesta.is_clone:
+        # Le schede generate da una componente non hanno riga propria: l'iniziativa
+        # sta nel foglio con la sola riga della scheda madre, che ne porta il totale.
+        if esistente:
+            esistente.delete()
+        return None, False
     extra = (richiesta.budget_it == "EXTRA_BUDGET"
              or richiesta.esito_budget == "EXTRA_BUDGET")
     tipo = TipoFoglio.EXTRA if extra else TipoFoglio.BUDGET

@@ -205,7 +205,7 @@ def solo_progetti(qs):
 class Entity(models.TextChoices):
     """Entita' legale/geografica di riferimento del progetto."""
 
-    HD = "HD", "HD"
+    HQ = "HQ", "HQ"
     ROMANIA = "ROMANIA", "Romania"
     SPAGNA = "SPAGNA", "Spagna"
     FRANCIA = "FRANCIA", "Francia"
@@ -360,6 +360,17 @@ class Richiesta(models.Model):
         "Costo a carico dell'owner (€)", max_digits=12, decimal_places=2, null=True, blank=True,
         help_text="Costi sul budget dell'owner: consulenti esterni, servizi, licenze già a suo carico.",
     )
+    dettaglio_ai = models.TextField(
+        "Componente AI", blank=True,
+        help_text="Parte del progetto che usa l'AI: se compilata genera una scheda per la Funzione AI.",
+    )
+    costo_ai = models.DecimalField(
+        "Costo AI (€)", max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text="Costo della sola componente AI: diventa il costo della scheda generata.",
+    )
+    ai_capex = models.BooleanField("Capex (AI)", default=False)
+    ai_opex = models.BooleanField("Opex (AI)", default=False)
+    ai_ifrs = models.BooleanField("IFRS (AI)", default=False)
     dettaglio_application = models.TextField(
         "Application", blank=True,
         help_text="Componente applicativa (nuovi software, ERP…). Se compilato genera una scheda dedicata per la Funzione Applicativa.",
@@ -546,7 +557,7 @@ class Richiesta(models.Model):
             return []
         # Infosec non compare mai come componente di un'altra scheda: si crea solo
         # come progetto a sé (dal form dell'owner o da una riga di budget).
-        return [t for t in (TipoProgetto.APPLICATION, TipoProgetto.IT_OPERATION)
+        return [t for t in (TipoProgetto.AI, TipoProgetto.APPLICATION, TipoProgetto.IT_OPERATION)
                 if t != self.tipo]
 
     @property
@@ -1653,7 +1664,9 @@ class RigaBudget(models.Model):
     foglio = models.ForeignKey(FoglioBudget, on_delete=models.CASCADE, related_name="righe")
     ordine = models.PositiveIntegerField(default=0, db_index=True)
     dati = models.JSONField(default=list)
-    richiesta = models.ForeignKey(Richiesta, null=True, blank=True, on_delete=models.SET_NULL,
+    # Riga e progetto vivono insieme: eliminato il progetto, la sua riga sparisce dal
+    # foglio (le righe importate dai workbook non hanno progetto e restano).
+    richiesta = models.ForeignKey(Richiesta, null=True, blank=True, on_delete=models.CASCADE,
                                   related_name="righe_budget")
     da_progetto = models.BooleanField(default=False)
     creata_il = models.DateTimeField(auto_now_add=True)

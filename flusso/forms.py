@@ -18,6 +18,7 @@ class AnalisiAIForm(forms.ModelForm):
             "is_capex", "is_opex", "is_ifrs", "budget_it",
             "costo_token_ai", "costo_token_periodicita",
             "costo_token_ambito", "altri_costi", "altri_costi_note",
+            "dettaglio_ai", "costo_ai", "ai_capex", "ai_opex", "ai_ifrs",
             "dettaglio_application", "costo_application", "app_capex", "app_opex", "app_ifrs",
             "dettaglio_it_operation", "costo_it_operation", "ops_capex", "ops_opex", "ops_ifrs",
         ]
@@ -27,6 +28,8 @@ class AnalisiAIForm(forms.ModelForm):
             "costo_token_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
             "altri_costi": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€"}),
             "altri_costi_note": forms.TextInput(attrs={"placeholder": "es. licenze, infrastruttura on-prem"}),
+            "dettaglio_ai": forms.Textarea(attrs={"rows": 2, "placeholder": "Componente AI (assistenti, modelli, automazioni): se compilata genera una scheda per la Funzione AI"}),
+            "costo_ai": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ costo della componente"}),
             "dettaglio_application": forms.Textarea(attrs={"rows": 2, "placeholder": "Componente applicativa (software, ERP…): se compilata genera una scheda per la Funzione Applicativa"}),
             "dettaglio_it_operation": forms.Textarea(attrs={"rows": 2, "placeholder": "Componente IT Operation: se compilata genera una scheda per la Funzione IT Operations"}),
             "costo_application": forms.NumberInput(attrs={"min": 0, "step": "0.01", "placeholder": "€ costo della componente"}),
@@ -47,6 +50,9 @@ class AnalisiAIForm(forms.ModelForm):
         # già una scheda generata): via i campi della componente non pertinente.
         scomponibili = getattr(self.instance, "tipi_scomponibili", None)
         if scomponibili is not None:
+            if TipoProgetto.AI not in scomponibili:
+                for nome in ("dettaglio_ai", "costo_ai", "ai_capex", "ai_opex", "ai_ifrs"):
+                    self.fields.pop(nome, None)
             if TipoProgetto.APPLICATION not in scomponibili:
                 for nome in ("dettaglio_application", "costo_application",
                              "app_capex", "app_opex", "app_ifrs"):
