@@ -24,7 +24,9 @@ from django.views.decorators.http import require_POST
 
 from . import servizi
 from .ai_client import genera_analisi, prova_connessione
-from .esportazioni import fogli_del_workbook, risposta_excel, risposta_workbook_budget
+from .esportazioni import (descrizione_filtri, fogli_del_workbook, risposta_excel,
+                           risposta_workbook_budget)
+from .presentazioni import risposta_pptx
 from .forms import (AnalisiAIForm, AzioneTrattamentoFormSet, BeneficioForm, ImpostazioniAIForm,
                     PianificazioneForm, RichiestaForm, SalForm, TrattamentoRischioForm,
                     ValidazioneRischioForm)
@@ -261,6 +263,17 @@ def lista(request):
         "export_ambito": NOME_BREVE_TIPO.get(scelto, scelto) if esplicito else "tutti i tipi",
         "query_export_tutti": tutti.urlencode() if esplicito else "",
     })
+
+
+@login_required
+def esporta_pptx(request):
+    """Scarica la presentazione dei progetti del filtro corrente (schede + KPI)."""
+    qs, filtri = _filtra_richieste(request, tipo_di_default=False)
+    qs = qs.exclude(stato=Stato.BOZZA)
+    filtri["esclude_bozze"] = True
+    richieste = list(qs.select_related("proponente").prefetch_related("cloni")
+                     .order_by("numero"))
+    return risposta_pptx(richieste, filtri, descrizione_filtri(filtri))
 
 
 @login_required

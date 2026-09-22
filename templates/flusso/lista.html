@@ -12,6 +12,10 @@
        title="Scarica in Excel i progetti con i filtri attivi (stato, funzione, ricerca). Le bozze restano fuori.">
       <i class="ti ti-file-spreadsheet"></i> Esporta in Excel <span class="ambito">· {{ export_ambito }}</span>
     </a>
+    <a href="{% url 'flusso:esporta_pptx' %}?{{ query_export }}" class="btn"
+       title="Scarica una presentazione con le schede progetto e i numeri di sintesi del filtro attivo">
+      <i class="ti ti-presentation"></i> Esporta in PPTX
+    </a>
     {% if query_export_tutti %}
     <a href="{% url 'flusso:esporta_richieste' %}?{{ query_export_tutti }}" class="link-ambito"
        title="Esporta AI, Application, IT Operation e Infosec insieme, mantenendo gli altri filtri">tutti i tipi</a>

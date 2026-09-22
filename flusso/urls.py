@@ -8,6 +8,7 @@ urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("richieste/", views.lista, name="lista"),
     path("richieste/esporta/", views.esporta_richieste, name="esporta_richieste"),
+    path("richieste/esporta-pptx/", views.esporta_pptx, name="esporta_pptx"),
     path("board/", views.kanban, name="kanban"),
     path("kpi/", views.kpi, name="kpi"),
     path("kpi/genera/", views.genera_analisi_kpi, name="genera_analisi_kpi"),
