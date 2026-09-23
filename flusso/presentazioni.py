@@ -19,6 +19,7 @@ VERDE_FG = (0x1E, 0x7A, 0x3C)
 BIANCO = (0xFF, 0xFF, 0xFF)
 
 CARD_PER_SLIDE = 6  # 3 colonne x 2 righe
+LUNGHEZZA_DESCRIZIONE = 180  # caratteri che stanno nel quadrato senza sfondarlo
 
 # Ordine delle sezioni nel mazzo: Infosec apre, poi le altre.
 AREE = (("INFOSEC", "Infosec"), ("AI", "AI"), ("APPLICATION", "Application"),
@@ -297,24 +298,33 @@ def _card(slide, richiesta, x, y, w, h):
            f"{' · Attività' if richiesta.is_attivita else ''} · {richiesta.stato_label}",
            dim=8, grassetto=True, colore=GRIGIO)
 
-    titolo = slide.shapes.add_textbox(x + Inches(0.15), y + Inches(0.36), w - Inches(0.3), Inches(0.5))
+    titolo = slide.shapes.add_textbox(x + Inches(0.15), y + Inches(0.33), w - Inches(0.3), Inches(0.45))
     _testo(titolo, richiesta.titolo[:70], dim=12.5, grassetto=True)
 
-    effort = slide.shapes.add_textbox(x + Inches(0.15), y + Inches(0.78), w - Inches(0.3), Inches(0.22))
+    # Descrizione del progetto: tagliata a una misura che sta nel quadrato senza
+    # sfondarlo (tre righe scarse), con i puntini quando è più lunga.
+    descrizione = " ".join((richiesta.descrizione or "").split())
+    if len(descrizione) > LUNGHEZZA_DESCRIZIONE:
+        descrizione = descrizione[:LUNGHEZZA_DESCRIZIONE].rsplit(" ", 1)[0] + "…"
+    testo_desc = slide.shapes.add_textbox(x + Inches(0.15), y + Inches(0.76),
+                                          w - Inches(0.3), Inches(0.62))
+    _testo(testo_desc, descrizione, dim=8.5, colore=GRIGIO)
+
+    effort = slide.shapes.add_textbox(x + Inches(0.15), y + Inches(1.42), w - Inches(0.3), Inches(0.22))
     _testo(effort, "Effort " + (richiesta.effort_fmt or "non ancora stimato"),
-           dim=8.5, colore=GRIGIO)
+           dim=8.5, colore=INCHIOSTRO)
 
     quadr_w = (w - Inches(0.45)) / 2
-    quadr_h = Inches(0.62)
-    base_y = y + Inches(1.05)
+    quadr_h = Inches(0.58)
+    base_y = y + Inches(1.7)
     _riquadro(slide, x + Inches(0.15), base_y, quadr_w, quadr_h,
               "Beneficio atteso", _euro(richiesta.saving_economico))
     _riquadro(slide, x + Inches(0.3) + quadr_w, base_y, quadr_w, quadr_h,
               "Costo dell'attività" if richiesta.is_attivita else "Costo del progetto",
               _euro(richiesta.costo_iniziativa))
-    _riquadro(slide, x + Inches(0.15), base_y + quadr_h + Inches(0.1), quadr_w, quadr_h,
+    _riquadro(slide, x + Inches(0.15), base_y + quadr_h + Inches(0.08), quadr_w, quadr_h,
               "Incremento qualitativo", richiesta.incremento_qualitativo_fmt or "—", verde=True)
-    _riquadro(slide, x + Inches(0.3) + quadr_w, base_y + quadr_h + Inches(0.1), quadr_w, quadr_h,
+    _riquadro(slide, x + Inches(0.3) + quadr_w, base_y + quadr_h + Inches(0.08), quadr_w, quadr_h,
               "Incremento efficienza", richiesta.incremento_efficienza_fmt or "—", verde=True)
 
 
@@ -329,10 +339,10 @@ def _slide_schede(prs, area_label, blocco, pagina, pagine):
     num = slide.shapes.add_textbox(Inches(10.5), Inches(0.32), Inches(1.2), Inches(0.4))
     _testo(num, f"{pagina} / {pagine}", dim=10, colore=GRIGIO)
 
-    w, h = Inches(4.0), Inches(2.5)
+    w, h = Inches(4.0), Inches(2.95)
     for i, richiesta in enumerate(blocco):
         x = Inches(0.55) + (w + Inches(0.15)) * (i % 3)
-        y = Inches(1.05) + (h + Inches(0.45)) * (i // 3)
+        y = Inches(1.0) + (h + Inches(0.22)) * (i // 3)
         _card(slide, richiesta, x, y, w, h)
     return slide
 
