@@ -1,8 +1,10 @@
 """Esportazione in PowerPoint dei progetti filtrati.
 
-Una slide di copertina, una di KPI e poi le schede a riquadri, sei per slide:
-gli stessi numeri che si vedono a video (beneficio atteso, costo, incrementi),
-cosi' il mazzo si porta in riunione senza rimettere insieme i dati a mano.
+Il mazzo nasce dal template aziendale (flusso/data/template_presentazione.pptx):
+ne eredita copertina, retrocopertina, sfondo e font. Dentro ci mettiamo l'indice
+delle aree, i numeri di sintesi e le schede a riquadri, con gli stessi valori che
+si vedono a video. La griglia delle schede si adatta a quante sono: una sola sta
+al centro e grande, due affiancate, e così via fino a sei.
 """
 
 from django.http import HttpResponse
@@ -18,8 +20,10 @@ VERDE_BG = (0xEC, 0xF5, 0xEE)
 VERDE_FG = (0x1E, 0x7A, 0x3C)
 BIANCO = (0xFF, 0xFF, 0xFF)
 
-CARD_PER_SLIDE = 6  # 3 colonne x 2 righe
-LUNGHEZZA_DESCRIZIONE = 180  # caratteri che stanno nel quadrato senza sfondarlo
+CARD_PER_SLIDE = 6  # al massimo sei schede per slide
+
+# Disposizione delle schede: quante colonne e righe per n schede nella slide.
+GRIGLIA = {1: (1, 1), 2: (2, 1), 3: (3, 1), 4: (2, 2), 5: (3, 2), 6: (3, 2)}
 
 # Ordine delle sezioni nel mazzo: Infosec apre, poi le altre.
 AREE = (("INFOSEC", "Infosec"), ("AI", "AI"), ("APPLICATION", "Application"),
@@ -65,6 +69,21 @@ def _rettangolo(slide, x, y, w, h, fondo=FONDO, bordo=None):
     return forma
 
 
+def _apri_mazzo():
+    """Presentazione vuota 16:9: il mazzo lo disegniamo noi, senza template esterni."""
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
+    return prs
+
+
+def _slide_vuota(prs):
+    """Nuova slide sul layout vuoto."""
+    return prs.slides.add_slide(prs.slide_layouts[6])
+
+
 def _logo(slide, x, y, altezza):
     """Mette il logo ISEO, se il file statico c'è (rapporto 1000x489)."""
     from pathlib import Path
@@ -89,7 +108,7 @@ def _euro(valore) -> str:
     return "€ " + f"{float(valore):,.0f}".replace(",", ".")
 
 
-def _riquadro(slide, x, y, w, h, etichetta, valore, nota="", verde=False):
+def _riquadro(slide, x, y, w, h, etichetta, valore, nota="", verde=False, dim_valore=11):
     """Uno dei quadretti della scheda: etichetta piccola, valore in evidenza."""
     from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
     from pptx.util import Pt
@@ -110,7 +129,7 @@ def _riquadro(slide, x, y, w, h, etichetta, valore, nota="", verde=False):
     p2.alignment = PP_ALIGN.LEFT
     run2 = p2.add_run()
     run2.text = valore
-    run2.font.size = Pt(11)
+    run2.font.size = Pt(dim_valore)
     run2.font.bold = True
     run2.font.color.rgb = _colore(VERDE_FG if verde else INCHIOSTRO)
     if nota:
@@ -146,25 +165,33 @@ def riepilogo(richieste) -> dict:
     }
 
 
-def _copertina(prs, filtri, dati):
-    """Prima slide: titolo, filtro applicato e — riempito dopo — l'indice delle aree."""
+def titolo_mazzo(per_area) -> str:
+    """«Progetti Infosec» se l'export è di una sola area, «Progetti IT» se le contiene tutte."""
+    presenti = [etichetta for area, etichetta in AREE if per_area.get(area)]
+    return f"Progetti {presenti[0]}" if len(presenti) == 1 else "Progetti IT"
+
+
+def _copertina(prs, titolo, sottotitolo, dati):
+    """Copertina: fascia rossa col titolo, filtro applicato, data e logo."""
     from pptx.util import Inches
 
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _rettangolo(slide, 0, 0, prs.slide_width, Inches(2.0), fondo=ROSSO)
-    titolo = slide.shapes.add_textbox(Inches(0.7), Inches(0.5), Inches(11.9), Inches(1.0))
-    _testo(titolo, "Progetti IT", dim=38, grassetto=True, colore=BIANCO)
-    sotto = slide.shapes.add_textbox(Inches(0.7), Inches(1.35), Inches(11.9), Inches(0.5))
+    data = (f"{timezone.localtime().strftime('%d/%m/%Y')} · "
+            f"{_plurale(dati['progetti'], 'progetto', 'progetti')}, "
+            f"{_plurale(dati['attivita'], 'attività', 'attività')}")
+
+    slide = _slide_vuota(prs)
+    _rettangolo(slide, 0, 0, prs.slide_width, Inches(2.2), fondo=ROSSO)
+    tit = slide.shapes.add_textbox(Inches(0.78), Inches(0.62), Inches(11.5), Inches(1.0))
+    _testo(tit, titolo, dim=38, grassetto=True, colore=BIANCO)
+    sotto = slide.shapes.add_textbox(Inches(0.78), Inches(1.5), Inches(11.5), Inches(0.4))
     _testo(sotto, "ISEO Group · Portafoglio iniziative", dim=14, colore=BIANCO)
 
-    _logo(slide, Inches(9.6), Inches(2.45), Inches(1.15))
-    riga = slide.shapes.add_textbox(Inches(0.7), Inches(2.25), Inches(8.5), Inches(0.4))
-    _testo(riga, filtri, dim=11, colore=GRIGIO)
-    data = slide.shapes.add_textbox(Inches(0.7), Inches(6.7), Inches(11.9), Inches(0.4))
-    _testo(data, f"Esportato il {timezone.localtime().strftime('%d/%m/%Y')} · "
-                 f"{_plurale(dati['progetti'], 'progetto', 'progetti')}, "
-                 f"{_plurale(dati['attivita'], 'attività', 'attività')}",
-           dim=11, colore=GRIGIO)
+    riga = slide.shapes.add_textbox(Inches(0.78), Inches(2.55), Inches(9.0), Inches(0.4))
+    _testo(riga, sottotitolo, dim=11, colore=GRIGIO)
+    piede = slide.shapes.add_textbox(Inches(0.78), Inches(6.55), Inches(9.0), Inches(0.4))
+    _testo(piede, data, dim=11, colore=GRIGIO)
+    alt_logo = Inches(1.0)
+    _logo(slide, Inches(13.333) - Inches(0.78) - alt_logo * 1000 / 489, Inches(2.5), alt_logo)
     return slide
 
 
@@ -180,33 +207,54 @@ def _collega_a_slide(run, slide_origine, slide_destinazione):
     rPr.append(link)
 
 
-def _indice(slide, ancore, conteggi):
-    """Indice sulla copertina: una riga per area, cliccabile se l'area ha schede."""
+def _slide_indice(prs, titolo, ancore, conteggi):
+    """Indice delle aree esportate, ognuna cliccabile verso la sua sezione."""
     from pptx.enum.text import PP_ALIGN
     from pptx.util import Inches, Pt
 
-    y = Inches(2.9)
-    for area, etichetta in AREE:
-        n = conteggi.get(area, 0)
-        if not n:
-            continue  # nell'indice stanno solo le aree che il filtro ha lasciato dentro
-        riquadro = _rettangolo(slide, Inches(0.7), y, Inches(5.4), Inches(0.62), fondo=FONDO)
+    slide = _slide_vuota(prs)
+    _intestazione(slide, "Indice", titolo)
+
+    presenti = [(area, etichetta) for area, etichetta in AREE if conteggi.get(area)]
+    altezza, passo = Inches(0.78), Inches(0.95)
+    # Il blocco delle voci sta al centro verticale dell'area utile.
+    y = Inches(1.7) + (Inches(4.7) - passo * len(presenti)) / 2
+    for area, etichetta in presenti:
+        riquadro = _rettangolo(slide, Inches(3.4), y, Inches(6.5), altezza, fondo=FONDO)
         tf = riquadro.text_frame
-        tf.margin_left = Pt(12)
-        p = tf.paragraphs[0]
-        p.alignment = PP_ALIGN.LEFT
-        run = p.add_run()
-        run.text = f"{etichetta}"
-        run.font.size = Pt(14)
+        tf.margin_left = Pt(16)
+        par = tf.paragraphs[0]
+        par.alignment = PP_ALIGN.LEFT
+        run = par.add_run()
+        run.text = etichetta
+        run.font.size = Pt(16)
         run.font.bold = True
         run.font.color.rgb = _colore(ROSSO)
-        coda = p.add_run()
-        coda.text = "   " + _plurale(n, "scheda", "schede")
-        coda.font.size = Pt(11)
+        coda = par.add_run()
+        coda.text = "   " + _plurale(conteggi.get(area, 0), "scheda", "schede")
+        coda.font.size = Pt(12)
         coda.font.color.rgb = _colore(GRIGIO)
         if area in ancore:
             _collega_a_slide(run, slide, ancore[area])
-        y += Inches(0.78)
+        y += passo
+    return slide
+
+
+def _intestazione(slide, titolo, occhiello=""):
+    """Testata uguale su ogni slide: occhiello piccolo, titolo con filetto rosso, logo.
+
+    Il titolo grande è quello della slide (l'indice, i numeri, la sezione di un'area);
+    l'occhiello sopra ricorda di quale mazzo si tratta.
+    """
+    from pptx.util import Inches
+
+    if occhiello:
+        sopra = slide.shapes.add_textbox(Inches(0.78), Inches(0.42), Inches(9.5), Inches(0.28))
+        _testo(sopra, occhiello, dim=10, grassetto=True, colore=GRIGIO, maiuscolo=True)
+    _rettangolo(slide, Inches(0.6), Inches(0.76), Inches(0.09), Inches(0.44), fondo=ROSSO)
+    box = slide.shapes.add_textbox(Inches(0.78), Inches(0.68), Inches(9.5), Inches(0.6))
+    _testo(box, titolo, dim=22, grassetto=True)
+    _logo(slide, Inches(11.95), Inches(0.55), Inches(0.42))
 
 
 def _tessera(slide, x, y, w, h, etichetta, valore, nota="", evidenzia=False):
@@ -242,26 +290,25 @@ def _tessera(slide, x, y, w, h, etichetta, valore, nota="", evidenzia=False):
     return forma
 
 
-def _slide_aree(prs, per_area, dati):
-    """Seconda slide: progetti e attività divisi per area, più i totali."""
+def _slide_aree(prs, per_area, dati, titolo):
+    """Progetti e attività divisi per area, con i totali sotto."""
     from pptx.util import Inches
 
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _logo(slide, Inches(11.9), Inches(0.35), Inches(0.42))
-    tit = slide.shapes.add_textbox(Inches(0.6), Inches(0.35), Inches(10), Inches(0.6))
-    _testo(tit, "Progetti e attività per area", dim=24, grassetto=True)
-
     presenti = [(area, etichetta) for area, etichetta in AREE if per_area.get(area)]
-    # Le tessere si allargano quando le aree sono poche (export filtrato su una sola).
-    disponibile = Inches(12.13) - Inches(0.25) * max(len(presenti) - 1, 0)
-    larghezza = min(Inches(3.9), disponibile / max(len(presenti), 1))
-    altezza = Inches(1.95)
-    for i, (area, etichetta) in enumerate(presenti):
-        voci = per_area.get(area, [])
-        numeri = riepilogo(voci)
-        x = Inches(0.6) + (larghezza + Inches(0.25)) * i
-        forma = _tessera(slide, x, Inches(1.3), larghezza, altezza, etichetta,
-                         str(numeri["n"]), evidenzia=(area == "INFOSEC"))
+    slide = _slide_vuota(prs)
+    _intestazione(slide, "Progetti e attività per area" if len(presenti) > 1
+                  else "I numeri del portafoglio", titolo)
+
+    n = max(len(presenti), 1)
+    riga_aree = len(presenti) > 1  # con una sola area basterebbero i totali
+    passo = Inches(0.25)
+    larghezza = min(Inches(3.9), (Inches(12.13) - passo * (n - 1)) / n)
+    partenza = (Inches(13.333) - (larghezza * n + passo * (n - 1))) / 2  # blocco centrato
+    for i, (area, etichetta) in enumerate(presenti if riga_aree else []):
+        numeri = riepilogo(per_area.get(area, []))
+        forma = _tessera(slide, partenza + (larghezza + passo) * i, Inches(1.85),
+                         larghezza, Inches(1.95), etichetta, str(numeri["n"]),
+                         evidenzia=(area == "INFOSEC"))
         from pptx.enum.text import PP_ALIGN
         from pptx.util import Pt
         tf = forma.text_frame
@@ -286,69 +333,101 @@ def _slide_aree(prs, per_area, dati):
         ("Beneficio atteso", _euro(dati["beneficio"]), ""),
         ("Effort", f"{dati['effort_gg']:g} gg".replace(".", ","), "a 8 ore/giorno"),
     ]
-    larghezza_totali = Inches(2.95)
+    larghezza_t = Inches(2.95)
+    partenza_t = (Inches(13.333) - (larghezza_t * 4 + passo * 3)) / 2
+    y_totali = Inches(4.25) if riga_aree else Inches(3.45)
     for i, (etichetta, valore, nota) in enumerate(totali):
-        x = Inches(0.6) + (larghezza_totali + Inches(0.25)) * i
-        _tessera(slide, x, Inches(3.7), larghezza_totali, Inches(1.4), etichetta, valore, nota,
+        _tessera(slide, partenza_t + (larghezza_t + passo) * i, y_totali,
+                 larghezza_t, Inches(1.6), etichetta, valore, nota,
                  evidenzia=(i in (1, 2)))
+    return slide
 
 
 def _card(slide, richiesta, x, y, w, h):
-    from pptx.util import Inches, Pt
+    """Un quadrato progetto: testata, titolo, descrizione, effort e quattro riquadri.
+
+    Le misure interne si ricavano da w e h, così la scheda regge sia grande al
+    centro della slide (un progetto solo) sia piccola in una griglia da sei: i
+    riquadri restano ancorati in basso e la descrizione prende lo spazio che resta.
+    """
+    from pptx.util import Inches
 
     _rettangolo(slide, x, y, w, h, fondo=BIANCO, bordo=(0xE5, 0xE7, 0xEB))
-    testata = slide.shapes.add_textbox(x + Inches(0.15), y + Inches(0.1), w - Inches(0.3), Inches(0.3))
+    grande = w >= Inches(5)
+    bordo = Inches(0.18) if grande else Inches(0.13)
+    largo = w - bordo * 2
+
+    alt_testata = Inches(0.26) if grande else Inches(0.2)
+    alt_titolo = Inches(0.62) if grande else Inches(0.4)
+    quadr_h = Inches(0.72) if grande else Inches(0.5)
+    alt_effort = Inches(0.28) if grande else Inches(0.22)
+
+    testata = slide.shapes.add_textbox(x + bordo, y + bordo * 0.7, largo, alt_testata)
     _testo(testata,
            f"{richiesta.codice} · {richiesta.tipo_breve} · {richiesta.get_funzione_display()}"
            f"{' · Attività' if richiesta.is_attivita else ''} · {richiesta.stato_label}",
-           dim=8, grassetto=True, colore=GRIGIO)
+           dim=9 if grande else 7.5, grassetto=True, colore=GRIGIO)
 
-    titolo = slide.shapes.add_textbox(x + Inches(0.15), y + Inches(0.33), w - Inches(0.3), Inches(0.45))
-    _testo(titolo, richiesta.titolo[:70], dim=12.5, grassetto=True)
+    y_titolo = y + bordo * 0.7 + alt_testata
+    titolo = slide.shapes.add_textbox(x + bordo, y_titolo, largo, alt_titolo)
+    _testo(titolo, richiesta.titolo[:80], dim=17 if grande else 11.5, grassetto=True)
 
-    # Descrizione del progetto: tagliata a una misura che sta nel quadrato senza
-    # sfondarlo (tre righe scarse), con i puntini quando è più lunga.
-    descrizione = " ".join((richiesta.descrizione or "").split())
-    if len(descrizione) > LUNGHEZZA_DESCRIZIONE:
-        descrizione = descrizione[:LUNGHEZZA_DESCRIZIONE].rsplit(" ", 1)[0] + "…"
-    testo_desc = slide.shapes.add_textbox(x + Inches(0.15), y + Inches(0.76),
-                                          w - Inches(0.3), Inches(0.62))
-    _testo(testo_desc, descrizione, dim=8.5, colore=GRIGIO)
+    quadr_w = (largo - Inches(0.12)) / 2
+    base_y = y + h - bordo - quadr_h * 2 - Inches(0.07)
+    effort_y = base_y - alt_effort - Inches(0.03)
 
-    effort = slide.shapes.add_textbox(x + Inches(0.15), y + Inches(1.42), w - Inches(0.3), Inches(0.22))
+    desc_y = y_titolo + alt_titolo + Inches(0.02)
+    desc_h = effort_y - desc_y - Inches(0.03)
+    if desc_h >= Inches(0.28):
+        dim_desc = 10 if grande else 7.5
+        righe = max(int(desc_h / (Inches(0.16) if grande else Inches(0.125))), 1)
+        per_riga = int(largo / (Inches(0.068) if grande else Inches(0.05)))
+        descrizione = " ".join((richiesta.descrizione or "").split())
+        limite = max(righe * per_riga - 3, 20)
+        if len(descrizione) > limite:
+            descrizione = descrizione[:limite].rsplit(" ", 1)[0] + "…"
+        box = slide.shapes.add_textbox(x + bordo, desc_y, largo, desc_h)
+        _testo(box, descrizione, dim=dim_desc, colore=GRIGIO)
+
+    effort = slide.shapes.add_textbox(x + bordo, effort_y, largo, alt_effort)
     _testo(effort, "Effort " + (richiesta.effort_fmt or "non ancora stimato"),
-           dim=8.5, colore=INCHIOSTRO)
+           dim=10 if grande else 8)
 
-    quadr_w = (w - Inches(0.45)) / 2
-    quadr_h = Inches(0.58)
-    base_y = y + Inches(1.7)
-    _riquadro(slide, x + Inches(0.15), base_y, quadr_w, quadr_h,
-              "Beneficio atteso", _euro(richiesta.saving_economico))
-    _riquadro(slide, x + Inches(0.3) + quadr_w, base_y, quadr_w, quadr_h,
-              "Costo dell'attività" if richiesta.is_attivita else "Costo del progetto",
-              _euro(richiesta.costo_iniziativa))
-    _riquadro(slide, x + Inches(0.15), base_y + quadr_h + Inches(0.08), quadr_w, quadr_h,
-              "Incremento qualitativo", richiesta.incremento_qualitativo_fmt or "—", verde=True)
-    _riquadro(slide, x + Inches(0.3) + quadr_w, base_y + quadr_h + Inches(0.08), quadr_w, quadr_h,
-              "Incremento efficienza", richiesta.incremento_efficienza_fmt or "—", verde=True)
+    riquadri = (
+        ("Beneficio atteso", _euro(richiesta.saving_economico), False),
+        ("Costo dell'attività" if richiesta.is_attivita else "Costo del progetto",
+         _euro(richiesta.costo_iniziativa), False),
+        ("Incremento qualitativo", richiesta.incremento_qualitativo_fmt or "—", True),
+        ("Incremento efficienza", richiesta.incremento_efficienza_fmt or "—", True),
+    )
+    for i, (etichetta, valore, verde) in enumerate(riquadri):
+        rx = x + bordo + (quadr_w + Inches(0.12)) * (i % 2)
+        ry = base_y + (quadr_h + Inches(0.07)) * (i // 2)
+        _riquadro(slide, rx, ry, quadr_w, quadr_h, etichetta, valore, verde=verde,
+                  dim_valore=13 if grande else 10)
 
 
-def _slide_schede(prs, area_label, blocco, pagina, pagine):
+def _slide_schede(prs, titolo, occhiello, blocco, pagina, pagine):
+    """Le schede di un blocco, in una griglia centrata che si adatta a quante sono."""
     from pptx.util import Inches
 
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _rettangolo(slide, Inches(0.55), Inches(0.3), Inches(0.09), Inches(0.42), fondo=ROSSO)
-    tit = slide.shapes.add_textbox(Inches(0.75), Inches(0.25), Inches(10), Inches(0.5))
-    _testo(tit, area_label, dim=20, grassetto=True)
-    _logo(slide, Inches(11.9), Inches(0.28), Inches(0.42))
-    num = slide.shapes.add_textbox(Inches(10.5), Inches(0.32), Inches(1.2), Inches(0.4))
-    _testo(num, f"{pagina} / {pagine}", dim=10, colore=GRIGIO)
+    slide = _slide_vuota(prs)
+    _intestazione(slide, occhiello, titolo)
+    if pagine > 1:
+        num = slide.shapes.add_textbox(Inches(11.0), Inches(0.75), Inches(0.9), Inches(0.35))
+        _testo(num, f"{pagina} / {pagine}", dim=10, colore=GRIGIO)
 
-    w, h = Inches(4.0), Inches(2.95)
+    colonne, righe = GRIGLIA.get(len(blocco), (3, 2))
+    passo = Inches(0.22)
+    area_w, area_h = Inches(12.2), Inches(5.45)
+    w = min((area_w - passo * (colonne - 1)) / colonne, Inches(7.8))
+    h = min((area_h - passo * (righe - 1)) / righe, Inches(4.6))
+    # Blocco centrato in orizzontale e in verticale nell'area utile.
+    x0 = (Inches(13.333) - (w * colonne + passo * (colonne - 1))) / 2
+    y0 = Inches(1.62) + (area_h - (h * righe + passo * (righe - 1))) / 2
     for i, richiesta in enumerate(blocco):
-        x = Inches(0.55) + (w + Inches(0.15)) * (i % 3)
-        y = Inches(1.0) + (h + Inches(0.22)) * (i // 3)
-        _card(slide, richiesta, x, y, w, h)
+        riga, colonna = divmod(i, colonne)
+        _card(slide, richiesta, x0 + (w + passo) * colonna, y0 + (h + passo) * riga, w, h)
     return slide
 
 
@@ -361,19 +440,18 @@ def nome_file(filtri) -> str:
 
 
 def risposta_pptx(richieste, filtri, descrizione) -> HttpResponse:
-    """Costruisce il mazzo e lo restituisce come allegato .pptx."""
-    from pptx import Presentation
-    from pptx.util import Inches
-
-    prs = Presentation()
-    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)  # 16:9
+    """Costruisce il mazzo sul template aziendale e lo restituisce come allegato."""
+    prs = _apri_mazzo()
 
     dati = riepilogo(richieste)
     per_area = {area: [r for r in richieste if r.tipo == area] for area, _ in AREE}
-    copertina = _copertina(prs, descrizione, dati)
-    _slide_aree(prs, per_area, dati)
+    titolo = titolo_mazzo(per_area)
+    conteggi = {area: len(per_area.get(area) or []) for area, _ in AREE}
 
-    # Una sezione per area, nell'ordine deciso: Infosec apre il mazzo.
+    _copertina(prs, titolo, descrizione, dati)
+    indice = _slide_indice(prs, titolo, {}, conteggi)  # i link si agganciano dopo
+    _slide_aree(prs, per_area, dati, titolo)
+
     ancore = {}
     for area, etichetta in AREE:
         voci = per_area.get(area) or []
@@ -381,12 +459,26 @@ def risposta_pptx(richieste, filtri, descrizione) -> HttpResponse:
             continue
         blocchi = [voci[i:i + CARD_PER_SLIDE] for i in range(0, len(voci), CARD_PER_SLIDE)]
         for n, blocco in enumerate(blocchi, start=1):
-            slide = _slide_schede(prs, f"{etichetta} — schede progetto", blocco, n, len(blocchi))
+            slide = _slide_schede(prs, titolo, f"{etichetta} · schede progetto",
+                                  blocco, n, len(blocchi))  # occhiello = titolo del mazzo
             ancore.setdefault(area, slide)
-    _indice(copertina, ancore, {area: len(per_area.get(area) or []) for area, _ in AREE})
+    _aggancia_indice(indice, ancore)
 
     risposta = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
     risposta["Content-Disposition"] = f'attachment; filename="{nome_file(filtri)}"'
     prs.save(risposta)
     return risposta
+
+
+def _aggancia_indice(slide, ancore):
+    """Trasforma le voci dell'indice in link, ora che le sezioni esistono."""
+    etichette = {etichetta: area for area, etichetta in AREE}
+    for forma in slide.shapes:
+        if not forma.has_text_frame:
+            continue
+        for paragrafo in forma.text_frame.paragraphs:
+            for run in paragrafo.runs:
+                area = etichette.get(run.text.strip())
+                if area and area in ancore:
+                    _collega_a_slide(run, slide, ancore[area])
