@@ -440,7 +440,7 @@ def nome_file(filtri) -> str:
 
 
 def risposta_pptx(richieste, filtri, descrizione) -> HttpResponse:
-    """Costruisce il mazzo sul template aziendale e lo restituisce come allegato."""
+    """Costruisce il mazzo e lo restituisce come allegato .pptx."""
     prs = _apri_mazzo()
 
     dati = riepilogo(richieste)
@@ -449,7 +449,10 @@ def risposta_pptx(richieste, filtri, descrizione) -> HttpResponse:
     conteggi = {area: len(per_area.get(area) or []) for area, _ in AREE}
 
     _copertina(prs, titolo, descrizione, dati)
-    indice = _slide_indice(prs, titolo, {}, conteggi)  # i link si agganciano dopo
+    # L'indice serve solo se ci sono più aree da raggiungere: con una sola area
+    # il mazzo è già tutto lì e una pagina di rimandi sarebbe rumore.
+    aree_presenti = sum(1 for n in conteggi.values() if n)
+    indice = _slide_indice(prs, titolo, {}, conteggi) if aree_presenti > 1 else None
     _slide_aree(prs, per_area, dati, titolo)
 
     ancore = {}
@@ -462,7 +465,8 @@ def risposta_pptx(richieste, filtri, descrizione) -> HttpResponse:
             slide = _slide_schede(prs, titolo, f"{etichetta} · schede progetto",
                                   blocco, n, len(blocchi))  # occhiello = titolo del mazzo
             ancore.setdefault(area, slide)
-    _aggancia_indice(indice, ancore)
+    if indice is not None:
+        _aggancia_indice(indice, ancore)
 
     risposta = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
