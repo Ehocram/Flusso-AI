@@ -136,8 +136,8 @@ def _riquadro(slide, x, y, w, h, etichetta, valore, nota="", verde=False, dim_va
         p3 = tf.add_paragraph()
         p3.alignment = PP_ALIGN.LEFT
         run3 = p3.add_run()
-        run3.text = nota[:60]
-        run3.font.size = Pt(6.5)
+        run3.text = nota
+        run3.font.size = Pt(8 if dim_valore >= 13 else 6.5)
         run3.font.color.rgb = _colore(GRIGIO)
     return forma
 
@@ -346,21 +346,26 @@ def _slide_aree(prs, per_area, dati, titolo):
 def _card(slide, richiesta, x, y, w, h):
     """Un quadrato progetto: testata, titolo, descrizione, effort e quattro riquadri.
 
-    Le misure interne si ricavano da w e h, così la scheda regge sia grande al
-    centro della slide (un progetto solo) sia piccola in una griglia da sei: i
-    riquadri restano ancorati in basso e la descrizione prende lo spazio che resta.
+    Le altezze sono frazioni di h e i corpi del testo seguono w: così la scheda
+    regge sia grande al centro della slide sia piccola in una griglia da sei, senza
+    che i riquadri escano dal bordo. Le note di beneficio e incrementi compaiono nei
+    riquadri solo quando c'è spazio per leggerle.
     """
     from pptx.util import Inches
 
+    def fra(quota, minimo, massimo):
+        return max(min(h * quota, Inches(massimo)), Inches(minimo))
+
     _rettangolo(slide, x, y, w, h, fondo=BIANCO, bordo=(0xE5, 0xE7, 0xEB))
-    grande = w >= Inches(5)
+    grande = w >= Inches(5) and h >= Inches(3.2)  # scheda larga E alta: testi grandi
     bordo = Inches(0.18) if grande else Inches(0.13)
     largo = w - bordo * 2
 
-    alt_testata = Inches(0.26) if grande else Inches(0.2)
-    alt_titolo = Inches(0.62) if grande else Inches(0.4)
-    quadr_h = Inches(0.72) if grande else Inches(0.5)
-    alt_effort = Inches(0.28) if grande else Inches(0.22)
+    alt_testata = fra(0.07, 0.18, 0.26)
+    alt_titolo = fra(0.145, 0.36, 0.62)
+    quadr_h = fra(0.23, 0.5, 0.78)
+    alt_effort = fra(0.075, 0.2, 0.3)
+    note_leggibili = quadr_h >= Inches(0.56)
 
     testata = slide.shapes.add_textbox(x + bordo, y + bordo * 0.7, largo, alt_testata)
     _testo(testata,
@@ -379,32 +384,41 @@ def _card(slide, richiesta, x, y, w, h):
     desc_y = y_titolo + alt_titolo + Inches(0.02)
     desc_h = effort_y - desc_y - Inches(0.03)
     if desc_h >= Inches(0.28):
-        dim_desc = 10 if grande else 7.5
         righe = max(int(desc_h / (Inches(0.16) if grande else Inches(0.125))), 1)
         per_riga = int(largo / (Inches(0.068) if grande else Inches(0.05)))
-        descrizione = " ".join((richiesta.descrizione or "").split())
-        limite = max(righe * per_riga - 3, 20)
-        if len(descrizione) > limite:
-            descrizione = descrizione[:limite].rsplit(" ", 1)[0] + "…"
         box = slide.shapes.add_textbox(x + bordo, desc_y, largo, desc_h)
-        _testo(box, descrizione, dim=dim_desc, colore=GRIGIO)
+        _testo(box, _tronca(richiesta.descrizione, righe * per_riga),
+               dim=10 if grande else 7.5, colore=GRIGIO)
 
     effort = slide.shapes.add_textbox(x + bordo, effort_y, largo, alt_effort)
     _testo(effort, "Effort " + (richiesta.effort_fmt or "non ancora stimato"),
            dim=10 if grande else 8)
 
+    limite_nota = int(largo / Inches(0.055)) * (2 if grande else 1)
     riquadri = (
-        ("Beneficio atteso", _euro(richiesta.saving_economico), False),
+        ("Beneficio atteso", _euro(richiesta.saving_economico),
+         richiesta.saving_economico_note, False),
         ("Costo dell'attività" if richiesta.is_attivita else "Costo del progetto",
-         _euro(richiesta.costo_iniziativa), False),
-        ("Incremento qualitativo", richiesta.incremento_qualitativo_fmt or "—", True),
-        ("Incremento efficienza", richiesta.incremento_efficienza_fmt or "—", True),
+         _euro(richiesta.costo_iniziativa), richiesta.altri_costi_note, False),
+        ("Incremento qualitativo", richiesta.incremento_qualitativo_fmt or "—",
+         richiesta.incremento_qualitativo_note, True),
+        ("Incremento efficienza", richiesta.incremento_efficienza_fmt or "—",
+         richiesta.incremento_efficienza_note, True),
     )
-    for i, (etichetta, valore, verde) in enumerate(riquadri):
+    for i, (etichetta, valore, nota, verde) in enumerate(riquadri):
         rx = x + bordo + (quadr_w + Inches(0.12)) * (i % 2)
         ry = base_y + (quadr_h + Inches(0.07)) * (i // 2)
-        _riquadro(slide, rx, ry, quadr_w, quadr_h, etichetta, valore, verde=verde,
-                  dim_valore=13 if grande else 10)
+        _riquadro(slide, rx, ry, quadr_w, quadr_h, etichetta, valore,
+                  nota=_tronca(nota, limite_nota) if note_leggibili else "",
+                  verde=verde, dim_valore=13 if grande else 10)
+
+
+def _tronca(testo, limite):
+    """Testo su una riga sola, tagliato su confine di parola con i puntini."""
+    pulito = " ".join((testo or "").split())
+    if len(pulito) <= limite:
+        return pulito
+    return pulito[:max(limite, 12)].rsplit(" ", 1)[0] + "…"
 
 
 def _slide_schede(prs, titolo, occhiello, blocco, pagina, pagine):
@@ -418,13 +432,13 @@ def _slide_schede(prs, titolo, occhiello, blocco, pagina, pagine):
         _testo(num, f"{pagina} / {pagine}", dim=10, colore=GRIGIO)
 
     colonne, righe = GRIGLIA.get(len(blocco), (3, 2))
-    passo = Inches(0.22)
-    area_w, area_h = Inches(12.2), Inches(5.45)
+    passo = Inches(0.2)
+    area_w, area_h = Inches(12.2), Inches(5.72)
     w = min((area_w - passo * (colonne - 1)) / colonne, Inches(7.8))
     h = min((area_h - passo * (righe - 1)) / righe, Inches(4.6))
     # Blocco centrato in orizzontale e in verticale nell'area utile.
     x0 = (Inches(13.333) - (w * colonne + passo * (colonne - 1))) / 2
-    y0 = Inches(1.62) + (area_h - (h * righe + passo * (righe - 1))) / 2
+    y0 = Inches(1.5) + (area_h - (h * righe + passo * (righe - 1))) / 2
     for i, richiesta in enumerate(blocco):
         riga, colonna = divmod(i, colonne)
         _card(slide, richiesta, x0 + (w + passo) * colonna, y0 + (h + passo) * riga, w, h)
