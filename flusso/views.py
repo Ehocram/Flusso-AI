@@ -250,15 +250,13 @@ def _filtra_richieste(request, tipo_di_default=True):
 def lista(request):
     qs, filtri = _filtra_richieste(request)
     richieste = [{"obj": r, "azioni": azioni_disponibili(r, request.user)} for r in qs]
-    # La chip attiva all'apertura è solo un default di comodo (il tipo di competenza
-    # del ruolo): l'export non lo eredita, altrimenti la Funzione AI scaricherebbe i
-    # soli progetti AI senza averlo chiesto. Vale come filtro solo la scelta esplicita.
+    # Gli export seguono ciò che si vede: la chip attiva, qualunque sia il motivo per
+    # cui è attiva (scelta esplicita o tipo di competenza del ruolo). Per scaricare
+    # tutto si passa dalla chip «Tutti», e i pulsanti dichiarano sempre il perimetro.
     scelto = request.GET.get("tipo", "")
     esplicito = scelto in dict(TipoProgetto.choices)
     parametri = request.GET.copy()
-    parametri["tipo"] = scelto if esplicito else "tutti"
-    tutti = request.GET.copy()
-    tutti["tipo"] = "tutti"
+    parametri["tipo"] = filtri["tipo_attivo"] or "tutti"
     return render(request, "flusso/lista.html", {
         "tipo_filtri": filtri["tipo_filtri"], "tipo_attivo": filtri["tipo_attivo"],
         "richieste": richieste, "stati": Stato.choices, "funzioni": Funzione.choices,
@@ -267,8 +265,8 @@ def lista(request):
         "priorita_scelte": Priorita.choices, "f_priorita_it": filtri["priorita_it"],
         "f_tipo": scelto if (esplicito or scelto == "tutti") else "",
         "query_export": parametri.urlencode(),
-        "export_ambito": NOME_BREVE_TIPO.get(scelto, scelto) if esplicito else "tutti i tipi",
-        "query_export_tutti": tutti.urlencode() if esplicito else "",
+        "export_ambito": (NOME_BREVE_TIPO.get(filtri["tipo_attivo"], filtri["tipo_attivo"])
+                          if filtri["tipo_attivo"] else "tutti i tipi"),
     })
 
 

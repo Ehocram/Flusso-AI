@@ -188,9 +188,9 @@ def _indice(slide, ancore, conteggi):
     y = Inches(2.9)
     for area, etichetta in AREE:
         n = conteggi.get(area, 0)
-        riquadro = _rettangolo(slide, Inches(0.7), y, Inches(5.4), Inches(0.62),
-                               fondo=FONDO if n else BIANCO,
-                               bordo=None if n else (0xE5, 0xE7, 0xEB))
+        if not n:
+            continue  # nell'indice stanno solo le aree che il filtro ha lasciato dentro
+        riquadro = _rettangolo(slide, Inches(0.7), y, Inches(5.4), Inches(0.62), fondo=FONDO)
         tf = riquadro.text_frame
         tf.margin_left = Pt(12)
         p = tf.paragraphs[0]
@@ -199,7 +199,7 @@ def _indice(slide, ancore, conteggi):
         run.text = f"{etichetta}"
         run.font.size = Pt(14)
         run.font.bold = True
-        run.font.color.rgb = _colore(ROSSO if n else GRIGIO)
+        run.font.color.rgb = _colore(ROSSO)
         coda = p.add_run()
         coda.text = "   " + _plurale(n, "scheda", "schede")
         coda.font.size = Pt(11)
@@ -251,8 +251,12 @@ def _slide_aree(prs, per_area, dati):
     tit = slide.shapes.add_textbox(Inches(0.6), Inches(0.35), Inches(10), Inches(0.6))
     _testo(tit, "Progetti e attività per area", dim=24, grassetto=True)
 
-    larghezza, altezza = Inches(2.95), Inches(1.95)
-    for i, (area, etichetta) in enumerate(AREE):
+    presenti = [(area, etichetta) for area, etichetta in AREE if per_area.get(area)]
+    # Le tessere si allargano quando le aree sono poche (export filtrato su una sola).
+    disponibile = Inches(12.13) - Inches(0.25) * max(len(presenti) - 1, 0)
+    larghezza = min(Inches(3.9), disponibile / max(len(presenti), 1))
+    altezza = Inches(1.95)
+    for i, (area, etichetta) in enumerate(presenti):
         voci = per_area.get(area, [])
         numeri = riepilogo(voci)
         x = Inches(0.6) + (larghezza + Inches(0.25)) * i
@@ -282,9 +286,10 @@ def _slide_aree(prs, per_area, dati):
         ("Beneficio atteso", _euro(dati["beneficio"]), ""),
         ("Effort", f"{dati['effort_gg']:g} gg".replace(".", ","), "a 8 ore/giorno"),
     ]
+    larghezza_totali = Inches(2.95)
     for i, (etichetta, valore, nota) in enumerate(totali):
-        x = Inches(0.6) + (larghezza + Inches(0.25)) * i
-        _tessera(slide, x, Inches(3.7), larghezza, Inches(1.4), etichetta, valore, nota,
+        x = Inches(0.6) + (larghezza_totali + Inches(0.25)) * i
+        _tessera(slide, x, Inches(3.7), larghezza_totali, Inches(1.4), etichetta, valore, nota,
                  evidenzia=(i in (1, 2)))
 
 

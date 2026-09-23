@@ -14,12 +14,8 @@
     </a>
     <a href="{% url 'flusso:esporta_pptx' %}?{{ query_export }}" class="btn"
        title="Scarica una presentazione con le schede progetto e i numeri di sintesi del filtro attivo">
-      <i class="ti ti-presentation"></i> Esporta in PPTX
+      <i class="ti ti-presentation"></i> Esporta in PPTX <span class="ambito">· {{ export_ambito }}</span>
     </a>
-    {% if query_export_tutti %}
-    <a href="{% url 'flusso:esporta_richieste' %}?{{ query_export_tutti }}" class="link-ambito"
-       title="Esporta AI, Application, IT Operation e Infosec insieme, mantenendo gli altri filtri">tutti i tipi</a>
-    {% endif %}
     {% if user.is_owner %}<a href="{% url 'flusso:nuova' %}" class="btn btn-primario"><i class="ti ti-plus"></i> Nuova richiesta</a>{% endif %}
   </div>
 </div>
